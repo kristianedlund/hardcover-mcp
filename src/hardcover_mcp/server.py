@@ -9,6 +9,7 @@ from mcp.types import Tool, TextContent
 from hardcover_mcp.tools.user import handle_me
 from hardcover_mcp.tools.books import handle_search_books, handle_get_book
 from hardcover_mcp.tools.library import handle_get_user_library
+from hardcover_mcp.tools.lists import handle_get_my_lists, handle_get_list
 
 server = Server("hardcover")
 
@@ -81,6 +82,33 @@ async def list_tools():
                 },
             },
         ),
+        Tool(
+            name="get_my_lists",
+            description="Get all of your Hardcover lists (scoped to your account). Returns id, name, slug, description, books count, and privacy.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="get_list",
+            description="Get a specific Hardcover list with its books by list ID.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Hardcover list ID (use get_my_lists to find IDs).",
+                    },
+                    "book_limit": {
+                        "type": "integer",
+                        "description": "Max books to return (default 25, max 100).",
+                    },
+                    "book_offset": {
+                        "type": "integer",
+                        "description": "Offset for book pagination (default 0).",
+                    },
+                },
+                "required": ["id"],
+            },
+        ),
     ]
 
 
@@ -94,6 +122,10 @@ async def call_tool(name: str, arguments: dict):
         return await handle_get_book(arguments)
     if name == "get_user_library":
         return await handle_get_user_library(arguments)
+    if name == "get_my_lists":
+        return await handle_get_my_lists(arguments)
+    if name == "get_list":
+        return await handle_get_list(arguments)
 
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
