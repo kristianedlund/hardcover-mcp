@@ -33,3 +33,11 @@ uv run python -m hardcover_mcp.server
   }
 }
 ```
+
+## Tools
+
+| Tool | Description |
+|------|-------------|
+| `me` | Get authenticated user info (id, username, name, books count) |
+| `search_books` | Search for books by title, author, or ISBN |
+| `get_book` | Get book details by Hardcover ID or slug |
