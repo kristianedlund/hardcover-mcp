@@ -14,6 +14,7 @@ from hardcover_mcp.tools.library import (
     handle_add_user_book_read,
     handle_update_user_book_read,
     handle_delete_user_book_read,
+    handle_delete_user_book,
 )
 from hardcover_mcp.tools.lists import (
     handle_get_my_lists,
@@ -216,6 +217,23 @@ async def list_tools():
             },
         ),
         Tool(
+            name="delete_user_book",
+            description="Remove a book from your library entirely. This cannot be undone.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "type": "integer",
+                        "description": "Hardcover book ID (will look up your library entry).",
+                    },
+                    "user_book_id": {
+                        "type": "integer",
+                        "description": "Directly specify user_book ID if known.",
+                    },
+                },
+            },
+        ),
+        Tool(
             name="create_list",
             description="Create a new Hardcover list.",
             inputSchema={
@@ -345,6 +363,8 @@ async def call_tool(name: str, arguments: dict):
         return await handle_update_user_book_read(arguments)
     if name == "delete_user_book_read":
         return await handle_delete_user_book_read(arguments)
+    if name == "delete_user_book":
+        return await handle_delete_user_book(arguments)
     if name == "create_list":
         return await handle_create_list(arguments)
     if name == "update_list":

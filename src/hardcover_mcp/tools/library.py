@@ -308,6 +308,43 @@ mutation UpdateUserBookRead($id: Int!, $object: DatesReadInput!) {
 }
 """
 
+FIND_ACTIVE_READ_QUERY = """
+query FindActiveRead($user_book_id: Int!) {
+    user_book_reads(
+        where: {user_book_id: {_eq: $user_book_id}, finished_at: {_is_null: true}},
+        order_by: {id: desc},
+        limit: 1
+    ) {
+        id
+        started_at
+        finished_at
+        progress_pages
+    }
+}
+"""
+
+GET_USER_BOOK_READ_QUERY = """
+query GetUserBookRead($id: Int!) {
+    user_book_reads(where: {id: {_eq: $id}}, limit: 1) {
+        id
+        started_at
+        finished_at
+        progress_pages
+    }
+}
+"""
+
+
+def _merge_read_input(existing: dict, updates: dict[str, Any]) -> dict[str, Any]:
+    """Merge updates onto existing read fields so unchanged values aren't nulled out."""
+    merged: dict[str, Any] = {}
+    for field in ("started_at", "finished_at", "progress_pages"):
+        if field in updates:
+            merged[field] = updates[field]
+        elif existing.get(field) is not None:
+            merged[field] = existing[field]
+    return merged
+
 
 async def handle_add_user_book_read(arguments: dict) -> list[TextContent]:
     book_id = arguments.get("book_id")
@@ -339,6 +376,27 @@ async def handle_add_user_book_read(arguments: dict) -> list[TextContent]:
     if not read_input:
         return [TextContent(type="text", text="Error: provide at least one of 'started_at', 'finished_at', 'progress_pages'.")]
 
+    # Check for an active (unfinished) read entry — update it instead of creating a duplicate
+    active = await execute(FIND_ACTIVE_READ_QUERY, {"user_book_id": int(user_book_id)})
+    active_reads = active["data"]["user_book_reads"]
+
+    if active_reads:
+        # Update the existing active read, merging with current values
+        existing_read = active_reads[0]
+        read_id = existing_read["id"]
+        merged = _merge_read_input(existing_read, read_input)
+        result = await execute(UPDATE_USER_BOOK_READ_MUTATION, {
+            "id": read_id,
+            "object": merged,
+        })
+        mutation_result = result["data"]["update_user_book_read"]
+
+        if mutation_result.get("error"):
+            return [TextContent(type="text", text=f"Error: {mutation_result['error']}")]
+
+        return [TextContent(type="text", text=json.dumps(mutation_result.get("user_book_read", {}), indent=2))]
+
+    # No active read — insert a new one
     result = await execute(INSERT_USER_BOOK_READ_MUTATION, {
         "userBookId": int(user_book_id),
         "userBookRead": read_input,
@@ -367,9 +425,16 @@ async def handle_update_user_book_read(arguments: dict) -> list[TextContent]:
     if not read_input:
         return [TextContent(type="text", text="Error: provide at least one of 'started_at', 'finished_at', 'progress_pages'.")]
 
+    # Fetch current values and merge so unchanged fields aren't nulled out
+    current = await execute(GET_USER_BOOK_READ_QUERY, {"id": int(read_id)})
+    current_reads = current["data"]["user_book_reads"]
+    if not current_reads:
+        return [TextContent(type="text", text="Error: no read entry found with that ID.")]
+    merged = _merge_read_input(current_reads[0], read_input)
+
     result = await execute(UPDATE_USER_BOOK_READ_MUTATION, {
         "id": int(read_id),
-        "object": read_input,
+        "object": merged,
     })
     mutation_result = result["data"]["update_user_book_read"]
 
@@ -395,3 +460,37 @@ async def handle_delete_user_book_read(arguments: dict) -> list[TextContent]:
 
     await execute(DELETE_USER_BOOK_READ_MUTATION, {"id": int(read_id)})
     return [TextContent(type="text", text=json.dumps({"deleted": True, "id": int(read_id)}))]
+
+
+# ── Write: delete_user_book ──
+
+DELETE_USER_BOOK_MUTATION = """
+mutation DeleteUserBook($id: Int!) {
+    delete_user_book(id: $id) {
+        __typename
+    }
+}
+"""
+
+
+async def handle_delete_user_book(arguments: dict) -> list[TextContent]:
+    book_id = arguments.get("book_id")
+    user_book_id = arguments.get("user_book_id")
+
+    if not book_id and not user_book_id:
+        return [TextContent(type="text", text="Error: provide 'book_id' or 'user_book_id'.")]
+
+    # Resolve user_book_id from book_id if needed
+    if not user_book_id:
+        user = await get_current_user()
+        existing = await execute(FIND_USER_BOOK_QUERY, {
+            "user_id": user["id"],
+            "book_id": int(book_id),
+        })
+        ubs = existing["data"]["user_books"]
+        if not ubs:
+            return [TextContent(type="text", text="Error: book not in your library.")]
+        user_book_id = ubs[0]["id"]
+
+    await execute(DELETE_USER_BOOK_MUTATION, {"id": int(user_book_id)})
+    return [TextContent(type="text", text=json.dumps({"deleted": True, "user_book_id": int(user_book_id)}))]
