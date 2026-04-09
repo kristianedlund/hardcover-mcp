@@ -377,3 +377,21 @@ async def handle_update_user_book_read(arguments: dict) -> list[TextContent]:
         return [TextContent(type="text", text=f"Error: {mutation_result['error']}")]
 
     return [TextContent(type="text", text=json.dumps(mutation_result.get("user_book_read", {}), indent=2))]
+
+
+DELETE_USER_BOOK_READ_MUTATION = """
+mutation DeleteUserBookRead($id: Int!) {
+    delete_user_book_read(id: $id) {
+        __typename
+    }
+}
+"""
+
+
+async def handle_delete_user_book_read(arguments: dict) -> list[TextContent]:
+    read_id = arguments.get("id")
+    if not read_id:
+        return [TextContent(type="text", text="Error: 'id' (user_book_read id) is required.")]
+
+    await execute(DELETE_USER_BOOK_READ_MUTATION, {"id": int(read_id)})
+    return [TextContent(type="text", text=json.dumps({"deleted": True, "id": int(read_id)}))]

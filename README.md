@@ -54,6 +54,7 @@ uv run python -m hardcover_mcp.server
 | `set_user_book` | Add a book to your library or update its status/rating |
 | `add_user_book_read` | Add a reading date entry (started/finished) to a book |
 | `update_user_book_read` | Update an existing reading date entry |
+| `delete_user_book_read` | Delete a reading date entry |
 | `create_list` | Create a new list |
 | `update_list` | Update a list's name, description, or privacy |
 | `delete_list` | Delete a list |
