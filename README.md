@@ -10,7 +10,8 @@ MCP server for the [Hardcover](https://hardcover.app) GraphQL API — personal l
 ## Installation
 
 ```bash
-uv pip install -e .
+git clone <repo-url>
+cd hardcover-mcp
 ```
 
 ## Usage
@@ -27,7 +28,24 @@ Then run:
 uv run python -m hardcover_mcp.server
 ```
 
-### MCP client config (Claude Desktop / VS Code)
+`uv run` automatically installs dependencies on first use.
+
+### MCP client config
+
+**VS Code** (`.vscode/mcp.json`):
+
+```json
+{
+  "servers": {
+    "hardcover": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/hardcover-mcp", "python", "-m", "hardcover_mcp.server"]
+    }
+  }
+}
+```
+
+**Claude Desktop** (`claude_desktop_config.json`):
 
 ```json
 {
