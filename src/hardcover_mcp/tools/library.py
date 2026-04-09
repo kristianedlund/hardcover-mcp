@@ -75,6 +75,26 @@ query GetUserLibraryAll($user_id: Int!, $limit: Int!, $offset: Int!) {
 }
 """
 
+COUNT_BY_STATUS_QUERY = """
+query CountByStatus($user_id: Int!, $status_id: Int!) {
+    user_books_aggregate(
+        where: {user_id: {_eq: $user_id}, status_id: {_eq: $status_id}}
+    ) {
+        aggregate { count }
+    }
+}
+"""
+
+COUNT_ALL_QUERY = """
+query CountAll($user_id: Int!) {
+    user_books_aggregate(
+        where: {user_id: {_eq: $user_id}}
+    ) {
+        aggregate { count }
+    }
+}
+"""
+
 
 def _format_user_book(ub: dict) -> dict:
     book = ub.get("book", {})
@@ -119,15 +139,23 @@ async def handle_get_user_library(arguments: dict) -> list[TextContent]:
             "offset": offset,
             "status_id": status_id,
         })
+        count_result = await execute(COUNT_BY_STATUS_QUERY, {
+            "user_id": user_id,
+            "status_id": status_id,
+        })
     else:
         result = await execute(GET_USER_LIBRARY_ALL_QUERY, {
             "user_id": user_id,
             "limit": limit,
             "offset": offset,
         })
+        count_result = await execute(COUNT_ALL_QUERY, {
+            "user_id": user_id,
+        })
 
+    total = count_result["data"]["user_books_aggregate"]["aggregate"]["count"]
     user_books = result["data"]["user_books"]
     formatted = [_format_user_book(ub) for ub in user_books]
 
-    output = {"count": len(formatted), "offset": offset, "books": formatted}
+    output = {"total": total, "returned": len(formatted), "offset": offset, "books": formatted}
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
