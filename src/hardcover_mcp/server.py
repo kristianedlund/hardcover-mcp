@@ -8,6 +8,7 @@ from mcp.types import Tool, TextContent
 
 from hardcover_mcp.tools.user import handle_me
 from hardcover_mcp.tools.books import handle_search_books, handle_get_book
+from hardcover_mcp.tools.library import handle_get_user_library
 
 server = Server("hardcover")
 
@@ -59,6 +60,27 @@ async def list_tools():
                 },
             },
         ),
+        Tool(
+            name="get_user_library",
+            description="Get books from your Hardcover library. Optionally filter by status: Want to Read, Currently Reading, Read, Paused, Did Not Finish.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "description": "Filter by status: 'Want to Read', 'Currently Reading', 'Read', 'Paused', 'Did Not Finish'. Omit for all.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max books to return (default 25, max 100).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Offset for pagination (default 0).",
+                    },
+                },
+            },
+        ),
     ]
 
 
@@ -70,6 +92,8 @@ async def call_tool(name: str, arguments: dict):
         return await handle_search_books(arguments)
     if name == "get_book":
         return await handle_get_book(arguments)
+    if name == "get_user_library":
+        return await handle_get_user_library(arguments)
 
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
