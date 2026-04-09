@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "hardcover": {
+      "command": "uv",
+      "args": ["run", "--directory", "c:\\Users\\dkKriEdl\\OneDrive\\MCP-servers\\hardcover-mcp", "python", "-m", "hardcover_mcp.server"]
+    }
+  }
+}

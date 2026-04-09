@@ -18,7 +18,7 @@ HARDCOVER_API_TOKEN=<your token>
 Then run:
 
 ```bash
-uv run hardcover-mcp
+uv run python -m hardcover_mcp.server
 ```
 
 ### MCP client config (Claude Desktop / VS Code)
@@ -28,10 +28,7 @@ uv run hardcover-mcp
   "mcpServers": {
     "hardcover": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/hardcover-mcp", "hardcover-mcp"],
-      "env": {
-        "HARDCOVER_API_TOKEN": "<your token>"
-      }
+      "args": ["run", "--directory", "/path/to/hardcover-mcp", "python", "-m", "hardcover_mcp.server"]
     }
   }
 }
