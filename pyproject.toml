@@ -1,0 +1,21 @@
+[project]
+name = "hardcover-mcp"
+version = "0.1.0"
+description = "MCP server for the Hardcover GraphQL API — library tracking and list management."
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Kristian Edlund", email = "edlund@kristianedlund.dk" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "mcp>=1.0.0",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+hardcover-mcp = "hardcover_mcp.server:main"
+
+[build-system]
+requires = ["uv_build>=0.10.9,<0.11.0"]
+build-backend = "uv_build"
