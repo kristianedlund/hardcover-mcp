@@ -2,32 +2,33 @@
 
 import asyncio
 import traceback
-from typing import Any, Callable, Awaitable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
-from hardcover_mcp.tools.user import handle_me
-from hardcover_mcp.tools.books import handle_search_books, handle_get_book
+from hardcover_mcp.tools.books import handle_get_book, handle_search_books
 from hardcover_mcp.tools.library import (
-    handle_get_user_library,
-    handle_get_user_book,
-    handle_set_user_book,
     handle_add_user_book_read,
-    handle_update_user_book_read,
-    handle_delete_user_book_read,
     handle_delete_user_book,
+    handle_delete_user_book_read,
+    handle_get_user_book,
+    handle_get_user_library,
+    handle_set_user_book,
+    handle_update_user_book_read,
 )
 from hardcover_mcp.tools.lists import (
-    handle_get_my_lists,
-    handle_get_list,
-    handle_create_list,
-    handle_update_list,
-    handle_delete_list,
     handle_add_book_to_list,
+    handle_create_list,
+    handle_delete_list,
+    handle_get_list,
+    handle_get_my_lists,
     handle_remove_book_from_list,
+    handle_update_list,
 )
+from hardcover_mcp.tools.user import handle_me
 
 server = Server("hardcover")
 
@@ -42,7 +43,7 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
     (
         Tool(
             name="me",
-            description="Get info about the authenticated Hardcover user (id, username, name, books count).",
+            description="Get authenticated user info (id, username, name, books count).",
             inputSchema={"type": "object", "properties": {}},
         ),
         lambda args: handle_me(),
@@ -50,7 +51,7 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
     (
         Tool(
             name="search_books",
-            description="Search for books on Hardcover by title, author, or ISBN. Returns id, title, slug, authors, rating, and pages.",
+            description="Search Hardcover books by title, author, or ISBN.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -95,13 +96,13 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
     (
         Tool(
             name="get_user_library",
-            description="Get books from your Hardcover library. Optionally filter by status: Want to Read, Currently Reading, Read, Paused, Did Not Finish.",
+            description="Get books from your library. Filter by reading status.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "status": {
                         "type": "string",
-                        "description": "Filter by status: 'Want to Read', 'Currently Reading', 'Read', 'Paused', 'Did Not Finish'. Omit for all.",
+                        "description": "Status filter (e.g. 'Read', 'Currently Reading').",
                     },
                     "limit": {
                         "type": "integer",
@@ -119,7 +120,7 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
     (
         Tool(
             name="get_user_book",
-            description="Get your library entry for a specific book: status, rating, and reading dates. Use book_id or slug.",
+            description="Get your library entry for a book: status, rating, reads.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -139,7 +140,7 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
     (
         Tool(
             name="get_my_lists",
-            description="Get your Hardcover lists (scoped to your account). Returns id, name, slug, description, books count, and privacy.",
+            description="Get your Hardcover lists. Returns id, name, books count, privacy.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -185,7 +186,7 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
     (
         Tool(
             name="set_user_book",
-            description="Add a book to your library or update its status/rating. Preserves existing fields you don't specify.",
+            description="Set a book's status/rating. Preserves unspecified fields.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -195,7 +196,7 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
                     },
                     "status": {
                         "type": "string",
-                        "description": "Status: 'Want to Read', 'Currently Reading', 'Read', 'Paused', 'Did Not Finish', or numeric ID (1-5).",
+                        "description": "Status name (e.g. 'Read') or numeric ID (1-5).",
                     },
                     "rating": {
                         "type": "number",
@@ -210,17 +211,17 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
     (
         Tool(
             name="add_user_book_read",
-            description="Add or update a reading date entry for a book. If an active (unfinished) read exists, updates it instead of creating a duplicate.",
+            description="Add a reading date entry. Updates active read if one exists.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "book_id": {
                         "type": "integer",
-                        "description": "Hardcover book ID (will look up your user_book automatically).",
+                        "description": "Book ID (auto-resolves your user_book).",
                     },
                     "user_book_id": {
                         "type": "integer",
-                        "description": "Directly specify user_book ID if known (avoids extra lookup).",
+                        "description": "user_book ID if known (skips lookup).",
                     },
                     "started_at": {
                         "type": "string",
@@ -242,7 +243,7 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
     (
         Tool(
             name="update_user_book_read",
-            description="Update an existing reading date entry (started/finished/progress). Preserves fields you don't specify.",
+            description="Update a reading date entry. Preserves unspecified fields.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -323,7 +324,7 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
                     },
                     "privacy": {
                         "type": "string",
-                        "description": "Privacy: 'public', 'followers_only', 'private'. Default: public.",
+                        "description": "public/followers_only/private. Default: public.",
                     },
                 },
                 "required": ["name"],
@@ -405,21 +406,21 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
     (
         Tool(
             name="remove_book_from_list",
-            description="Remove a book from a Hardcover list. Provide either the list_book ID directly, or list_id + book_id to look it up.",
+            description="Remove a book from a list. Use id or list_id + book_id.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "id": {
                         "type": "integer",
-                        "description": "The list_book ID (direct). If unknown, provide list_id + book_id instead.",
+                        "description": "list_book ID. If unknown, use list_id + book_id.",
                     },
                     "list_id": {
                         "type": "integer",
-                        "description": "Hardcover list ID (used with book_id to look up the list_book).",
+                        "description": "List ID (use with book_id to find list_book).",
                     },
                     "book_id": {
                         "type": "integer",
-                        "description": "Hardcover book ID (used with list_id to look up the list_book).",
+                        "description": "Book ID (use with list_id to find list_book).",
                     },
                 },
             },
@@ -445,10 +446,12 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     try:
         return await handler(arguments)
     except Exception as exc:
-        return [TextContent(
-            type="text",
-            text=f"Error in {name}: {exc}\n{traceback.format_exc()}",
-        )]
+        return [
+            TextContent(
+                type="text",
+                text=f"Error in {name}: {exc}\n{traceback.format_exc()}",
+            )
+        ]
 
 
 async def _run() -> None:

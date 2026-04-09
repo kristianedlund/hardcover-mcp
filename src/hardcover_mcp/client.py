@@ -10,9 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-API_URL = os.environ.get(
-    "HARDCOVER_API_URL", "https://api.hardcover.app/v1/graphql"
-)
+API_URL = os.environ.get("HARDCOVER_API_URL", "https://api.hardcover.app/v1/graphql")
 
 # Rate limiting: 60 requests per minute
 _RATE_LIMIT = 60
@@ -41,8 +39,7 @@ def _get_token() -> str:
     token = os.environ.get("HARDCOVER_API_TOKEN", "").strip()
     if not token:
         raise RuntimeError(
-            "HARDCOVER_API_TOKEN is not set. "
-            "Get your token from https://hardcover.app/account/api"
+            "HARDCOVER_API_TOKEN is not set. Get your token from https://hardcover.app/account/api"
         )
     return token
 

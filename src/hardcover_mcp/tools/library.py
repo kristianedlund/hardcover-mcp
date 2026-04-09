@@ -65,6 +65,7 @@ _USER_BOOK_DETAIL_FIELDS = """
 
 # ── Read: get_user_library (single query, optional status filter) ──
 
+
 def _build_library_query(with_status: bool) -> str:
     status_filter = ", status_id: {_eq: $status_id}" if with_status else ""
     status_var = ", $status_id: Int!" if with_status else ""
@@ -160,13 +161,24 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
         return [TextContent(type="text", text=f"Error: unknown status '{status}'. Valid: {valid}")]
 
     if status_id is not None:
-        result = await execute(GET_USER_LIBRARY_QUERY, {
-            "user_id": user_id, "limit": limit, "offset": offset, "status_id": status_id,
-        })
+        result = await execute(
+            GET_USER_LIBRARY_QUERY,
+            {
+                "user_id": user_id,
+                "limit": limit,
+                "offset": offset,
+                "status_id": status_id,
+            },
+        )
     else:
-        result = await execute(GET_USER_LIBRARY_ALL_QUERY, {
-            "user_id": user_id, "limit": limit, "offset": offset,
-        })
+        result = await execute(
+            GET_USER_LIBRARY_ALL_QUERY,
+            {
+                "user_id": user_id,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
 
     total = result["data"]["user_books_aggregate"]["aggregate"]["count"]
     user_books = result["data"]["user_books"]
@@ -192,9 +204,13 @@ async def handle_get_user_book(arguments: dict[str, Any]) -> list[TextContent]:
         book_id = books[0]["id"]
 
     user = await get_current_user()
-    result = await execute(GET_USER_BOOK_QUERY, {
-        "user_id": user["id"], "book_id": int(book_id),
-    })
+    result = await execute(
+        GET_USER_BOOK_QUERY,
+        {
+            "user_id": user["id"],
+            "book_id": int(book_id),
+        },
+    )
     user_books = result["data"]["user_books"]
     if not user_books:
         return [TextContent(type="text", text="Book not in your library.")]
@@ -277,9 +293,13 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
     rating = arguments.get("rating")
 
     # Check if user_book already exists
-    existing = await execute(FIND_USER_BOOK_QUERY, {
-        "user_id": user_id, "book_id": int(book_id),
-    })
+    existing = await execute(
+        FIND_USER_BOOK_QUERY,
+        {
+            "user_id": user_id,
+            "book_id": int(book_id),
+        },
+    )
     existing_books = existing["data"]["user_books"]
 
     if existing_books:
@@ -403,7 +423,10 @@ def _build_read_input(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _resolve_user_book_id(arguments: dict[str, Any]) -> int | str:
-    """Resolve user_book_id from arguments. Returns int on success, str error message on failure."""
+    """Resolve user_book_id from arguments.
+
+    Returns int on success, str error message on failure.
+    """
     user_book_id = arguments.get("user_book_id")
     if user_book_id:
         return int(user_book_id)
@@ -413,9 +436,13 @@ async def _resolve_user_book_id(arguments: dict[str, Any]) -> int | str:
         return "Error: provide 'book_id' or 'user_book_id'."
 
     user = await get_current_user()
-    existing = await execute(FIND_USER_BOOK_QUERY, {
-        "user_id": user["id"], "book_id": int(book_id),
-    })
+    existing = await execute(
+        FIND_USER_BOOK_QUERY,
+        {
+            "user_id": user["id"],
+            "book_id": int(book_id),
+        },
+    )
     ubs = existing["data"]["user_books"]
     if not ubs:
         return "Error: book not in your library. Use set_user_book first."
@@ -430,7 +457,12 @@ async def handle_add_user_book_read(arguments: dict[str, Any]) -> list[TextConte
 
     read_input = _build_read_input(arguments)
     if not read_input:
-        return [TextContent(type="text", text="Error: provide at least one of 'started_at', 'finished_at', 'progress_pages'.")]
+        return [
+            TextContent(
+                type="text",
+                text="Error: provide 'started_at', 'finished_at', or 'progress_pages'.",
+            )
+        ]
 
     # Check for an active (unfinished) read entry — update it instead of creating a duplicate
     active = await execute(FIND_ACTIVE_READ_QUERY, {"user_book_id": user_book_id})
@@ -439,20 +471,32 @@ async def handle_add_user_book_read(arguments: dict[str, Any]) -> list[TextConte
     if active_reads:
         existing_read = active_reads[0]
         merged = _merge_read_input(existing_read, read_input)
-        result = await execute(UPDATE_USER_BOOK_READ_MUTATION, {
-            "id": existing_read["id"], "object": merged,
-        })
+        result = await execute(
+            UPDATE_USER_BOOK_READ_MUTATION,
+            {
+                "id": existing_read["id"],
+                "object": merged,
+            },
+        )
         mutation_result = result["data"]["update_user_book_read"]
     else:
-        result = await execute(INSERT_USER_BOOK_READ_MUTATION, {
-            "userBookId": user_book_id, "userBookRead": read_input,
-        })
+        result = await execute(
+            INSERT_USER_BOOK_READ_MUTATION,
+            {
+                "userBookId": user_book_id,
+                "userBookRead": read_input,
+            },
+        )
         mutation_result = result["data"]["insert_user_book_read"]
 
     if mutation_result.get("error"):
         return [TextContent(type="text", text=f"Error: {mutation_result['error']}")]
 
-    return [TextContent(type="text", text=json.dumps(mutation_result.get("user_book_read", {}), indent=2))]
+    return [
+        TextContent(
+            type="text", text=json.dumps(mutation_result.get("user_book_read", {}), indent=2)
+        )
+    ]
 
 
 async def handle_update_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
@@ -462,7 +506,12 @@ async def handle_update_user_book_read(arguments: dict[str, Any]) -> list[TextCo
 
     read_input = _build_read_input(arguments)
     if not read_input:
-        return [TextContent(type="text", text="Error: provide at least one of 'started_at', 'finished_at', 'progress_pages'.")]
+        return [
+            TextContent(
+                type="text",
+                text="Error: provide 'started_at', 'finished_at', or 'progress_pages'.",
+            )
+        ]
 
     # Fetch current values and merge so unchanged fields aren't nulled out
     current = await execute(GET_USER_BOOK_READ_QUERY, {"id": int(read_id)})
@@ -471,15 +520,23 @@ async def handle_update_user_book_read(arguments: dict[str, Any]) -> list[TextCo
         return [TextContent(type="text", text="Error: no read entry found with that ID.")]
     merged = _merge_read_input(current_reads[0], read_input)
 
-    result = await execute(UPDATE_USER_BOOK_READ_MUTATION, {
-        "id": int(read_id), "object": merged,
-    })
+    result = await execute(
+        UPDATE_USER_BOOK_READ_MUTATION,
+        {
+            "id": int(read_id),
+            "object": merged,
+        },
+    )
     mutation_result = result["data"]["update_user_book_read"]
 
     if mutation_result.get("error"):
         return [TextContent(type="text", text=f"Error: {mutation_result['error']}")]
 
-    return [TextContent(type="text", text=json.dumps(mutation_result.get("user_book_read", {}), indent=2))]
+    return [
+        TextContent(
+            type="text", text=json.dumps(mutation_result.get("user_book_read", {}), indent=2)
+        )
+    ]
 
 
 # ── Write: delete ──

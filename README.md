@@ -87,6 +87,10 @@ uv run python -m hardcover_mcp.server
 | `add_book_to_list` | Add a book to a list |
 | `remove_book_from_list` | Remove a book from a list |
 
+## Scope
+
+This server focuses on library tracking and list management. Features like social (followers, feed), recommendations, and edition management are not currently supported.
+
 ## Rate Limiting
 
 The Hardcover API allows 60 requests per minute with a max query depth of 3. The client includes a sliding-window rate limiter and automatic retry with exponential backoff on 429 responses.

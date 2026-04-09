@@ -39,9 +39,7 @@ query GetBookById($id: Int!) {
 
 GET_BOOK_BY_SLUG_QUERY = GET_BOOK_BY_ID_QUERY.replace(
     "GetBookById($id: Int!)", "GetBookBySlug($slug: String!)"
-).replace(
-    "{id: {_eq: $id}}", "{slug: {_eq: $slug}}"
-)
+).replace("{id: {_eq: $id}}", "{slug: {_eq: $slug}}")
 
 
 def _format_search_hit(hit: dict[str, Any]) -> dict[str, Any]:
@@ -68,11 +66,14 @@ async def handle_search_books(arguments: dict[str, Any]) -> list[TextContent]:
     per_page = min(arguments.get("per_page", 10), 25)
     page = arguments.get("page", 1)
 
-    result = await execute(SEARCH_BOOKS_QUERY, {
-        "query": query,
-        "per_page": per_page,
-        "page": page,
-    })
+    result = await execute(
+        SEARCH_BOOKS_QUERY,
+        {
+            "query": query,
+            "per_page": per_page,
+            "page": page,
+        },
+    )
 
     raw_results = result["data"]["search"]["results"]
     hits = raw_results.get("hits", [])

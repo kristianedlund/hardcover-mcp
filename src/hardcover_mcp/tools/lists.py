@@ -1,4 +1,4 @@
-"""Tools: get_my_lists, get_list, create_list, update_list, delete_list, add_book_to_list, remove_book_from_list."""
+"""Tools: list CRUD and list-book management."""
 
 import json
 from typing import Any
@@ -92,7 +92,9 @@ async def handle_get_my_lists(arguments: dict[str, Any]) -> list[TextContent]:
     limit = min(arguments.get("limit", 50), 200)
     offset = arguments.get("offset", 0)
 
-    result = await execute(GET_MY_LISTS_QUERY, {"user_id": user_id, "limit": limit, "offset": offset})
+    result = await execute(
+        GET_MY_LISTS_QUERY, {"user_id": user_id, "limit": limit, "offset": offset}
+    )
     lists = result["data"]["lists"]
     formatted = [_format_list_summary(lst) for lst in lists]
 
@@ -107,11 +109,14 @@ async def handle_get_list(arguments: dict[str, Any]) -> list[TextContent]:
     book_limit = min(arguments.get("book_limit", 25), 100)
     book_offset = arguments.get("book_offset", 0)
 
-    result = await execute(GET_LIST_BY_ID_QUERY, {
-        "id": int(list_id),
-        "book_limit": book_limit,
-        "book_offset": book_offset,
-    })
+    result = await execute(
+        GET_LIST_BY_ID_QUERY,
+        {
+            "id": int(list_id),
+            "book_limit": book_limit,
+            "book_offset": book_offset,
+        },
+    )
 
     lists = result["data"]["lists"]
     if not lists:
@@ -180,7 +185,9 @@ def _build_list_input(arguments: dict[str, Any]) -> dict[str, Any]:
         else:
             pid = PRIVACY_NAME_TO_ID.get(str(privacy).lower())
             if pid is None:
-                raise ValueError(f"Unknown privacy '{privacy}'. Valid: {', '.join(PRIVACY_MAP.values())}")
+                raise ValueError(
+                    f"Unknown privacy '{privacy}'. Valid: {', '.join(PRIVACY_MAP.values())}"
+                )
             obj["privacy_setting_id"] = pid
     return obj
 
@@ -219,7 +226,12 @@ async def handle_update_list(arguments: dict[str, Any]) -> list[TextContent]:
     except ValueError as e:
         return [TextContent(type="text", text=f"Error: {e}")]
     if not obj:
-        return [TextContent(type="text", text="Error: provide at least one of 'name', 'description', 'privacy'.")]
+        return [
+            TextContent(
+                type="text",
+                text="Error: provide at least one of 'name', 'description', 'privacy'.",
+            )
+        ]
 
     result = await execute(UPDATE_LIST_MUTATION, {"id": int(list_id), "object": obj})
     mutation_result = result["data"]["update_list"]
@@ -240,7 +252,7 @@ async def handle_delete_list(arguments: dict[str, Any]) -> list[TextContent]:
     if not list_id:
         return [TextContent(type="text", text="Error: 'id' is required.")]
 
-    result = await execute(DELETE_LIST_MUTATION, {"id": int(list_id)})
+    await execute(DELETE_LIST_MUTATION, {"id": int(list_id)})
 
     return [TextContent(type="text", text=json.dumps({"deleted": True, "id": int(list_id)}))]
 
@@ -309,11 +321,19 @@ async def handle_remove_book_from_list(arguments: dict[str, Any]) -> list[TextCo
     # If no direct list_book id given, look it up by list_id + book_id
     if not list_book_id:
         if not list_id or not book_id:
-            return [TextContent(type="text", text="Error: provide 'id' (list_book id) or both 'list_id' and 'book_id'.")]
-        result = await execute(FIND_LIST_BOOK_QUERY, {
-            "list_id": int(list_id),
-            "book_id": int(book_id),
-        })
+            return [
+                TextContent(
+                    type="text",
+                    text="Error: provide 'id' (list_book id) or both 'list_id' and 'book_id'.",
+                )
+            ]
+        result = await execute(
+            FIND_LIST_BOOK_QUERY,
+            {
+                "list_id": int(list_id),
+                "book_id": int(book_id),
+            },
+        )
         lbs = result["data"]["list_books"]
         if not lbs:
             return [TextContent(type="text", text="Error: book not found in that list.")]
