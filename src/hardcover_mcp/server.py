@@ -1,6 +1,8 @@
 """Hardcover MCP server — entry point and tool registration."""
 
 import asyncio
+import traceback
+from typing import Any, Callable, Awaitable
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -10,6 +12,7 @@ from hardcover_mcp.tools.user import handle_me
 from hardcover_mcp.tools.books import handle_search_books, handle_get_book
 from hardcover_mcp.tools.library import (
     handle_get_user_library,
+    handle_get_user_book,
     handle_set_user_book,
     handle_add_user_book_read,
     handle_update_user_book_read,
@@ -28,15 +31,23 @@ from hardcover_mcp.tools.lists import (
 
 server = Server("hardcover")
 
+# ── Tool registry ──
+# Each entry: (Tool schema, handler function)
+# Adding a new tool = one entry here, one handler function. Nothing else.
 
-@server.list_tools()
-async def list_tools():
-    return [
+Handler = Callable[[dict[str, Any]], Awaitable[list[TextContent]]]
+
+TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
+    # ── Read ──
+    (
         Tool(
             name="me",
             description="Get info about the authenticated Hardcover user (id, username, name, books count).",
             inputSchema={"type": "object", "properties": {}},
         ),
+        lambda args: handle_me(),
+    ),
+    (
         Tool(
             name="search_books",
             description="Search for books on Hardcover by title, author, or ISBN. Returns id, title, slug, authors, rating, and pages.",
@@ -59,6 +70,9 @@ async def list_tools():
                 "required": ["query"],
             },
         ),
+        handle_search_books,
+    ),
+    (
         Tool(
             name="get_book",
             description="Get detailed info about a specific book by its Hardcover ID or slug.",
@@ -76,6 +90,9 @@ async def list_tools():
                 },
             },
         ),
+        handle_get_book,
+    ),
+    (
         Tool(
             name="get_user_library",
             description="Get books from your Hardcover library. Optionally filter by status: Want to Read, Currently Reading, Read, Paused, Did Not Finish.",
@@ -97,11 +114,49 @@ async def list_tools():
                 },
             },
         ),
+        handle_get_user_library,
+    ),
+    (
+        Tool(
+            name="get_user_book",
+            description="Get your library entry for a specific book: status, rating, and reading dates. Use book_id or slug.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "type": "integer",
+                        "description": "Hardcover book ID.",
+                    },
+                    "slug": {
+                        "type": "string",
+                        "description": "Hardcover book slug (e.g. 'project-hail-mary').",
+                    },
+                },
+            },
+        ),
+        handle_get_user_book,
+    ),
+    (
         Tool(
             name="get_my_lists",
-            description="Get all of your Hardcover lists (scoped to your account). Returns id, name, slug, description, books count, and privacy.",
-            inputSchema={"type": "object", "properties": {}},
+            description="Get your Hardcover lists (scoped to your account). Returns id, name, slug, description, books count, and privacy.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max lists to return (default 50, max 200).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Offset for pagination (default 0).",
+                    },
+                },
+            },
         ),
+        handle_get_my_lists,
+    ),
+    (
         Tool(
             name="get_list",
             description="Get a specific Hardcover list with its books by list ID.",
@@ -124,10 +179,13 @@ async def list_tools():
                 "required": ["id"],
             },
         ),
-        # ── Write tools ──
+        handle_get_list,
+    ),
+    # ── Write: library ──
+    (
         Tool(
             name="set_user_book",
-            description="Add a book to your library or update its status/rating. Creates the library entry if it doesn't exist.",
+            description="Add a book to your library or update its status/rating. Preserves existing fields you don't specify.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -147,9 +205,12 @@ async def list_tools():
                 "required": ["book_id"],
             },
         ),
+        handle_set_user_book,
+    ),
+    (
         Tool(
             name="add_user_book_read",
-            description="Add a reading date entry (started/finished) to a book in your library.",
+            description="Add or update a reading date entry for a book. If an active (unfinished) read exists, updates it instead of creating a duplicate.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -176,9 +237,12 @@ async def list_tools():
                 },
             },
         ),
+        handle_add_user_book_read,
+    ),
+    (
         Tool(
             name="update_user_book_read",
-            description="Update an existing reading date entry (started/finished/progress).",
+            description="Update an existing reading date entry (started/finished/progress). Preserves fields you don't specify.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -202,6 +266,9 @@ async def list_tools():
                 "required": ["id"],
             },
         ),
+        handle_update_user_book_read,
+    ),
+    (
         Tool(
             name="delete_user_book_read",
             description="Delete a reading date entry by its ID. This cannot be undone.",
@@ -216,6 +283,9 @@ async def list_tools():
                 "required": ["id"],
             },
         ),
+        handle_delete_user_book_read,
+    ),
+    (
         Tool(
             name="delete_user_book",
             description="Remove a book from your library entirely. This cannot be undone.",
@@ -233,6 +303,10 @@ async def list_tools():
                 },
             },
         ),
+        handle_delete_user_book,
+    ),
+    # ── Write: lists ──
+    (
         Tool(
             name="create_list",
             description="Create a new Hardcover list.",
@@ -255,6 +329,9 @@ async def list_tools():
                 "required": ["name"],
             },
         ),
+        handle_create_list,
+    ),
+    (
         Tool(
             name="update_list",
             description="Update an existing Hardcover list's name, description, or privacy.",
@@ -281,6 +358,9 @@ async def list_tools():
                 "required": ["id"],
             },
         ),
+        handle_update_list,
+    ),
+    (
         Tool(
             name="delete_list",
             description="Delete a Hardcover list by ID. This cannot be undone.",
@@ -295,6 +375,9 @@ async def list_tools():
                 "required": ["id"],
             },
         ),
+        handle_delete_list,
+    ),
+    (
         Tool(
             name="add_book_to_list",
             description="Add a book to a Hardcover list.",
@@ -317,6 +400,9 @@ async def list_tools():
                 "required": ["list_id", "book_id"],
             },
         ),
+        handle_add_book_to_list,
+    ),
+    (
         Tool(
             name="remove_book_from_list",
             description="Remove a book from a Hardcover list. Provide either the list_book ID directly, or list_id + book_id to look it up.",
@@ -338,53 +424,39 @@ async def list_tools():
                 },
             },
         ),
-    ]
+        handle_remove_book_from_list,
+    ),
+]
+
+# Build dispatch lookup
+_DISPATCH: dict[str, Handler] = {tool.name: handler for tool, handler in TOOL_REGISTRY}
+
+
+@server.list_tools()
+async def list_tools() -> list[Tool]:
+    return [tool for tool, _ in TOOL_REGISTRY]
 
 
 @server.call_tool()
-async def call_tool(name: str, arguments: dict):
-    if name == "me":
-        return await handle_me()
-    if name == "search_books":
-        return await handle_search_books(arguments)
-    if name == "get_book":
-        return await handle_get_book(arguments)
-    if name == "get_user_library":
-        return await handle_get_user_library(arguments)
-    if name == "get_my_lists":
-        return await handle_get_my_lists(arguments)
-    if name == "get_list":
-        return await handle_get_list(arguments)
-    if name == "set_user_book":
-        return await handle_set_user_book(arguments)
-    if name == "add_user_book_read":
-        return await handle_add_user_book_read(arguments)
-    if name == "update_user_book_read":
-        return await handle_update_user_book_read(arguments)
-    if name == "delete_user_book_read":
-        return await handle_delete_user_book_read(arguments)
-    if name == "delete_user_book":
-        return await handle_delete_user_book(arguments)
-    if name == "create_list":
-        return await handle_create_list(arguments)
-    if name == "update_list":
-        return await handle_update_list(arguments)
-    if name == "delete_list":
-        return await handle_delete_list(arguments)
-    if name == "add_book_to_list":
-        return await handle_add_book_to_list(arguments)
-    if name == "remove_book_from_list":
-        return await handle_remove_book_from_list(arguments)
-
-    return [TextContent(type="text", text=f"Unknown tool: {name}")]
+async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+    handler = _DISPATCH.get(name)
+    if not handler:
+        return [TextContent(type="text", text=f"Unknown tool: {name}")]
+    try:
+        return await handler(arguments)
+    except Exception as exc:
+        return [TextContent(
+            type="text",
+            text=f"Error in {name}: {exc}\n{traceback.format_exc()}",
+        )]
 
 
-async def _run():
+async def _run() -> None:
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
-def main():
+def main() -> None:
     """Entry point for the hardcover-mcp CLI."""
     asyncio.run(_run())
 

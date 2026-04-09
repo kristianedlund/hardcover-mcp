@@ -1,6 +1,7 @@
 """Tools: search_books, get_book."""
 
 import json
+from typing import Any
 
 from mcp.types import TextContent
 
@@ -36,30 +37,14 @@ query GetBookById($id: Int!) {
 }
 """
 
-GET_BOOK_BY_SLUG_QUERY = """
-query GetBookBySlug($slug: String!) {
-    books(where: {slug: {_eq: $slug}}, limit: 1) {
-        id
-        title
-        slug
-        subtitle
-        description
-        release_year
-        pages
-        rating
-        ratings_count
-        contributions {
-            author {
-                name
-                slug
-            }
-        }
-    }
-}
-"""
+GET_BOOK_BY_SLUG_QUERY = GET_BOOK_BY_ID_QUERY.replace(
+    "GetBookById($id: Int!)", "GetBookBySlug($slug: String!)"
+).replace(
+    "{id: {_eq: $id}}", "{slug: {_eq: $slug}}"
+)
 
 
-def _format_search_hit(hit: dict) -> dict:
+def _format_search_hit(hit: dict[str, Any]) -> dict[str, Any]:
     """Extract the useful fields from a search hit."""
     doc = hit.get("document", {})
     authors = doc.get("author_names", [])
@@ -75,7 +60,7 @@ def _format_search_hit(hit: dict) -> dict:
     }
 
 
-async def handle_search_books(arguments: dict) -> list[TextContent]:
+async def handle_search_books(arguments: dict[str, Any]) -> list[TextContent]:
     query = arguments.get("query", "").strip()
     if not query:
         return [TextContent(type="text", text="Error: 'query' is required.")]
@@ -98,7 +83,7 @@ async def handle_search_books(arguments: dict) -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
-async def handle_get_book(arguments: dict) -> list[TextContent]:
+async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
     book_id = arguments.get("id")
     slug = arguments.get("slug")
 

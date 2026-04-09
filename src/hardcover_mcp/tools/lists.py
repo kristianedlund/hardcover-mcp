@@ -15,10 +15,12 @@ PRIVACY_MAP = {
 }
 
 GET_MY_LISTS_QUERY = """
-query GetMyLists($user_id: Int!) {
+query GetMyLists($user_id: Int!, $limit: Int!, $offset: Int!) {
     lists(
         where: {user_id: {_eq: $user_id}},
-        order_by: {updated_at: desc}
+        order_by: {updated_at: desc},
+        limit: $limit,
+        offset: $offset
     ) {
         id
         name
@@ -59,7 +61,7 @@ query GetListById($id: Int!, $book_limit: Int!, $book_offset: Int!) {
 """
 
 
-def _format_list_summary(lst: dict) -> dict:
+def _format_list_summary(lst: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": lst["id"],
         "name": lst["name"],
@@ -71,7 +73,7 @@ def _format_list_summary(lst: dict) -> dict:
     }
 
 
-def _format_list_book(lb: dict) -> dict:
+def _format_list_book(lb: dict[str, Any]) -> dict[str, Any]:
     book = lb.get("book", {})
     authors = [c["author"]["name"] for c in book.get("contributions", [])]
     return {
@@ -83,18 +85,21 @@ def _format_list_book(lb: dict) -> dict:
     }
 
 
-async def handle_get_my_lists(arguments: dict) -> list[TextContent]:
+async def handle_get_my_lists(arguments: dict[str, Any]) -> list[TextContent]:
     user = await get_current_user()
     user_id = user["id"]
 
-    result = await execute(GET_MY_LISTS_QUERY, {"user_id": user_id})
+    limit = min(arguments.get("limit", 50), 200)
+    offset = arguments.get("offset", 0)
+
+    result = await execute(GET_MY_LISTS_QUERY, {"user_id": user_id, "limit": limit, "offset": offset})
     lists = result["data"]["lists"]
     formatted = [_format_list_summary(lst) for lst in lists]
 
     return [TextContent(type="text", text=json.dumps(formatted, indent=2))]
 
 
-async def handle_get_list(arguments: dict) -> list[TextContent]:
+async def handle_get_list(arguments: dict[str, Any]) -> list[TextContent]:
     list_id = arguments.get("id")
     if not list_id:
         return [TextContent(type="text", text="Error: 'id' is required.")]
@@ -162,7 +167,7 @@ mutation DeleteList($id: Int!) {
 """
 
 
-def _build_list_input(arguments: dict) -> dict[str, Any]:
+def _build_list_input(arguments: dict[str, Any]) -> dict[str, Any]:
     obj: dict[str, Any] = {}
     if arguments.get("name"):
         obj["name"] = arguments["name"]
@@ -175,19 +180,20 @@ def _build_list_input(arguments: dict) -> dict[str, Any]:
         else:
             pid = PRIVACY_NAME_TO_ID.get(str(privacy).lower())
             if pid is None:
-                return {"__error": f"Unknown privacy '{privacy}'. Valid: {', '.join(PRIVACY_MAP.values())}"}
+                raise ValueError(f"Unknown privacy '{privacy}'. Valid: {', '.join(PRIVACY_MAP.values())}")
             obj["privacy_setting_id"] = pid
     return obj
 
 
-async def handle_create_list(arguments: dict) -> list[TextContent]:
+async def handle_create_list(arguments: dict[str, Any]) -> list[TextContent]:
     name = arguments.get("name")
     if not name:
         return [TextContent(type="text", text="Error: 'name' is required.")]
 
-    obj = _build_list_input(arguments)
-    if "__error" in obj:
-        return [TextContent(type="text", text=f"Error: {obj['__error']}")]
+    try:
+        obj = _build_list_input(arguments)
+    except ValueError as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
 
     result = await execute(CREATE_LIST_MUTATION, {"object": obj})
     mutation_result = result["data"]["insert_list"]
@@ -203,14 +209,15 @@ async def handle_create_list(arguments: dict) -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
-async def handle_update_list(arguments: dict) -> list[TextContent]:
+async def handle_update_list(arguments: dict[str, Any]) -> list[TextContent]:
     list_id = arguments.get("id")
     if not list_id:
         return [TextContent(type="text", text="Error: 'id' is required.")]
 
-    obj = _build_list_input(arguments)
-    if "__error" in obj:
-        return [TextContent(type="text", text=f"Error: {obj['__error']}")]
+    try:
+        obj = _build_list_input(arguments)
+    except ValueError as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
     if not obj:
         return [TextContent(type="text", text="Error: provide at least one of 'name', 'description', 'privacy'.")]
 
@@ -228,7 +235,7 @@ async def handle_update_list(arguments: dict) -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
-async def handle_delete_list(arguments: dict) -> list[TextContent]:
+async def handle_delete_list(arguments: dict[str, Any]) -> list[TextContent]:
     list_id = arguments.get("id")
     if not list_id:
         return [TextContent(type="text", text="Error: 'id' is required.")]
@@ -274,7 +281,7 @@ query FindListBook($list_id: Int!, $book_id: Int!) {
 """
 
 
-async def handle_add_book_to_list(arguments: dict) -> list[TextContent]:
+async def handle_add_book_to_list(arguments: dict[str, Any]) -> list[TextContent]:
     list_id = arguments.get("list_id")
     book_id = arguments.get("book_id")
     if not list_id or not book_id:
@@ -294,7 +301,7 @@ async def handle_add_book_to_list(arguments: dict) -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps(lb, indent=2))]
 
 
-async def handle_remove_book_from_list(arguments: dict) -> list[TextContent]:
+async def handle_remove_book_from_list(arguments: dict[str, Any]) -> list[TextContent]:
     list_book_id = arguments.get("id")
     list_id = arguments.get("list_id")
     book_id = arguments.get("book_id")

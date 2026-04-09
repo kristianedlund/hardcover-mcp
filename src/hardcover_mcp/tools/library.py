@@ -1,4 +1,4 @@
-"""Tools: get_user_library, set_user_book, reading log."""
+"""Tools: get_user_library, get_user_book, set_user_book, reading log, delete_user_book."""
 
 import json
 from typing import Any
@@ -8,7 +8,7 @@ from mcp.types import TextContent
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools.user import get_current_user
 
-STATUS_MAP = {
+STATUS_MAP: dict[int, str] = {
     1: "Want to Read",
     2: "Currently Reading",
     3: "Read",
@@ -17,87 +17,104 @@ STATUS_MAP = {
     6: "Ignored",
 }
 
-STATUS_NAME_TO_ID = {v.lower(): k for k, v in STATUS_MAP.items()}
+STATUS_NAME_TO_ID: dict[str, int] = {v.lower(): k for k, v in STATUS_MAP.items()}
 
-GET_USER_LIBRARY_QUERY = """
-query GetUserLibrary($user_id: Int!, $limit: Int!, $offset: Int!, $status_id: Int) {
-    user_books(
-        where: {
-            user_id: {_eq: $user_id},
-            status_id: {_eq: $status_id}
-        },
-        limit: $limit,
-        offset: $offset,
-        order_by: {updated_at: desc}
-    ) {
-        id
-        book_id
-        status_id
-        rating
-        updated_at
-        book {
-            title
-            slug
-            contributions {
-                author {
-                    name
-                }
+# ── Shared field fragments ──
+
+_USER_BOOK_FIELDS = """
+    id
+    book_id
+    status_id
+    rating
+    updated_at
+    book {
+        title
+        slug
+        contributions {
+            author {
+                name
             }
         }
     }
-}
 """
 
-GET_USER_LIBRARY_ALL_QUERY = """
-query GetUserLibraryAll($user_id: Int!, $limit: Int!, $offset: Int!) {
-    user_books(
-        where: {
-            user_id: {_eq: $user_id}
-        },
-        limit: $limit,
-        offset: $offset,
-        order_by: {updated_at: desc}
-    ) {
+_USER_BOOK_DETAIL_FIELDS = """
+    id
+    book_id
+    status_id
+    rating
+    updated_at
+    user_book_reads(order_by: {id: desc}) {
         id
-        book_id
-        status_id
-        rating
-        updated_at
-        book {
-            title
-            slug
-            contributions {
-                author {
-                    name
-                }
+        started_at
+        finished_at
+        progress_pages
+    }
+    book {
+        title
+        slug
+        pages
+        contributions {
+            author {
+                name
             }
         }
     }
-}
 """
 
-COUNT_BY_STATUS_QUERY = """
-query CountByStatus($user_id: Int!, $status_id: Int!) {
+
+# ── Read: get_user_library (single query, optional status filter) ──
+
+def _build_library_query(with_status: bool) -> str:
+    status_filter = ", status_id: {_eq: $status_id}" if with_status else ""
+    status_var = ", $status_id: Int!" if with_status else ""
+    return f"""
+query GetUserLibrary($user_id: Int!, $limit: Int!, $offset: Int!{status_var}) {{
+    user_books(
+        where: {{user_id: {{_eq: $user_id}}{status_filter}}},
+        limit: $limit,
+        offset: $offset,
+        order_by: {{updated_at: desc}}
+    ) {{
+        {_USER_BOOK_FIELDS}
+    }}
     user_books_aggregate(
-        where: {user_id: {_eq: $user_id}, status_id: {_eq: $status_id}}
-    ) {
-        aggregate { count }
+        where: {{user_id: {{_eq: $user_id}}{status_filter}}}
+    ) {{
+        aggregate {{ count }}
+    }}
+}}
+"""
+
+
+GET_USER_LIBRARY_QUERY = _build_library_query(with_status=True)
+GET_USER_LIBRARY_ALL_QUERY = _build_library_query(with_status=False)
+
+
+# ── Read: get_user_book ──
+
+GET_USER_BOOK_QUERY = f"""
+query GetUserBook($user_id: Int!, $book_id: Int!) {{
+    user_books(
+        where: {{user_id: {{_eq: $user_id}}, book_id: {{_eq: $book_id}}}},
+        limit: 1,
+        order_by: {{updated_at: desc}}
+    ) {{
+        {_USER_BOOK_DETAIL_FIELDS}
+    }}
+}}
+"""
+
+GET_BOOK_ID_BY_SLUG_QUERY = """
+query GetBookIdBySlug($slug: String!) {
+    books(where: {slug: {_eq: $slug}}, limit: 1) {
+        id
     }
 }
 """
 
-COUNT_ALL_QUERY = """
-query CountAll($user_id: Int!) {
-    user_books_aggregate(
-        where: {user_id: {_eq: $user_id}}
-    ) {
-        aggregate { count }
-    }
-}
-"""
 
-
-def _format_user_book(ub: dict) -> dict:
+def _format_user_book(ub: dict[str, Any]) -> dict[str, Any]:
     book = ub.get("book", {})
     authors = [c["author"]["name"] for c in book.get("contributions", [])]
     return {
@@ -112,7 +129,24 @@ def _format_user_book(ub: dict) -> dict:
     }
 
 
-async def handle_get_user_library(arguments: dict) -> list[TextContent]:
+def _format_user_book_detail(ub: dict[str, Any]) -> dict[str, Any]:
+    book = ub.get("book", {})
+    authors = [c["author"]["name"] for c in book.get("contributions", [])]
+    return {
+        "user_book_id": ub["id"],
+        "book_id": ub["book_id"],
+        "title": book.get("title"),
+        "slug": book.get("slug"),
+        "pages": book.get("pages"),
+        "authors": authors,
+        "status": STATUS_MAP.get(ub["status_id"], f"Unknown ({ub['status_id']})"),
+        "rating": ub.get("rating"),
+        "updated_at": ub.get("updated_at"),
+        "reads": ub.get("user_book_reads", []),
+    }
+
+
+async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent]:
     user = await get_current_user()
     user_id = user["id"]
 
@@ -120,45 +154,52 @@ async def handle_get_user_library(arguments: dict) -> list[TextContent]:
     offset = arguments.get("offset", 0)
     status = arguments.get("status")
 
-    # Resolve status name to ID if provided as string
-    status_id = None
-    if status is not None:
-        if isinstance(status, int):
-            status_id = status
-        elif isinstance(status, str) and status.isdigit():
-            status_id = int(status)
-        else:
-            status_id = STATUS_NAME_TO_ID.get(str(status).lower())
-            if status_id is None:
-                valid = ", ".join(STATUS_MAP.values())
-                return [TextContent(type="text", text=f"Error: unknown status '{status}'. Valid: {valid}")]
+    status_id = _resolve_status_id(status)
+    if status is not None and status_id is None:
+        valid = ", ".join(STATUS_MAP.values())
+        return [TextContent(type="text", text=f"Error: unknown status '{status}'. Valid: {valid}")]
 
     if status_id is not None:
         result = await execute(GET_USER_LIBRARY_QUERY, {
-            "user_id": user_id,
-            "limit": limit,
-            "offset": offset,
-            "status_id": status_id,
-        })
-        count_result = await execute(COUNT_BY_STATUS_QUERY, {
-            "user_id": user_id,
-            "status_id": status_id,
+            "user_id": user_id, "limit": limit, "offset": offset, "status_id": status_id,
         })
     else:
         result = await execute(GET_USER_LIBRARY_ALL_QUERY, {
-            "user_id": user_id,
-            "limit": limit,
-            "offset": offset,
-        })
-        count_result = await execute(COUNT_ALL_QUERY, {
-            "user_id": user_id,
+            "user_id": user_id, "limit": limit, "offset": offset,
         })
 
-    total = count_result["data"]["user_books_aggregate"]["aggregate"]["count"]
+    total = result["data"]["user_books_aggregate"]["aggregate"]["count"]
     user_books = result["data"]["user_books"]
     formatted = [_format_user_book(ub) for ub in user_books]
 
     output = {"total": total, "returned": len(formatted), "offset": offset, "books": formatted}
+    return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+
+async def handle_get_user_book(arguments: dict[str, Any]) -> list[TextContent]:
+    book_id = arguments.get("book_id")
+    slug = arguments.get("slug")
+
+    if not book_id and not slug:
+        return [TextContent(type="text", text="Error: provide 'book_id' or 'slug'.")]
+
+    # Resolve slug to book_id if needed
+    if not book_id:
+        slug_result = await execute(GET_BOOK_ID_BY_SLUG_QUERY, {"slug": slug})
+        books = slug_result["data"]["books"]
+        if not books:
+            return [TextContent(type="text", text=f"No book found with slug '{slug}'.")]
+        book_id = books[0]["id"]
+
+    user = await get_current_user()
+    result = await execute(GET_USER_BOOK_QUERY, {
+        "user_id": user["id"], "book_id": int(book_id),
+    })
+    user_books = result["data"]["user_books"]
+    if not user_books:
+        return [TextContent(type="text", text="Book not in your library.")]
+
+    output = _format_user_book_detail(user_books[0])
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
@@ -172,6 +213,8 @@ query FindUserBook($user_id: Int!, $book_id: Int!) {
         order_by: {updated_at: desc}
     ) {
         id
+        status_id
+        rating
     }
 }
 """
@@ -217,7 +260,7 @@ def _resolve_status_id(status: str | int | None) -> int | None:
     return STATUS_NAME_TO_ID.get(str(status).lower())
 
 
-async def handle_set_user_book(arguments: dict) -> list[TextContent]:
+async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
     book_id = arguments.get("book_id")
     if not book_id:
         return [TextContent(type="text", text="Error: 'book_id' is required.")]
@@ -233,31 +276,32 @@ async def handle_set_user_book(arguments: dict) -> list[TextContent]:
 
     rating = arguments.get("rating")
 
-    # Build the update fields
-    obj: dict[str, Any] = {}
-    if status_id is not None:
-        obj["status_id"] = status_id
-    if rating is not None:
-        obj["rating"] = float(rating)
-
-    if not obj:
-        return [TextContent(type="text", text="Error: provide at least 'status' or 'rating'.")]
-
     # Check if user_book already exists
     existing = await execute(FIND_USER_BOOK_QUERY, {
-        "user_id": user_id,
-        "book_id": int(book_id),
+        "user_id": user_id, "book_id": int(book_id),
     })
     existing_books = existing["data"]["user_books"]
 
     if existing_books:
-        # Update
-        ub_id = existing_books[0]["id"]
+        # Merge: preserve existing fields the caller didn't specify
+        current = existing_books[0]
+        obj: dict[str, Any] = {}
+        obj["status_id"] = status_id if status_id is not None else current["status_id"]
+        if rating is not None:
+            obj["rating"] = float(rating)
+        elif current.get("rating") is not None:
+            obj["rating"] = current["rating"]
+
+        ub_id = current["id"]
         result = await execute(UPDATE_USER_BOOK_MUTATION, {"id": ub_id, "object": obj})
         mutation_result = result["data"]["update_user_book"]
     else:
-        # Insert
+        obj = {}
         obj["book_id"] = int(book_id)
+        if status_id is not None:
+            obj["status_id"] = status_id
+        if rating is not None:
+            obj["rating"] = float(rating)
         result = await execute(INSERT_USER_BOOK_MUTATION, {"object": obj})
         mutation_result = result["data"]["insert_user_book"]
 
@@ -335,7 +379,7 @@ query GetUserBookRead($id: Int!) {
 """
 
 
-def _merge_read_input(existing: dict, updates: dict[str, Any]) -> dict[str, Any]:
+def _merge_read_input(existing: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
     """Merge updates onto existing read fields so unchanged values aren't nulled out."""
     merged: dict[str, Any] = {}
     for field in ("started_at", "finished_at", "progress_pages"):
@@ -346,25 +390,8 @@ def _merge_read_input(existing: dict, updates: dict[str, Any]) -> dict[str, Any]
     return merged
 
 
-async def handle_add_user_book_read(arguments: dict) -> list[TextContent]:
-    book_id = arguments.get("book_id")
-    user_book_id = arguments.get("user_book_id")
-
-    if not book_id and not user_book_id:
-        return [TextContent(type="text", text="Error: provide 'book_id' or 'user_book_id'.")]
-
-    # Resolve user_book_id from book_id if needed
-    if not user_book_id:
-        user = await get_current_user()
-        existing = await execute(FIND_USER_BOOK_QUERY, {
-            "user_id": user["id"],
-            "book_id": int(book_id),
-        })
-        ubs = existing["data"]["user_books"]
-        if not ubs:
-            return [TextContent(type="text", text="Error: book not in your library. Use set_user_book first.")]
-        user_book_id = ubs[0]["id"]
-
+def _build_read_input(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Extract read fields from tool arguments."""
     read_input: dict[str, Any] = {}
     if arguments.get("started_at"):
         read_input["started_at"] = arguments["started_at"]
@@ -372,36 +399,55 @@ async def handle_add_user_book_read(arguments: dict) -> list[TextContent]:
         read_input["finished_at"] = arguments["finished_at"]
     if arguments.get("progress_pages") is not None:
         read_input["progress_pages"] = int(arguments["progress_pages"])
+    return read_input
 
+
+async def _resolve_user_book_id(arguments: dict[str, Any]) -> int | str:
+    """Resolve user_book_id from arguments. Returns int on success, str error message on failure."""
+    user_book_id = arguments.get("user_book_id")
+    if user_book_id:
+        return int(user_book_id)
+
+    book_id = arguments.get("book_id")
+    if not book_id:
+        return "Error: provide 'book_id' or 'user_book_id'."
+
+    user = await get_current_user()
+    existing = await execute(FIND_USER_BOOK_QUERY, {
+        "user_id": user["id"], "book_id": int(book_id),
+    })
+    ubs = existing["data"]["user_books"]
+    if not ubs:
+        return "Error: book not in your library. Use set_user_book first."
+    return ubs[0]["id"]
+
+
+async def handle_add_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
+    resolved = await _resolve_user_book_id(arguments)
+    if isinstance(resolved, str):
+        return [TextContent(type="text", text=resolved)]
+    user_book_id = resolved
+
+    read_input = _build_read_input(arguments)
     if not read_input:
         return [TextContent(type="text", text="Error: provide at least one of 'started_at', 'finished_at', 'progress_pages'.")]
 
     # Check for an active (unfinished) read entry — update it instead of creating a duplicate
-    active = await execute(FIND_ACTIVE_READ_QUERY, {"user_book_id": int(user_book_id)})
+    active = await execute(FIND_ACTIVE_READ_QUERY, {"user_book_id": user_book_id})
     active_reads = active["data"]["user_book_reads"]
 
     if active_reads:
-        # Update the existing active read, merging with current values
         existing_read = active_reads[0]
-        read_id = existing_read["id"]
         merged = _merge_read_input(existing_read, read_input)
         result = await execute(UPDATE_USER_BOOK_READ_MUTATION, {
-            "id": read_id,
-            "object": merged,
+            "id": existing_read["id"], "object": merged,
         })
         mutation_result = result["data"]["update_user_book_read"]
-
-        if mutation_result.get("error"):
-            return [TextContent(type="text", text=f"Error: {mutation_result['error']}")]
-
-        return [TextContent(type="text", text=json.dumps(mutation_result.get("user_book_read", {}), indent=2))]
-
-    # No active read — insert a new one
-    result = await execute(INSERT_USER_BOOK_READ_MUTATION, {
-        "userBookId": int(user_book_id),
-        "userBookRead": read_input,
-    })
-    mutation_result = result["data"]["insert_user_book_read"]
+    else:
+        result = await execute(INSERT_USER_BOOK_READ_MUTATION, {
+            "userBookId": user_book_id, "userBookRead": read_input,
+        })
+        mutation_result = result["data"]["insert_user_book_read"]
 
     if mutation_result.get("error"):
         return [TextContent(type="text", text=f"Error: {mutation_result['error']}")]
@@ -409,19 +455,12 @@ async def handle_add_user_book_read(arguments: dict) -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps(mutation_result.get("user_book_read", {}), indent=2))]
 
 
-async def handle_update_user_book_read(arguments: dict) -> list[TextContent]:
+async def handle_update_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
     read_id = arguments.get("id")
     if not read_id:
         return [TextContent(type="text", text="Error: 'id' (user_book_read id) is required.")]
 
-    read_input: dict[str, Any] = {}
-    if arguments.get("started_at"):
-        read_input["started_at"] = arguments["started_at"]
-    if arguments.get("finished_at"):
-        read_input["finished_at"] = arguments["finished_at"]
-    if arguments.get("progress_pages") is not None:
-        read_input["progress_pages"] = int(arguments["progress_pages"])
-
+    read_input = _build_read_input(arguments)
     if not read_input:
         return [TextContent(type="text", text="Error: provide at least one of 'started_at', 'finished_at', 'progress_pages'.")]
 
@@ -433,8 +472,7 @@ async def handle_update_user_book_read(arguments: dict) -> list[TextContent]:
     merged = _merge_read_input(current_reads[0], read_input)
 
     result = await execute(UPDATE_USER_BOOK_READ_MUTATION, {
-        "id": int(read_id),
-        "object": merged,
+        "id": int(read_id), "object": merged,
     })
     mutation_result = result["data"]["update_user_book_read"]
 
@@ -444,6 +482,8 @@ async def handle_update_user_book_read(arguments: dict) -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps(mutation_result.get("user_book_read", {}), indent=2))]
 
 
+# ── Write: delete ──
+
 DELETE_USER_BOOK_READ_MUTATION = """
 mutation DeleteUserBookRead($id: Int!) {
     delete_user_book_read(id: $id) {
@@ -451,18 +491,6 @@ mutation DeleteUserBookRead($id: Int!) {
     }
 }
 """
-
-
-async def handle_delete_user_book_read(arguments: dict) -> list[TextContent]:
-    read_id = arguments.get("id")
-    if not read_id:
-        return [TextContent(type="text", text="Error: 'id' (user_book_read id) is required.")]
-
-    await execute(DELETE_USER_BOOK_READ_MUTATION, {"id": int(read_id)})
-    return [TextContent(type="text", text=json.dumps({"deleted": True, "id": int(read_id)}))]
-
-
-# ── Write: delete_user_book ──
 
 DELETE_USER_BOOK_MUTATION = """
 mutation DeleteUserBook($id: Int!) {
@@ -473,24 +501,19 @@ mutation DeleteUserBook($id: Int!) {
 """
 
 
-async def handle_delete_user_book(arguments: dict) -> list[TextContent]:
-    book_id = arguments.get("book_id")
-    user_book_id = arguments.get("user_book_id")
+async def handle_delete_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
+    read_id = arguments.get("id")
+    if not read_id:
+        return [TextContent(type="text", text="Error: 'id' (user_book_read id) is required.")]
 
-    if not book_id and not user_book_id:
-        return [TextContent(type="text", text="Error: provide 'book_id' or 'user_book_id'.")]
+    await execute(DELETE_USER_BOOK_READ_MUTATION, {"id": int(read_id)})
+    return [TextContent(type="text", text=json.dumps({"deleted": True, "id": int(read_id)}))]
 
-    # Resolve user_book_id from book_id if needed
-    if not user_book_id:
-        user = await get_current_user()
-        existing = await execute(FIND_USER_BOOK_QUERY, {
-            "user_id": user["id"],
-            "book_id": int(book_id),
-        })
-        ubs = existing["data"]["user_books"]
-        if not ubs:
-            return [TextContent(type="text", text="Error: book not in your library.")]
-        user_book_id = ubs[0]["id"]
 
-    await execute(DELETE_USER_BOOK_MUTATION, {"id": int(user_book_id)})
-    return [TextContent(type="text", text=json.dumps({"deleted": True, "user_book_id": int(user_book_id)}))]
+async def handle_delete_user_book(arguments: dict[str, Any]) -> list[TextContent]:
+    resolved = await _resolve_user_book_id(arguments)
+    if isinstance(resolved, str):
+        return [TextContent(type="text", text=resolved)]
+
+    await execute(DELETE_USER_BOOK_MUTATION, {"id": resolved})
+    return [TextContent(type="text", text=json.dumps({"deleted": True, "user_book_id": resolved}))]

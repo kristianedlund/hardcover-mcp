@@ -85,7 +85,11 @@ async def execute(
             raise last_error
 
         response.raise_for_status()
-        data = response.json()
+
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise RuntimeError(f"Invalid JSON from API: {exc}") from exc
 
         if "errors" in data:
             messages = "; ".join(e.get("message", str(e)) for e in data["errors"])
