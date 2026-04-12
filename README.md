@@ -4,7 +4,7 @@ MCP server for the [Hardcover](https://hardcover.app) GraphQL API — personal l
 
 ## Requirements
 
-- Python 3.13+
+- Python 3.14+
 - A Hardcover API token from [hardcover.app/account/api](https://hardcover.app/account/api)
 
 ## Installation
