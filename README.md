@@ -98,6 +98,25 @@ Run tests:
 uv run pytest tests/ -v
 ```
 
+### Integration Tests
+
+Integration tests hit the live Hardcover API and require a valid token. They are **skipped
+automatically** in CI and when the token is absent.
+
+To run them locally, create a `.env` file with your token:
+
+```
+HARDCOVER_API_TOKEN=your_token_here
+```
+
+Then run:
+
+```bash
+uv run pytest tests/integration/ -v
+```
+
+Write tests follow a create → verify → delete lifecycle so the account is left unchanged.
+
 ## Contributing
 
 Contributions are welcome! Please:
