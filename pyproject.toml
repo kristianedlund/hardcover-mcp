@@ -8,11 +8,25 @@ authors = [
     { name = "Kristian Edlund", email = "edlund@kristianedlund.dk" }
 ]
 requires-python = ">=3.14"
+keywords = ["mcp", "hardcover", "graphql", "books", "reading"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries",
+]
 dependencies = [
     "mcp>=1.0.0",
     "httpx>=0.27",
     "python-dotenv>=1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/kristianedlund/hardcover-mcp"
+Repository = "https://github.com/kristianedlund/hardcover-mcp"
+Issues = "https://github.com/kristianedlund/hardcover-mcp/issues"
 
 [project.scripts]
 hardcover-mcp = "hardcover_mcp.server:main"
