@@ -6,6 +6,7 @@ from typing import Any
 from mcp.types import TextContent
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._validation import _require_int
 from hardcover_mcp.tools.user import get_current_user
 
 PRIVACY_MAP = {
@@ -137,14 +138,17 @@ async def handle_get_list(arguments: dict[str, Any]) -> list[TextContent]:
     book_limit = min(arguments.get("book_limit", 25), 100)
     book_offset = arguments.get("book_offset", 0)
 
-    result = await execute(
-        GET_LIST_BY_ID_QUERY,
-        {
-            "id": int(list_id),
-            "book_limit": book_limit,
-            "book_offset": book_offset,
-        },
-    )
+    try:
+        result = await execute(
+            GET_LIST_BY_ID_QUERY,
+            {
+                "id": _require_int(list_id, "id"),
+                "book_limit": book_limit,
+                "book_offset": book_offset,
+            },
+        )
+    except ValueError as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
 
     lists = result["data"]["lists"]
     if not lists:
@@ -294,7 +298,12 @@ async def handle_update_list(arguments: dict[str, Any]) -> list[TextContent]:
             )
         ]
 
-    result = await execute(UPDATE_LIST_MUTATION, {"id": int(list_id), "object": obj})
+    try:
+        result = await execute(
+            UPDATE_LIST_MUTATION, {"id": _require_int(list_id, "id"), "object": obj}
+        )
+    except ValueError as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
     mutation_result = result["data"]["update_list"]
 
     lst = mutation_result.get("list", {})
@@ -325,9 +334,14 @@ async def handle_delete_list(arguments: dict[str, Any]) -> list[TextContent]:
     if not list_id:
         return [TextContent(type="text", text="Error: 'id' is required.")]
 
-    await execute(DELETE_LIST_MUTATION, {"id": int(list_id)})
+    try:
+        list_id_int = _require_int(list_id, "id")
+    except ValueError as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
 
-    return [TextContent(type="text", text=json.dumps({"deleted": True, "id": int(list_id)}))]
+    await execute(DELETE_LIST_MUTATION, {"id": list_id_int})
+
+    return [TextContent(type="text", text=json.dumps({"deleted": True, "id": list_id_int}))]
 
 
 # ── Write: list books ──
@@ -385,12 +399,15 @@ async def handle_add_book_to_list(arguments: dict[str, Any]) -> list[TextContent
     if not list_id or not book_id:
         return [TextContent(type="text", text="Error: 'list_id' and 'book_id' are required.")]
 
-    obj: dict[str, Any] = {
-        "list_id": int(list_id),
-        "book_id": int(book_id),
-    }
-    if arguments.get("position") is not None:
-        obj["position"] = int(arguments["position"])
+    try:
+        obj: dict[str, Any] = {
+            "list_id": _require_int(list_id, "list_id"),
+            "book_id": _require_int(book_id, "book_id"),
+        }
+        if arguments.get("position") is not None:
+            obj["position"] = _require_int(arguments["position"], "position")
+    except ValueError as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
 
     result = await execute(INSERT_LIST_BOOK_MUTATION, {"object": obj})
     mutation_result = result["data"]["insert_list_book"]
@@ -426,18 +443,26 @@ async def handle_remove_book_from_list(arguments: dict[str, Any]) -> list[TextCo
                     text="Error: provide 'id' (list_book id) or both 'list_id' and 'book_id'.",
                 )
             ]
-        result = await execute(
-            FIND_LIST_BOOK_QUERY,
-            {
-                "list_id": int(list_id),
-                "book_id": int(book_id),
-            },
-        )
+        try:
+            result = await execute(
+                FIND_LIST_BOOK_QUERY,
+                {
+                    "list_id": _require_int(list_id, "list_id"),
+                    "book_id": _require_int(book_id, "book_id"),
+                },
+            )
+        except ValueError as e:
+            return [TextContent(type="text", text=f"Error: {e}")]
         lbs = result["data"]["list_books"]
         if not lbs:
             return [TextContent(type="text", text="Error: book not found in that list.")]
         list_book_id = lbs[0]["id"]
 
-    result = await execute(DELETE_LIST_BOOK_MUTATION, {"id": int(list_book_id)})
+    try:
+        list_book_id_int = _require_int(list_book_id, "id")
+    except ValueError as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
 
-    return [TextContent(type="text", text=json.dumps({"deleted": True, "id": int(list_book_id)}))]
+    result = await execute(DELETE_LIST_BOOK_MUTATION, {"id": list_book_id_int})
+
+    return [TextContent(type="text", text=json.dumps({"deleted": True, "id": list_book_id_int}))]

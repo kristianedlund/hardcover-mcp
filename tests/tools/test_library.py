@@ -1,7 +1,6 @@
 """Tests for tools/library.py — status resolution, formatting, input building."""
 
 from hardcover_mcp.tools.library import (
-    STATUS_MAP,
     _build_read_input,
     _format_user_book,
     _merge_read_input,
@@ -91,3 +90,9 @@ class TestBuildReadInput:
 
     def test_returns_empty_when_no_read_fields(self):
         assert _build_read_input({"book_id": 42}) == {}
+
+    def test_raises_on_non_numeric_progress_pages(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="'progress_pages' must be an integer"):
+            _build_read_input({"progress_pages": "abc"})

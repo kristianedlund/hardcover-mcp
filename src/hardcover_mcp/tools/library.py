@@ -6,6 +6,7 @@ from typing import Any
 from mcp.types import TextContent
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._validation import _require_float, _require_int
 from hardcover_mcp.tools.user import get_current_user
 
 STATUS_MAP: dict[int, str] = {
@@ -232,13 +233,16 @@ async def handle_get_user_book(arguments: dict[str, Any]) -> list[TextContent]:
         book_id = books[0]["id"]
 
     user = await get_current_user()
-    result = await execute(
-        GET_USER_BOOK_QUERY,
-        {
-            "user_id": user["id"],
-            "book_id": int(book_id),
-        },
-    )
+    try:
+        result = await execute(
+            GET_USER_BOOK_QUERY,
+            {
+                "user_id": user["id"],
+                "book_id": _require_int(book_id, "book_id"),
+            },
+        )
+    except ValueError as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
     user_books = result["data"]["user_books"]
     if not user_books:
         return [TextContent(type="text", text="Book not in your library.")]
@@ -335,12 +339,19 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
 
     rating = arguments.get("rating")
 
+    try:
+        book_id_int = _require_int(book_id, "book_id")
+        if rating is not None:
+            _require_float(rating, "rating")
+    except ValueError as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
+
     # Check if user_book already exists
     existing = await execute(
         FIND_USER_BOOK_QUERY,
         {
             "user_id": user_id,
-            "book_id": int(book_id),
+            "book_id": book_id_int,
         },
     )
     existing_books = existing["data"]["user_books"]
@@ -351,7 +362,7 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
         obj: dict[str, Any] = {}
         obj["status_id"] = status_id if status_id is not None else current["status_id"]
         if rating is not None:
-            obj["rating"] = float(rating)
+            obj["rating"] = _require_float(rating, "rating")
         elif current.get("rating") is not None:
             obj["rating"] = current["rating"]
 
@@ -360,11 +371,11 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
         mutation_result = result["data"]["update_user_book"]
     else:
         obj = {}
-        obj["book_id"] = int(book_id)
+        obj["book_id"] = book_id_int
         if status_id is not None:
             obj["status_id"] = status_id
         if rating is not None:
-            obj["rating"] = float(rating)
+            obj["rating"] = _require_float(rating, "rating")
         result = await execute(INSERT_USER_BOOK_MUTATION, {"object": obj})
         mutation_result = result["data"]["insert_user_book"]
 
@@ -461,7 +472,9 @@ def _build_read_input(arguments: dict[str, Any]) -> dict[str, Any]:
     if arguments.get("finished_at"):
         read_input["finished_at"] = arguments["finished_at"]
     if arguments.get("progress_pages") is not None:
-        read_input["progress_pages"] = int(arguments["progress_pages"])
+        read_input["progress_pages"] = _require_int(
+            arguments["progress_pages"], "progress_pages"
+        )
     return read_input
 
 
@@ -472,7 +485,7 @@ async def _resolve_user_book_id(arguments: dict[str, Any]) -> int | str:
     """
     user_book_id = arguments.get("user_book_id")
     if user_book_id:
-        return int(user_book_id)
+        return _require_int(user_book_id, "user_book_id")
 
     book_id = arguments.get("book_id")
     if not book_id:
@@ -483,7 +496,7 @@ async def _resolve_user_book_id(arguments: dict[str, Any]) -> int | str:
         FIND_USER_BOOK_QUERY,
         {
             "user_id": user["id"],
-            "book_id": int(book_id),
+            "book_id": _require_int(book_id, "book_id"),
         },
     )
     ubs = existing["data"]["user_books"]
@@ -514,7 +527,10 @@ async def handle_add_user_book_read(arguments: dict[str, Any]) -> list[TextConte
         return [TextContent(type="text", text=resolved)]
     user_book_id = resolved
 
-    read_input = _build_read_input(arguments)
+    try:
+        read_input = _build_read_input(arguments)
+    except ValueError as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
     if not read_input:
         return [
             TextContent(
@@ -577,7 +593,10 @@ async def handle_update_user_book_read(arguments: dict[str, Any]) -> list[TextCo
     if not read_id:
         return [TextContent(type="text", text="Error: 'id' (user_book_read id) is required.")]
 
-    read_input = _build_read_input(arguments)
+    try:
+        read_input = _build_read_input(arguments)
+    except ValueError as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
     if not read_input:
         return [
             TextContent(
@@ -587,7 +606,12 @@ async def handle_update_user_book_read(arguments: dict[str, Any]) -> list[TextCo
         ]
 
     # Fetch current values and merge so unchanged fields aren't nulled out
-    current = await execute(GET_USER_BOOK_READ_QUERY, {"id": int(read_id)})
+    try:
+        read_id_int = _require_int(read_id, "id")
+    except ValueError as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
+
+    current = await execute(GET_USER_BOOK_READ_QUERY, {"id": read_id_int})
     current_reads = current["data"]["user_book_reads"]
     if not current_reads:
         return [TextContent(type="text", text="Error: no read entry found with that ID.")]
@@ -596,7 +620,7 @@ async def handle_update_user_book_read(arguments: dict[str, Any]) -> list[TextCo
     result = await execute(
         UPDATE_USER_BOOK_READ_MUTATION,
         {
-            "id": int(read_id),
+            "id": read_id_int,
             "object": merged,
         },
     )
@@ -648,8 +672,13 @@ async def handle_delete_user_book_read(arguments: dict[str, Any]) -> list[TextCo
     if not read_id:
         return [TextContent(type="text", text="Error: 'id' (user_book_read id) is required.")]
 
-    await execute(DELETE_USER_BOOK_READ_MUTATION, {"id": int(read_id)})
-    return [TextContent(type="text", text=json.dumps({"deleted": True, "id": int(read_id)}))]
+    try:
+        read_id_int = _require_int(read_id, "id")
+    except ValueError as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
+
+    await execute(DELETE_USER_BOOK_READ_MUTATION, {"id": read_id_int})
+    return [TextContent(type="text", text=json.dumps({"deleted": True, "id": read_id_int}))]
 
 
 async def handle_delete_user_book(arguments: dict[str, Any]) -> list[TextContent]:

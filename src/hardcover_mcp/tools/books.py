@@ -6,6 +6,7 @@ from typing import Any
 from mcp.types import TextContent
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._validation import _require_int
 
 SEARCH_BOOKS_QUERY = """
 query SearchBooks($query: String!, $per_page: Int!, $page: Int!) {
@@ -116,10 +117,13 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
     if not book_id and not slug:
         return [TextContent(type="text", text="Error: provide either 'id' or 'slug'.")]
 
-    if book_id:
-        result = await execute(GET_BOOK_BY_ID_QUERY, {"id": int(book_id)})
-    else:
-        result = await execute(GET_BOOK_BY_SLUG_QUERY, {"slug": slug})
+    try:
+        if book_id:
+            result = await execute(GET_BOOK_BY_ID_QUERY, {"id": _require_int(book_id, "id")})
+        else:
+            result = await execute(GET_BOOK_BY_SLUG_QUERY, {"slug": slug})
+    except ValueError as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
 
     books = result["data"]["books"]
     if not books:
