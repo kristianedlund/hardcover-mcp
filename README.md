@@ -58,6 +58,7 @@ Add to `claude_desktop_config.json`:
 | `get_my_lists` | Get all of your Hardcover lists |
 | `get_list` | Get a specific list with its books |
 | `get_series` | Get a book series by id, slug, or name with books in reading order |
+| `get_author` | Get an author's details and books by Hardcover ID, slug, or name |
 
 ### Write
 
@@ -76,7 +77,7 @@ Add to `claude_desktop_config.json`:
 
 ## Scope
 
-This server focuses on library tracking and list management. Features like social (followers, feed), recommendations, and edition management are not currently supported.
+This server focuses on library tracking, list management, and book/author discovery. Features like social (followers, feed), recommendations, and edition management are not currently supported.
 
 ## Development
 

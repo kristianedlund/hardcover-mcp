@@ -99,6 +99,64 @@ class TestGetUserLibrary:
         assert data["returned"] <= 2
 
 
+class TestGetSeries:
+    async def test_get_series_by_slug(self):
+        from hardcover_mcp.tools.series import handle_get_series
+
+        result = await handle_get_series({"slug": "the-stormlight-archive"})
+
+        data = json.loads(result[0].text)
+        assert data["name"] == "The Stormlight Archive"
+        assert isinstance(data["books"], list)
+        assert len(data["books"]) > 0
+
+    async def test_get_series_by_name(self):
+        from hardcover_mcp.tools.series import handle_get_series
+
+        result = await handle_get_series({"name": "Mistborn"})
+
+        data = json.loads(result[0].text)
+        assert "name" in data
+        assert isinstance(data["books"], list)
+
+
+class TestGetAuthor:
+    async def test_get_author_by_slug(self):
+        from hardcover_mcp.tools.authors import handle_get_author
+
+        result = await handle_get_author({"slug": "brandon-sanderson"})
+
+        data = json.loads(result[0].text)
+        assert data["name"] == "Brandon Sanderson"
+        assert data["slug"] == "brandon-sanderson"
+        assert isinstance(data["books"], list)
+        assert len(data["books"]) > 0
+
+    async def test_get_author_by_name(self):
+        from hardcover_mcp.tools.authors import handle_get_author
+
+        result = await handle_get_author({"name": "Andy Weir"})
+
+        data = json.loads(result[0].text)
+        assert data["name"] == "Andy Weir"
+        assert isinstance(data["books"], list)
+
+    async def test_get_author_respects_books_limit(self):
+        from hardcover_mcp.tools.authors import handle_get_author
+
+        result = await handle_get_author({"slug": "brandon-sanderson", "books_limit": 3})
+
+        data = json.loads(result[0].text)
+        assert len(data["books"]) <= 3
+
+    async def test_unknown_author_returns_not_found(self):
+        from hardcover_mcp.tools.authors import handle_get_author
+
+        result = await handle_get_author({"slug": "zzz-does-not-exist-zzz"})
+
+        assert "No author found" in result[0].text
+
+
 class TestGetMyLists:
     async def test_returns_lists(self):
         from hardcover_mcp.tools.lists import handle_get_my_lists

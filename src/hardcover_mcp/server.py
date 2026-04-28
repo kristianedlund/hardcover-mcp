@@ -9,6 +9,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
+from hardcover_mcp.tools.authors import handle_get_author
 from hardcover_mcp.tools.books import handle_get_book, handle_search_books
 from hardcover_mcp.tools.library import (
     handle_add_user_book_read,
@@ -206,6 +207,34 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
             },
         ),
         handle_get_series,
+    ),
+    (
+        Tool(
+            name="get_author",
+            description="Get an author's details and books by Hardcover ID, slug, or name.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Hardcover author ID.",
+                    },
+                    "slug": {
+                        "type": "string",
+                        "description": "Author slug (e.g. 'brandon-sanderson').",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Author name (e.g. 'Brandon Sanderson').",
+                    },
+                    "books_limit": {
+                        "type": "integer",
+                        "description": "Max books to return (default 20, max 100).",
+                    },
+                },
+            },
+        ),
+        handle_get_author,
     ),
     # ── Write: library ──
     (

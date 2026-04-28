@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_author` tool — look up an author by id, slug, or name; returns bio, book counts, and books sorted by popularity.
 - `get_series` tool — browse a book series by name, look up which series an author
   has written, or find the series a specific book belongs to.
 - Integration test suite covering all read tools and account-safe write tools.
