@@ -50,7 +50,25 @@ async def execute(
 ) -> dict[str, Any]:
     """Execute a GraphQL query against the Hardcover API.
 
-    Returns the full JSON response body. Raises on HTTP or GraphQL errors.
+    Parameters
+    ----------
+    query : str
+        GraphQL query or mutation string.
+    variables : dict[str, Any] | None
+        GraphQL variables to include in the request payload.
+
+    Returns
+    -------
+    dict[str, Any]
+        Full JSON response body from the API.
+
+    Raises
+    ------
+    RuntimeError
+        If ``HARDCOVER_API_TOKEN`` is missing, the response is not valid JSON,
+        or the response contains GraphQL errors.
+    httpx.HTTPStatusError
+        If the API returns a non-success HTTP status after retries.
     """
     await _wait_for_rate_limit()
 

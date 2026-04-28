@@ -435,11 +435,13 @@ _DISPATCH: dict[str, Handler] = {tool.name: handler for tool, handler in TOOL_RE
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
+    """Return all registered MCP tool schemas."""
     return [tool for tool, _ in TOOL_REGISTRY]
 
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+    """Dispatch an MCP tool call to the matching handler."""
     handler = _DISPATCH.get(name)
     if not handler:
         return [TextContent(type="text", text=f"Unknown tool: {name}")]
@@ -455,6 +457,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
 
 async def _run() -> None:
+    """Start the MCP server over stdio."""
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
 

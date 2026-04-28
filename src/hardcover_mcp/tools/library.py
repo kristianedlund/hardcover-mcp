@@ -67,6 +67,7 @@ _USER_BOOK_DETAIL_FIELDS = """
 
 
 def _build_library_query(with_status: bool) -> str:
+    """Build a GetUserLibrary GraphQL query, optionally filtering by status."""
     status_filter = ", status_id: {_eq: $status_id}" if with_status else ""
     status_var = ", $status_id: Int!" if with_status else ""
     return f"""
@@ -116,6 +117,7 @@ query GetBookIdBySlug($slug: String!) {
 
 
 def _format_user_book(ub: dict[str, Any]) -> dict[str, Any]:
+    """Format a user_book record into a flat summary dict."""
     book = ub.get("book", {})
     authors = [c["author"]["name"] for c in book.get("contributions", [])]
     return {
@@ -131,6 +133,7 @@ def _format_user_book(ub: dict[str, Any]) -> dict[str, Any]:
 
 
 def _format_user_book_detail(ub: dict[str, Any]) -> dict[str, Any]:
+    """Format a user_book record into a detailed dict including reads."""
     book = ub.get("book", {})
     authors = [c["author"]["name"] for c in book.get("contributions", [])]
     return {
@@ -148,6 +151,19 @@ def _format_user_book_detail(ub: dict[str, Any]) -> dict[str, Any]:
 
 
 async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent]:
+    """Fetch books from the authenticated user's library.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Optional: ``status`` (str), ``limit`` (int, default 25, max 100),
+        ``offset`` (int, default 0).
+
+    Returns
+    -------
+    list[TextContent]
+        JSON with ``total`` count, ``returned``, ``offset``, and ``books`` list.
+    """
     user = await get_current_user()
     user_id = user["id"]
 
@@ -189,6 +205,18 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
 
 
 async def handle_get_user_book(arguments: dict[str, Any]) -> list[TextContent]:
+    """Fetch the user's library entry for a single book.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Provide ``book_id`` (int) or ``slug`` (str) to identify the book.
+
+    Returns
+    -------
+    list[TextContent]
+        JSON with status, rating, and reading history for the book.
+    """
     book_id = arguments.get("book_id")
     slug = arguments.get("slug")
 
@@ -267,6 +295,7 @@ mutation UpdateUserBook($id: Int!, $object: UserBookUpdateInput!) {
 
 
 def _resolve_status_id(status: str | int | None) -> int | None:
+    """Convert a status name or numeric string to its integer ID."""
     if status is None:
         return None
     if isinstance(status, int):
@@ -277,6 +306,20 @@ def _resolve_status_id(status: str | int | None) -> int | None:
 
 
 async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
+    """Set or update a book's status and rating in the user's library.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Required: ``book_id`` (int).
+        Optional: ``status`` (str or int), ``rating`` (float).
+        Unspecified fields are preserved on existing entries.
+
+    Returns
+    -------
+    list[TextContent]
+        JSON with the resulting ``user_book_id``, ``status``, and ``rating``.
+    """
     book_id = arguments.get("book_id")
     if not book_id:
         return [TextContent(type="text", text="Error: 'book_id' is required.")]
@@ -450,6 +493,22 @@ async def _resolve_user_book_id(arguments: dict[str, Any]) -> int | str:
 
 
 async def handle_add_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
+    """Add or update a reading date entry for a book.
+
+    If an active (unfinished) read exists, it is updated rather than
+    creating a duplicate.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Provide ``book_id`` or ``user_book_id`` to identify the library entry.
+        Optional: ``started_at``, ``finished_at`` (ISO 8601), ``progress_pages``.
+
+    Returns
+    -------
+    list[TextContent]
+        JSON with the created or updated read entry.
+    """
     resolved = await _resolve_user_book_id(arguments)
     if isinstance(resolved, str):
         return [TextContent(type="text", text=resolved)]
@@ -500,6 +559,20 @@ async def handle_add_user_book_read(arguments: dict[str, Any]) -> list[TextConte
 
 
 async def handle_update_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
+    """Update an existing reading date entry.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Required: ``id`` (int, user_book_read ID).
+        Optional: ``started_at``, ``finished_at`` (ISO 8601), ``progress_pages``.
+        Unspecified fields are preserved.
+
+    Returns
+    -------
+    list[TextContent]
+        JSON with the updated read entry.
+    """
     read_id = arguments.get("id")
     if not read_id:
         return [TextContent(type="text", text="Error: 'id' (user_book_read id) is required.")]
@@ -559,6 +632,18 @@ mutation DeleteUserBook($id: Int!) {
 
 
 async def handle_delete_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
+    """Delete a reading date entry by ID.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Required: ``id`` (int, user_book_read ID).
+
+    Returns
+    -------
+    list[TextContent]
+        JSON confirmation with ``deleted: true`` and the entry ID.
+    """
     read_id = arguments.get("id")
     if not read_id:
         return [TextContent(type="text", text="Error: 'id' (user_book_read id) is required.")]
@@ -568,6 +653,18 @@ async def handle_delete_user_book_read(arguments: dict[str, Any]) -> list[TextCo
 
 
 async def handle_delete_user_book(arguments: dict[str, Any]) -> list[TextContent]:
+    """Remove a book from the user's library entirely.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Provide ``book_id`` or ``user_book_id`` to identify the library entry.
+
+    Returns
+    -------
+    list[TextContent]
+        JSON confirmation with ``deleted: true`` and the ``user_book_id``.
+    """
     resolved = await _resolve_user_book_id(arguments)
     if isinstance(resolved, str):
         return [TextContent(type="text", text=resolved)]

@@ -62,6 +62,7 @@ query GetListById($id: Int!, $book_limit: Int!, $book_offset: Int!) {
 
 
 def _format_list_summary(lst: dict[str, Any]) -> dict[str, Any]:
+    """Format a raw list record into a flat summary dict."""
     return {
         "id": lst["id"],
         "name": lst["name"],
@@ -74,6 +75,7 @@ def _format_list_summary(lst: dict[str, Any]) -> dict[str, Any]:
 
 
 def _format_list_book(lb: dict[str, Any]) -> dict[str, Any]:
+    """Format a list_book entry into a flat dict with position and book info."""
     book = lb.get("book", {})
     authors = [c["author"]["name"] for c in book.get("contributions", [])]
     return {
@@ -86,6 +88,18 @@ def _format_list_book(lb: dict[str, Any]) -> dict[str, Any]:
 
 
 async def handle_get_my_lists(arguments: dict[str, Any]) -> list[TextContent]:
+    """Fetch the authenticated user's Hardcover lists.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Optional: ``limit`` (int, default 50, max 200), ``offset`` (int, default 0).
+
+    Returns
+    -------
+    list[TextContent]
+        JSON array of list summaries.
+    """
     user = await get_current_user()
     user_id = user["id"]
 
@@ -102,6 +116,20 @@ async def handle_get_my_lists(arguments: dict[str, Any]) -> list[TextContent]:
 
 
 async def handle_get_list(arguments: dict[str, Any]) -> list[TextContent]:
+    """Fetch a single Hardcover list with its books.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Required: ``id`` (int).
+        Optional: ``book_limit`` (int, default 25, max 100),
+        ``book_offset`` (int, default 0).
+
+    Returns
+    -------
+    list[TextContent]
+        JSON with list summary and nested ``books`` array.
+    """
     list_id = arguments.get("id")
     if not list_id:
         return [TextContent(type="text", text="Error: 'id' is required.")]
@@ -173,6 +201,13 @@ mutation DeleteList($id: Int!) {
 
 
 def _build_list_input(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Build a ListInput object from tool arguments.
+
+    Raises
+    ------
+    ValueError
+        If an unrecognised privacy value is provided.
+    """
     obj: dict[str, Any] = {}
     if arguments.get("name"):
         obj["name"] = arguments["name"]
@@ -193,6 +228,19 @@ def _build_list_input(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 async def handle_create_list(arguments: dict[str, Any]) -> list[TextContent]:
+    """Create a new Hardcover list.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Required: ``name`` (str).
+        Optional: ``description`` (str), ``privacy`` (str, default public).
+
+    Returns
+    -------
+    list[TextContent]
+        JSON with the created list's id, name, slug, and privacy.
+    """
     name = arguments.get("name")
     if not name:
         return [TextContent(type="text", text="Error: 'name' is required.")]
@@ -217,6 +265,19 @@ async def handle_create_list(arguments: dict[str, Any]) -> list[TextContent]:
 
 
 async def handle_update_list(arguments: dict[str, Any]) -> list[TextContent]:
+    """Update an existing Hardcover list's name, description, or privacy.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Required: ``id`` (int).
+        Optional: ``name``, ``description``, ``privacy``.
+
+    Returns
+    -------
+    list[TextContent]
+        JSON with the updated list details.
+    """
     list_id = arguments.get("id")
     if not list_id:
         return [TextContent(type="text", text="Error: 'id' is required.")]
@@ -248,6 +309,18 @@ async def handle_update_list(arguments: dict[str, Any]) -> list[TextContent]:
 
 
 async def handle_delete_list(arguments: dict[str, Any]) -> list[TextContent]:
+    """Delete a Hardcover list by ID.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Required: ``id`` (int).
+
+    Returns
+    -------
+    list[TextContent]
+        JSON confirmation with ``deleted: true`` and the list ID.
+    """
     list_id = arguments.get("id")
     if not list_id:
         return [TextContent(type="text", text="Error: 'id' is required.")]
@@ -294,6 +367,19 @@ query FindListBook($list_id: Int!, $book_id: Int!) {
 
 
 async def handle_add_book_to_list(arguments: dict[str, Any]) -> list[TextContent]:
+    """Add a book to a Hardcover list.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Required: ``list_id`` (int), ``book_id`` (int).
+        Optional: ``position`` (int).
+
+    Returns
+    -------
+    list[TextContent]
+        JSON with the created list_book entry.
+    """
     list_id = arguments.get("list_id")
     book_id = arguments.get("book_id")
     if not list_id or not book_id:
@@ -314,6 +400,19 @@ async def handle_add_book_to_list(arguments: dict[str, Any]) -> list[TextContent
 
 
 async def handle_remove_book_from_list(arguments: dict[str, Any]) -> list[TextContent]:
+    """Remove a book from a list.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Provide ``id`` (list_book ID) directly, or both ``list_id`` and
+        ``book_id`` for an automatic lookup.
+
+    Returns
+    -------
+    list[TextContent]
+        JSON confirmation with ``deleted: true`` and the list_book ID.
+    """
     list_book_id = arguments.get("id")
     list_id = arguments.get("list_id")
     book_id = arguments.get("book_id")

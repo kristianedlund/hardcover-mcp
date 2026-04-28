@@ -59,6 +59,19 @@ def _format_search_hit(hit: dict[str, Any]) -> dict[str, Any]:
 
 
 async def handle_search_books(arguments: dict[str, Any]) -> list[TextContent]:
+    """Search Hardcover for books matching a query string.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Tool arguments. Required: ``query`` (str).
+        Optional: ``per_page`` (int, default 10, max 25), ``page`` (int, default 1).
+
+    Returns
+    -------
+    list[TextContent]
+        JSON with ``found`` count, ``page`` number, and ``books`` list.
+    """
     query = arguments.get("query", "").strip()
     if not query:
         return [TextContent(type="text", text="Error: 'query' is required.")]
@@ -85,6 +98,18 @@ async def handle_search_books(arguments: dict[str, Any]) -> list[TextContent]:
 
 
 async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
+    """Fetch detailed info for a single book by Hardcover ID or slug.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Tool arguments. Provide ``id`` (int) or ``slug`` (str).
+
+    Returns
+    -------
+    list[TextContent]
+        JSON with book details including title, authors, pages, and rating.
+    """
     book_id = arguments.get("id")
     slug = arguments.get("slug")
 

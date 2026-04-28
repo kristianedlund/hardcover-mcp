@@ -28,7 +28,19 @@ query {
 
 
 async def get_current_user() -> dict[str, Any]:
-    """Return the authenticated user, using cache if available."""
+    """Return the authenticated user, using a 1-hour cache.
+
+    Returns
+    -------
+    dict[str, Any]
+        User dict with keys: ``id``, ``username``, ``name``, ``books_count``,
+        ``followers_count``.
+
+    Raises
+    ------
+    RuntimeError
+        If the API returns no user (invalid or expired token).
+    """
     global _cached_user, _cached_at
     if _cached_user is None or (time.monotonic() - _cached_at) > _CACHE_TTL:
         result = await execute(ME_QUERY)
