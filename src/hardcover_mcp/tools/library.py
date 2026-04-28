@@ -472,9 +472,7 @@ def _build_read_input(arguments: dict[str, Any]) -> dict[str, Any]:
     if arguments.get("finished_at"):
         read_input["finished_at"] = arguments["finished_at"]
     if arguments.get("progress_pages") is not None:
-        read_input["progress_pages"] = _require_int(
-            arguments["progress_pages"], "progress_pages"
-        )
+        read_input["progress_pages"] = _require_int(arguments["progress_pages"], "progress_pages")
     return read_input
 
 

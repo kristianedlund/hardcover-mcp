@@ -48,9 +48,7 @@ class TestHandleSearchBooks:
 
     @patch("hardcover_mcp.tools.books.execute", new_callable=AsyncMock)
     async def test_caps_per_page_at_25(self, mock_execute):
-        mock_execute.return_value = {
-            "data": {"search": {"results": {"hits": [], "found": 0}}}
-        }
+        mock_execute.return_value = {"data": {"search": {"results": {"hits": [], "found": 0}}}}
 
         await handle_search_books({"query": "test", "per_page": 100})
 
