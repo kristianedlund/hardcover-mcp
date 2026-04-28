@@ -2,7 +2,7 @@
 
 from unittest.mock import AsyncMock, patch
 
-from hardcover_mcp.tools.books import _format_search_hit, handle_search_books
+from hardcover_mcp.tools.books import _format_search_hit, handle_get_book, handle_search_books
 
 
 class TestFormatSearchHit:
@@ -48,11 +48,16 @@ class TestHandleSearchBooks:
 
     @patch("hardcover_mcp.tools.books.execute", new_callable=AsyncMock)
     async def test_caps_per_page_at_25(self, mock_execute):
-        mock_execute.return_value = {
-            "data": {"search": {"results": {"hits": [], "found": 0}}}
-        }
+        mock_execute.return_value = {"data": {"search": {"results": {"hits": [], "found": 0}}}}
 
         await handle_search_books({"query": "test", "per_page": 100})
 
         call_vars = mock_execute.call_args[0][1]
         assert call_vars["per_page"] == 25
+
+
+class TestHandleGetBook:
+    async def test_returns_error_on_non_numeric_id(self):
+        result = await handle_get_book({"id": "not-a-number"})
+
+        assert "must be an integer" in result[0].text

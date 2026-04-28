@@ -3,7 +3,6 @@
 import pytest
 
 from hardcover_mcp.tools.lists import (
-    PRIVACY_MAP,
     _build_list_input,
     _format_list_book,
     _format_list_summary,
