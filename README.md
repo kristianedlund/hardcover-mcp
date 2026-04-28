@@ -106,6 +106,21 @@ Run tests:
 uv run pytest tests/ -v
 ```
 
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Open an issue first to discuss the change.
+2. Fork the repo and create a branch (`feature/short-description` or `fix/short-description`).
+3. Run lint and tests before submitting:
+   ```bash
+   uv run ruff check src/
+   uv run ruff format --check src/
+   uv run pytest tests/ -v
+   ```
+4. Keep PRs focused — one change per PR.
+5. Use conventional commit prefixes: `feat:`, `fix:`, `chore:`, `docs:`.
+
 ## Rate Limiting
 
 The Hardcover API allows 60 requests per minute with a max query depth of 3. The client includes a sliding-window rate limiter and automatic retry with exponential backoff on 429 responses.
