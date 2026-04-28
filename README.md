@@ -57,6 +57,7 @@ Add to `claude_desktop_config.json`:
 | `get_user_book` | Get your library entry for a specific book (status, rating, reading dates) |
 | `get_my_lists` | Get all of your Hardcover lists |
 | `get_list` | Get a specific list with its books |
+| `get_series` | Get a book series by id, slug, or name with books in reading order |
 
 ### Write
 

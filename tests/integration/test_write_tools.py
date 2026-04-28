@@ -51,7 +51,6 @@ class TestListLifecycle:
             handle_add_book_to_list,
             handle_create_list,
             handle_delete_list,
-            handle_get_list,
             handle_remove_book_from_list,
             handle_update_list,
         )
@@ -60,11 +59,13 @@ class TestListLifecycle:
         list_name = f"_test_integration_{unique}"
 
         # 1. Create
-        result = await handle_create_list({
-            "name": list_name,
-            "description": "Temporary test list",
-            "privacy": "private",
-        })
+        result = await handle_create_list(
+            {
+                "name": list_name,
+                "description": "Temporary test list",
+                "privacy": "private",
+            }
+        )
         created = json.loads(result[0].text)
         list_id = created["id"]
         assert created["name"] == list_name
@@ -73,28 +74,34 @@ class TestListLifecycle:
         try:
             # 2. Update
             updated_name = f"_test_integration_{unique}_updated"
-            result = await handle_update_list({
-                "id": list_id,
-                "name": updated_name,
-            })
+            result = await handle_update_list(
+                {
+                    "id": list_id,
+                    "name": updated_name,
+                }
+            )
             updated = json.loads(result[0].text)
             assert updated["name"] == updated_name
 
             # 3. Add book
             book_id = await _find_book_not_in_library()
-            result = await handle_add_book_to_list({
-                "list_id": list_id,
-                "book_id": book_id,
-            })
+            result = await handle_add_book_to_list(
+                {
+                    "list_id": list_id,
+                    "book_id": book_id,
+                }
+            )
             list_book = json.loads(result[0].text)
             list_book_id = list_book["id"]
             assert list_book["book_id"] == book_id
             assert list_book["list_id"] == list_id
 
             # 4. Remove book
-            result = await handle_remove_book_from_list({
-                "id": list_book_id,
-            })
+            result = await handle_remove_book_from_list(
+                {
+                    "id": list_book_id,
+                }
+            )
             removed = json.loads(result[0].text)
             assert removed["deleted"] is True
 
@@ -118,20 +125,24 @@ class TestUserBookLifecycle:
         book_id = await _find_book_not_in_library()
 
         # 1. Add to library
-        result = await handle_set_user_book({
-            "book_id": book_id,
-            "status": "Want to Read",
-        })
+        result = await handle_set_user_book(
+            {
+                "book_id": book_id,
+                "status": "Want to Read",
+            }
+        )
         created = json.loads(result[0].text)
         user_book_id = created["user_book_id"]
         assert created["status"] == "Want to Read"
 
         try:
             # 2. Update rating
-            result = await handle_set_user_book({
-                "book_id": book_id,
-                "rating": 4.0,
-            })
+            result = await handle_set_user_book(
+                {
+                    "book_id": book_id,
+                    "rating": 4.0,
+                }
+            )
             updated = json.loads(result[0].text)
             assert updated["rating"] == 4.0
 

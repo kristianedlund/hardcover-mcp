@@ -28,6 +28,7 @@ from hardcover_mcp.tools.lists import (
     handle_remove_book_from_list,
     handle_update_list,
 )
+from hardcover_mcp.tools.series import handle_get_series
 from hardcover_mcp.tools.user import handle_me
 
 server = Server("hardcover")
@@ -181,6 +182,30 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
             },
         ),
         handle_get_list,
+    ),
+    (
+        Tool(
+            name="get_series",
+            description="Get a book series by id, slug, or name with books in reading order.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Hardcover series ID.",
+                    },
+                    "slug": {
+                        "type": "string",
+                        "description": "Series slug (e.g. 'the-stormlight-archive').",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Exact series name (e.g. 'The Stormlight Archive').",
+                    },
+                },
+            },
+        ),
+        handle_get_series,
     ),
     # ── Write: library ──
     (
