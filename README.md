@@ -91,6 +91,21 @@ uv run python -m hardcover_mcp.server
 
 This server focuses on library tracking and list management. Features like social (followers, feed), recommendations, and edition management are not currently supported.
 
+## Development
+
+Lint and format checks (using [Ruff](https://docs.astral.sh/ruff/)):
+
+```bash
+uv run ruff check src/
+uv run ruff format --check src/
+```
+
+Run tests:
+
+```bash
+uv run pytest tests/ -v
+```
+
 ## Rate Limiting
 
 The Hardcover API allows 60 requests per minute with a max query depth of 3. The client includes a sliding-window rate limiter and automatic retry with exponential backoff on 429 responses.
