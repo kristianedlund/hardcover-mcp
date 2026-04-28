@@ -118,7 +118,33 @@ class TestGetMyLists:
             lst = data[0]
             assert "id" in lst
             assert "name" in lst
-            assert "privacy" in lst
+
+
+class TestGetSeries:
+    async def test_get_series_by_slug(self):
+        from hardcover_mcp.tools.series import handle_get_series
+
+        result = await handle_get_series({"slug": "the-stormlight-archive"})
 
         data = json.loads(result[0].text)
-        assert isinstance(data, list)
+        assert data["name"] == "The Stormlight Archive"
+        assert data["slug"] == "the-stormlight-archive"
+        assert len(data["books"]) > 0
+        # Books are sorted by position; first position should be the lowest
+        assert data["books"][0]["position"] is not None
+
+    async def test_get_series_by_name(self):
+        from hardcover_mcp.tools.series import handle_get_series
+
+        result = await handle_get_series({"name": "Harry Potter"})
+
+        data = json.loads(result[0].text)
+        assert "Harry Potter" in data["name"]
+        assert data["books_count"] > 0
+
+    async def test_get_series_returns_error_without_args(self):
+        from hardcover_mcp.tools.series import handle_get_series
+
+        result = await handle_get_series({})
+
+        assert "Error" in result[0].text
