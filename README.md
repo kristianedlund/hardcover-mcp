@@ -59,6 +59,7 @@ Add to `claude_desktop_config.json`:
 | `get_list` | Get a specific list with its books |
 | `get_series` | Get a book series by id, slug, or name with books in reading order |
 | `get_author` | Get an author's details and books by Hardcover ID, slug, or name |
+| `get_edition` | Get edition details (publisher, ISBN, ASIN, format) by Hardcover ID, ISBN-13, or ASIN |
 
 ### Write
 
