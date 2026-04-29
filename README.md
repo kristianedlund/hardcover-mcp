@@ -1,10 +1,50 @@
 # hardcover-mcp
 
-MCP server for the [Hardcover](https://hardcover.app) GraphQL API — personal library tracking and list management.
+[![PyPI](https://img.shields.io/pypi/v/hardcover-mcp)](https://pypi.org/project/hardcover-mcp/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.14+](https://img.shields.io/badge/python-3.14%2B-blue)](https://www.python.org/)
+
+**Talk to your [Hardcover](https://hardcover.app) library from any AI assistant.**
+
+hardcover-mcp connects your [Hardcover](https://hardcover.app) library to AI assistants like Claude and Copilot. Search for books, update your reading status, manage lists, explore series — all through natural conversation instead of clicking through menus.
+
+### What you can say
+
+> *"What's on my currently reading list?"*
+>
+> *"Add Project Hail Mary to my library as currently reading"*
+>
+> *"Search for books by Brandon Sanderson"*
+>
+> *"Look up ISBN 9780547928227"*
+>
+> *"Create a list called 'Summer Reading' and add The Hobbit to it"*
+>
+> *"Show me the Stormlight Archive series in reading order"*
+>
+> *"Move Project Hail Mary and The Martian to currently reading"*
+>
+> *"What books has Andy Weir written? Add any I haven't read to my want-to-read list"*
+>
+> *"Compare my rating of Dune with the Hardcover average"*
+
+## What's covered
+
+- **Library tracking** — status, ratings, reading dates
+- **List management** — create, edit, add/remove books
+- **Discovery** — search books, authors, series, editions, and more
+- **Account info** — your profile and reading stats
+
+## Safety & control
+
+- **You control your API key** — it stays on your machine, never shared with third parties
+- **Runs locally** through your MCP client — no external server involved
+- **Actions only happen when explicitly requested** — nothing runs in the background
+- **You review prompts and outputs** in your client before anything is sent
 
 ## Quick Start
 
-1. Install [uv](https://docs.astral.sh/uv/) if you don't have it.
+1. Install [uv](https://docs.astral.sh/uv/) (a fast Python package runner — the setup takes seconds).
 2. Get an API token from [hardcover.app/account/api](https://hardcover.app/account/api).
 3. Add the config below to your MCP client — no manual install needed, `uvx` handles it.
 
@@ -46,39 +86,35 @@ Add to `claude_desktop_config.json`:
 
 ## Tools
 
-### Read
+### Browse & discover
 
-| Tool | Description |
-|------|-------------|
-| `me` | Get authenticated user info (id, username, name, books count) |
-| `search_books` | Search for books, authors, series, and other entities by query (use `query_type` to switch entity type; defaults to books) |
-| `get_book` | Get book details by Hardcover ID or slug |
-| `get_user_library` | Get books from your library, optionally filtered by status |
-| `get_user_book` | Get your library entry for a specific book (status, rating, reading dates) |
-| `get_my_lists` | Get all of your Hardcover lists |
-| `get_list` | Get a specific list with its books |
-| `get_series` | Get a book series by id, slug, or name with books in reading order |
-| `get_author` | Get an author's details and books by Hardcover ID, slug, or name |
-| `get_edition` | Get edition details (publisher, ISBN, ASIN, format) by Hardcover ID, ISBN-13, or ASIN |
+| What you can do | Tool |
+|-----------------|------|
+| Search for books, authors, series, and more | `search_books` |
+| Look up a book by title or ID | `get_book` |
+| Look up a specific edition by ISBN or ASIN | `get_edition` |
+| Explore a series in reading order | `get_series` |
+| Browse an author's catalogue | `get_author` |
 
-### Write
+### Your library
 
-| Tool | Description |
-|------|-------------|
-| `set_user_book` | Add a book to your library or update its status/rating (merge-safe) |
-| `add_user_book_read` | Add or update a reading date entry (updates active reads instead of duplicating) |
-| `update_user_book_read` | Update an existing reading date entry (merge-safe) |
-| `delete_user_book_read` | Delete a reading date entry |
-| `delete_user_book` | Remove a book from your library |
-| `create_list` | Create a new list |
-| `update_list` | Update a list's name, description, or privacy |
-| `delete_list` | Delete a list |
-| `add_book_to_list` | Add a book to a list |
-| `remove_book_from_list` | Remove a book from a list |
+| What you can do | Tool |
+|-----------------|------|
+| See your profile and book count | `me` |
+| Browse your library, filter by reading status | `get_user_library` |
+| Check your status/rating for a specific book | `get_user_book` |
+| Add a book or update its status and rating | `set_user_book` |
+| Log reading dates and progress | `add_user_book_read` / `update_user_book_read` |
+| Remove a book or reading entry | `delete_user_book` / `delete_user_book_read` |
 
-## Scope
+### Lists
 
-This server focuses on library tracking, list management, and book/author discovery. Features like social (followers, feed), recommendations, and edition management are not currently supported.
+| What you can do | Tool |
+|-----------------|------|
+| View all your lists | `get_my_lists` |
+| View a specific list with its books | `get_list` |
+| Create, rename, or delete a list | `create_list` / `update_list` / `delete_list` |
+| Add or remove books from a list | `add_book_to_list` / `remove_book_from_list` |
 
 ## Development
 
@@ -137,13 +173,17 @@ Contributions are welcome! Please:
 
 ## Rate Limiting
 
-The Hardcover API allows 60 requests per minute with a max query depth of 3. The client includes a sliding-window rate limiter and automatic retry with exponential backoff on 429 responses.
+The Hardcover API allows 60 requests per minute. The server handles this automatically — it queues requests and retries if needed. You shouldn't hit this in normal use.
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| `HARDCOVER_API_TOKEN is not set` | Create a `.env` file in the project root or set the env var directly |
-| `Access is denied` on Windows | Add `"UV_LINK_MODE": "copy"` to the `env` block in your MCP client config |
-| `Rate limited` / 429 errors | The client retries automatically up to 3 times. If persistent, reduce concurrent tool calls |
-| `GraphQL error: field not found` | The Hardcover API may have changed. Check for updates to this server |
+| Problem | Fix |
+|---------|-----|
+| "API token is not set" | Add your token to the config (see Quick Start above) |
+| "Access is denied" on Windows | Add `"UV_LINK_MODE": "copy"` to the `env` block in your config |
+| Slow or repeated errors | The server retries automatically — wait a moment and try again |
+| Unexpected results | Check for a newer version: the Hardcover API may have changed |
+
+## Disclaimer
+
+Unofficial project. Not affiliated with [Hardcover](https://hardcover.app).
