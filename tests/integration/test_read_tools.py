@@ -99,27 +99,6 @@ class TestGetUserLibrary:
         assert data["returned"] <= 2
 
 
-class TestGetSeries:
-    async def test_get_series_by_slug(self):
-        from hardcover_mcp.tools.series import handle_get_series
-
-        result = await handle_get_series({"slug": "the-stormlight-archive"})
-
-        data = json.loads(result[0].text)
-        assert data["name"] == "The Stormlight Archive"
-        assert isinstance(data["books"], list)
-        assert len(data["books"]) > 0
-
-    async def test_get_series_by_name(self):
-        from hardcover_mcp.tools.series import handle_get_series
-
-        result = await handle_get_series({"name": "Mistborn"})
-
-        data = json.loads(result[0].text)
-        assert "name" in data
-        assert isinstance(data["books"], list)
-
-
 class TestGetAuthor:
     async def test_get_author_by_slug(self):
         from hardcover_mcp.tools.authors import handle_get_author
@@ -204,5 +183,41 @@ class TestGetSeries:
         from hardcover_mcp.tools.series import handle_get_series
 
         result = await handle_get_series({})
+
+        assert "Error" in result[0].text
+
+
+class TestGetEdition:
+    async def test_get_edition_by_isbn13(self):
+        from hardcover_mcp.tools.editions import handle_get_edition
+
+        result = await handle_get_edition({"isbn_13": "9780547928227"})
+
+        data = json.loads(result[0].text)
+        assert "id" in data
+        assert data["isbn_13"] == "9780547928227"
+        assert isinstance(data["book"], dict)
+        assert data["book"]["id"] is not None
+        assert "slug" in data["book"]
+        assert "title" in data["book"]
+
+    async def test_get_edition_returns_not_found_for_unknown_isbn(self):
+        from hardcover_mcp.tools.editions import handle_get_edition
+
+        result = await handle_get_edition({"isbn_13": "9780000000000"})
+
+        assert "No edition found" in result[0].text
+
+    async def test_get_edition_error_on_no_args(self):
+        from hardcover_mcp.tools.editions import handle_get_edition
+
+        result = await handle_get_edition({})
+
+        assert "Error" in result[0].text
+
+    async def test_get_edition_error_on_multiple_args(self):
+        from hardcover_mcp.tools.editions import handle_get_edition
+
+        result = await handle_get_edition({"isbn_13": "9780547928227", "asin": "B007978NPG"})
 
         assert "Error" in result[0].text
