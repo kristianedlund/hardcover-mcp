@@ -11,6 +11,7 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.tools.authors import handle_get_author
 from hardcover_mcp.tools.books import handle_get_book, handle_search_books
+from hardcover_mcp.tools.editions import handle_get_edition
 from hardcover_mcp.tools.library import (
     handle_add_user_book_read,
     handle_delete_user_book,
@@ -235,6 +236,30 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
             },
         ),
         handle_get_author,
+    ),
+    (
+        Tool(
+            name="get_edition",
+            description="Get edition details by Hardcover ID, ISBN-13, or ASIN.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Hardcover edition ID.",
+                    },
+                    "isbn_13": {
+                        "type": "string",
+                        "description": "ISBN-13 of the edition (e.g. '9780547928227').",
+                    },
+                    "asin": {
+                        "type": "string",
+                        "description": "Amazon ASIN of the edition.",
+                    },
+                },
+            },
+        ),
+        handle_get_edition,
     ),
     # ── Write: library ──
     (
