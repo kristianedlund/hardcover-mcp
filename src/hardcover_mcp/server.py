@@ -308,7 +308,10 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
     (
         Tool(
             name="add_user_book_read",
-            description="Add a reading date entry. Updates active read if one exists.",
+            description=(
+                "Add a reading date or progress entry. Updates active read if one exists."
+                " Supports page progress and audiobook time tracking."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -332,6 +335,10 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
                         "type": "integer",
                         "description": "Pages read so far.",
                     },
+                    "progress_seconds": {
+                        "type": "integer",
+                        "description": "Seconds of audiobook listened to so far.",
+                    },
                 },
             },
         ),
@@ -340,7 +347,10 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
     (
         Tool(
             name="update_user_book_read",
-            description="Update a reading date entry. Preserves unspecified fields.",
+            description=(
+                "Update a reading date or progress entry. Preserves unspecified fields."
+                " Supports page progress and audiobook time tracking."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -359,6 +369,10 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
                     "progress_pages": {
                         "type": "integer",
                         "description": "Pages read so far.",
+                    },
+                    "progress_seconds": {
+                        "type": "integer",
+                        "description": "Seconds of audiobook listened to so far.",
                     },
                 },
                 "required": ["id"],
