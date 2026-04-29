@@ -221,3 +221,49 @@ class TestGetEdition:
         result = await handle_get_edition({"isbn_13": "9780547928227", "asin": "B007978NPG"})
 
         assert "Error" in result[0].text
+
+
+class TestSearchEntities:
+    async def test_search_author_returns_results(self):
+        from hardcover_mcp.tools.books import handle_search_books
+
+        result = await handle_search_books({"query": "Brandon Sanderson", "query_type": "Author"})
+
+        data = json.loads(result[0].text)
+        assert data["found"] > 0
+        assert len(data["authors"]) > 0
+        assert data["authors"][0]["name"] is not None
+
+    async def test_search_author_result_has_expected_fields(self):
+        from hardcover_mcp.tools.books import handle_search_books
+
+        result = await handle_search_books({"query": "Andy Weir", "query_type": "Author"})
+
+        data = json.loads(result[0].text)
+        assert data["found"] > 0
+        author = data["authors"][0]
+        assert "id" in author
+        assert "name" in author
+        assert "slug" in author
+
+    async def test_search_series_returns_results(self):
+        from hardcover_mcp.tools.books import handle_search_books
+
+        result = await handle_search_books({"query": "Stormlight", "query_type": "Series"})
+
+        data = json.loads(result[0].text)
+        assert data["found"] > 0
+        assert len(data["series"]) > 0
+        assert data["series"][0]["name"] is not None
+
+    async def test_search_series_result_has_expected_fields(self):
+        from hardcover_mcp.tools.books import handle_search_books
+
+        result = await handle_search_books({"query": "Mistborn", "query_type": "Series"})
+
+        data = json.loads(result[0].text)
+        assert data["found"] > 0
+        series = data["series"][0]
+        assert "id" in series
+        assert "name" in series
+        assert "slug" in series

@@ -54,13 +54,31 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
     (
         Tool(
             name="search_books",
-            description="Search Hardcover books by title, author, or ISBN.",
+            description=(
+                "Search Hardcover by title, author, or ISBN. Supports multiple entity types: "
+                "books (default), authors, series, lists, users, publishers, characters, "
+                "and prompts."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Search query (title, author name, or ISBN).",
+                        "description": "Search query (title, author name, ISBN, etc.).",
+                    },
+                    "query_type": {
+                        "type": "string",
+                        "description": "Entity type to search (default: 'Book').",
+                        "enum": [
+                            "Book",
+                            "Author",
+                            "Series",
+                            "List",
+                            "User",
+                            "Publisher",
+                            "Character",
+                            "Prompt",
+                        ],
                     },
                     "per_page": {
                         "type": "integer",

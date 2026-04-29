@@ -51,7 +51,7 @@ Add to `claude_desktop_config.json`:
 | Tool | Description |
 |------|-------------|
 | `me` | Get authenticated user info (id, username, name, books count) |
-| `search_books` | Search for books by title, author, or ISBN |
+| `search_books` | Search for books, authors, series, and other entities by query (use `query_type` to switch entity type; defaults to books) |
 | `get_book` | Get book details by Hardcover ID or slug |
 | `get_user_library` | Get books from your library, optionally filtered by status |
 | `get_user_book` | Get your library entry for a specific book (status, rating, reading dates) |
