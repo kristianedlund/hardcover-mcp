@@ -1,5 +1,6 @@
 """Tests for tools/books.py — formatting helpers and handler logic."""
 
+import json
 from unittest.mock import AsyncMock, patch
 
 from hardcover_mcp.tools.books import (
@@ -181,8 +182,6 @@ class TestHandleSearchBooks:
             }
         }
 
-        import json
-
         result = await handle_search_books({"query": "Andy Weir", "query_type": "Author"})
         data = json.loads(result[0].text)
 
@@ -201,8 +200,6 @@ class TestHandleSearchBooks:
                 }
             }
         }
-
-        import json
 
         result = await handle_search_books({"query": "Mistborn", "query_type": "Series"})
         data = json.loads(result[0].text)
@@ -231,8 +228,6 @@ class TestHandleSearchBooks:
                 }
             }
         }
-
-        import json
 
         result = await handle_search_books({"query": "Project Hail Mary"})
         data = json.loads(result[0].text)
