@@ -15,6 +15,8 @@ _AGGREGATE_RESPONSE = {
     "currently_reading": {"aggregate": {"count": 3}},
     "read": {"aggregate": {"count": 98}},
     "did_not_finish": {"aggregate": {"count": 6}},
+    "paused": {"aggregate": {"count": 0}},
+    "ignored": {"aggregate": {"count": 0}},
     "ratings": {"aggregate": {"avg": {"rating": 3.8333}}},
     "read_in_year": {"aggregate": {"count": 12}},
 }
@@ -36,6 +38,8 @@ class TestFormatReadingStats:
         assert by_status["currently_reading"] == 3
         assert by_status["read"] == 98
         assert by_status["did_not_finish"] == 6
+        assert by_status["paused"] == 0
+        assert by_status["ignored"] == 0
 
     def test_rounds_average_rating_to_two_decimal_places(self):
         result = _format_reading_stats(_AGGREGATE_RESPONSE, 2025)

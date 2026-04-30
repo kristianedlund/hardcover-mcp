@@ -32,8 +32,18 @@ query GetReadingStats($user_id: Int!, $year_start: date!, $year_end: date!) {
     ) {
         aggregate { count }
     }
+    paused: user_books_aggregate(
+        where: {user_id: {_eq: $user_id}, status_id: {_eq: 4}}
+    ) {
+        aggregate { count }
+    }
     did_not_finish: user_books_aggregate(
         where: {user_id: {_eq: $user_id}, status_id: {_eq: 5}}
+    ) {
+        aggregate { count }
+    }    
+    ignored: user_books_aggregate(
+        where: {user_id: {_eq: $user_id}, status_id: {_eq: 6}}
     ) {
         aggregate { count }
     }
@@ -63,7 +73,8 @@ def _format_reading_stats(data: dict[str, Any], year: int) -> dict[str, Any]:
     data : dict[str, Any]
         Raw ``data`` payload from the GraphQL response, containing aliased
         aggregate results (``total``, ``want_to_read``, ``currently_reading``,
-        ``read``, ``did_not_finish``, ``ratings``, ``read_in_year``).
+        ``read``, ``did_not_finish``, ``paused``, ``ignored``, ``ratings``,
+        ``read_in_year``).
     year : int
         Calendar year used for the ``books_read_this_year`` count.
 
@@ -84,6 +95,8 @@ def _format_reading_stats(data: dict[str, Any], year: int) -> dict[str, Any]:
             "currently_reading": data["currently_reading"]["aggregate"]["count"],
             "read": data["read"]["aggregate"]["count"],
             "did_not_finish": data["did_not_finish"]["aggregate"]["count"],
+            "paused": data["paused"]["aggregate"]["count"],
+            "ignored": data["ignored"]["aggregate"]["count"],
         },
         "average_rating": avg_rating,
         "books_read_this_year": data["read_in_year"]["aggregate"]["count"],

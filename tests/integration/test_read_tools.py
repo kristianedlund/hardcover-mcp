@@ -293,6 +293,8 @@ class TestGetReadingStats:
         assert "currently_reading" in by_status
         assert "read" in by_status
         assert "did_not_finish" in by_status
+        assert "paused" in by_status
+        assert "ignored" in by_status
 
     async def test_total_books_is_non_negative(self):
         from hardcover_mcp.tools.stats import handle_get_reading_stats
