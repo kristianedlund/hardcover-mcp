@@ -329,7 +329,7 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
         Tool(
             name="set_user_book",
             description=(
-                "Set a book's status, rating, review, and private notes."
+                "Set a book's status, rating, review, privacy, and private notes."
                 " Preserves unspecified fields."
             ),
             inputSchema={
@@ -362,6 +362,13 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
                     "private_notes": {
                         "type": "string",
                         "description": "Private notes visible only to you.",
+                    },
+                    "privacy": {
+                        "type": "string",
+                        "description": (
+                            "Privacy setting: 'Public', 'Followers', or 'Private'"
+                            " (or numeric ID 1/2/3)."
+                        ),
                     },
                     "edition_id": {
                         "type": "integer",

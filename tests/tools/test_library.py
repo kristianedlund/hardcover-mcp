@@ -11,6 +11,7 @@ from hardcover_mcp.tools.library import (
     _format_user_book_detail,
     _format_user_review,
     _merge_read_input,
+    _resolve_privacy_id,
     _resolve_status_id,
     _text_to_slate,
     handle_get_user_reviews,
@@ -685,3 +686,242 @@ class TestHandleGetUserReviews:
         assert data["total"] == 0
         assert data["returned"] == 0
         assert data["reviews"] == []
+
+
+class TestResolvePrivacyId:
+    def test_returns_none_for_none(self):
+        assert _resolve_privacy_id(None) is None
+
+    def test_resolves_int_directly(self):
+        assert _resolve_privacy_id(1) == 1
+        assert _resolve_privacy_id(3) == 3
+
+    def test_resolves_numeric_string(self):
+        assert _resolve_privacy_id("2") == 2
+
+    def test_resolves_name_case_insensitive(self):
+        assert _resolve_privacy_id("public") == 1
+        assert _resolve_privacy_id("Public") == 1
+        assert _resolve_privacy_id("followers") == 2
+        assert _resolve_privacy_id("Followers") == 2
+        assert _resolve_privacy_id("private") == 3
+        assert _resolve_privacy_id("Private") == 3
+
+    def test_returns_none_for_unknown_name(self):
+        assert _resolve_privacy_id("secret") is None
+
+
+class TestFormatUserBookDetailPrivacy:
+    """Verify that _format_user_book_detail surfaces the privacy field."""
+
+    def _make_ub(self, **extra: object) -> dict:
+        base: dict = {
+            "id": 1,
+            "book_id": 42,
+            "status_id": 3,
+            "privacy_setting_id": None,
+            "rating": 4.0,
+            "updated_at": "2025-01-01",
+            "review_raw": None,
+            "review_has_spoilers": False,
+            "reviewed_at": None,
+            "private_notes": None,
+            "user_book_reads": [],
+            "book": {"title": "T", "slug": "t", "pages": 300, "contributions": []},
+        }
+        base.update(extra)
+        return base
+
+    def test_privacy_none_when_absent(self):
+        ub = self._make_ub()
+        result = _format_user_book_detail(ub)
+        assert "privacy" in result
+        assert result["privacy"] is None
+
+    def test_privacy_public(self):
+        ub = self._make_ub(privacy_setting_id=1)
+        result = _format_user_book_detail(ub)
+        assert result["privacy"] == "Public"
+
+    def test_privacy_followers(self):
+        ub = self._make_ub(privacy_setting_id=2)
+        result = _format_user_book_detail(ub)
+        assert result["privacy"] == "Followers"
+
+    def test_privacy_private(self):
+        ub = self._make_ub(privacy_setting_id=3)
+        result = _format_user_book_detail(ub)
+        assert result["privacy"] == "Private"
+
+    def test_privacy_unknown_id(self):
+        ub = self._make_ub(privacy_setting_id=99)
+        result = _format_user_book_detail(ub)
+        assert "Unknown" in result["privacy"]
+
+
+class TestHandleSetUserBookPrivacy:
+    """Verify that handle_set_user_book handles privacy correctly."""
+
+    def _make_existing(self, privacy_setting_id: int | None = None) -> dict:
+        return {
+            "data": {
+                "user_books": [
+                    {
+                        "id": 10,
+                        "status_id": 3,
+                        "privacy_setting_id": privacy_setting_id,
+                        "rating": 4.0,
+                        "review_slate": None,
+                        "review_has_spoilers": None,
+                        "reviewed_at": None,
+                        "private_notes": None,
+                        "edition_id": None,
+                    }
+                ]
+            }
+        }
+
+    def _make_mutation_result(self, privacy_setting_id: int | None = None) -> dict:
+        return {
+            "data": {
+                "update_user_book": {
+                    "error": None,
+                    "id": 10,
+                    "user_book": {
+                        "id": 10,
+                        "book_id": 42,
+                        "status_id": 3,
+                        "privacy_setting_id": privacy_setting_id,
+                        "rating": 4.0,
+                        "edition_id": None,
+                    },
+                }
+            }
+        }
+
+    async def test_privacy_passed_on_insert(self):
+        mock_user = {"id": 1}
+        mock_existing = {"data": {"user_books": []}}
+        mock_mutation = {
+            "data": {
+                "insert_user_book": {
+                    "error": None,
+                    "id": 99,
+                    "user_book": {
+                        "id": 99,
+                        "book_id": 42,
+                        "status_id": 3,
+                        "privacy_setting_id": 3,
+                        "rating": None,
+                        "edition_id": None,
+                    },
+                }
+            }
+        }
+
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(side_effect=[mock_existing, mock_mutation]),
+            ) as mock_exec,
+        ):
+            result = await handle_set_user_book({"book_id": 42, "privacy": "Private"})
+
+        insert_obj = mock_exec.call_args_list[1][0][1]["object"]
+        assert insert_obj["privacy_setting_id"] == 3
+        output = json.loads(result[0].text)
+        assert output["privacy"] == "Private"
+
+    async def test_privacy_passed_on_update(self):
+        mock_user = {"id": 1}
+
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(side_effect=[self._make_existing(), self._make_mutation_result(2)]),
+            ) as mock_exec,
+        ):
+            result = await handle_set_user_book({"book_id": 42, "privacy": "Followers"})
+
+        update_obj = mock_exec.call_args_list[1][0][1]["object"]
+        assert update_obj["privacy_setting_id"] == 2
+        output = json.loads(result[0].text)
+        assert output["privacy"] == "Followers"
+
+    async def test_privacy_preserved_on_update_when_not_specified(self):
+        mock_user = {"id": 1}
+
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(
+                    side_effect=[
+                        self._make_existing(privacy_setting_id=1),
+                        self._make_mutation_result(1),
+                    ]
+                ),
+            ) as mock_exec,
+        ):
+            await handle_set_user_book({"book_id": 42, "rating": 5.0})
+
+        update_obj = mock_exec.call_args_list[1][0][1]["object"]
+        assert update_obj["privacy_setting_id"] == 1
+
+    async def test_privacy_numeric_string_accepted(self):
+        mock_user = {"id": 1}
+        mock_existing = {"data": {"user_books": []}}
+        mock_mutation = {
+            "data": {
+                "insert_user_book": {
+                    "error": None,
+                    "id": 5,
+                    "user_book": {
+                        "id": 5,
+                        "book_id": 42,
+                        "status_id": 3,
+                        "privacy_setting_id": 1,
+                        "rating": None,
+                        "edition_id": None,
+                    },
+                }
+            }
+        }
+
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(side_effect=[mock_existing, mock_mutation]),
+            ) as mock_exec,
+        ):
+            await handle_set_user_book({"book_id": 42, "privacy": "1"})
+
+        insert_obj = mock_exec.call_args_list[1][0][1]["object"]
+        assert insert_obj["privacy_setting_id"] == 1
+
+    async def test_invalid_privacy_returns_error(self):
+        mock_user = {"id": 1}
+
+        with patch(
+            "hardcover_mcp.tools.library.get_current_user",
+            new=AsyncMock(return_value=mock_user),
+        ):
+            result = await handle_set_user_book({"book_id": 42, "privacy": "secret"})
+
+        assert "Error" in result[0].text
+        assert "secret" in result[0].text

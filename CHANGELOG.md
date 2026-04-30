@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `get_user_book` now includes `privacy` (Public/Followers/Private) in its response,
+  mapped from `privacy_setting_id`.
+- `set_user_book` now accepts a `privacy` parameter (label or numeric ID 1/2/3) to
+  view and change the privacy setting on library entries. Existing privacy is preserved
+  when the field is not specified.
+
 ### Fixed
 
 - `get_series` and `get_author` tools now support partial, typo-tolerant name
