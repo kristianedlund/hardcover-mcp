@@ -31,6 +31,7 @@ from hardcover_mcp.tools.lists import (
     handle_update_list,
 )
 from hardcover_mcp.tools.series import handle_get_series
+from hardcover_mcp.tools.stats import handle_get_reading_stats
 from hardcover_mcp.tools.user import handle_me
 
 server = Server("hardcover")
@@ -50,6 +51,27 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
             inputSchema={"type": "object", "properties": {}},
         ),
         lambda args: handle_me(),
+    ),
+    (
+        Tool(
+            name="get_reading_stats",
+            description=(
+                "Get library reading statistics: total books, books per status, "
+                "average rating, and books read in a given year."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "year": {
+                        "type": "integer",
+                        "description": (
+                            "Year for the 'books_read_this_year' count (default: current year)."
+                        ),
+                    },
+                },
+            },
+        ),
+        handle_get_reading_stats,
     ),
     (
         Tool(

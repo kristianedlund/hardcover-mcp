@@ -101,6 +101,7 @@ Add to `claude_desktop_config.json`:
 | What you can do | Tool |
 |-----------------|------|
 | See your profile and book count | `me` |
+| Get reading statistics (totals, ratings, books read per year) | `get_reading_stats` |
 | Browse your library, filter by reading status | `get_user_library` |
 | Check your status/rating for a specific book | `get_user_book` |
 | Add a book or update its status and rating | `set_user_book` |

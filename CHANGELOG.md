@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_reading_stats` tool — returns library statistics (total books, books per status,
+  average rating, and books read in a given year) via `user_books_aggregate`.
 - `add_user_book_read` and `update_user_book_read` now accept `progress_seconds` for
   tracking audiobook listening progress.
 
