@@ -18,6 +18,7 @@ from hardcover_mcp.tools.library import (
     handle_delete_user_book_read,
     handle_get_user_book,
     handle_get_user_library,
+    handle_get_user_reviews,
     handle_set_user_book,
     handle_update_user_book_read,
 )
@@ -179,6 +180,28 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
             },
         ),
         handle_get_user_book,
+    ),
+    (
+        Tool(
+            name="get_user_reviews",
+            description=(
+                "List your reviews, newest first. Includes review text, rating, and book info."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max reviews to return (default 25, max 100).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Pagination offset (default 0).",
+                    },
+                },
+            },
+        ),
+        handle_get_user_reviews,
     ),
     (
         Tool(

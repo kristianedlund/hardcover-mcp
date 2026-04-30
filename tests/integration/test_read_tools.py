@@ -314,3 +314,43 @@ class TestGetReadingStats:
         # No books were read in 1900 — count should be 0
         assert data["books_read_this_year"] == 0
         assert data["year"] == 1900
+
+
+class TestGetUserReviews:
+    async def test_returns_reviews_structure(self):
+        from hardcover_mcp.tools.library import handle_get_user_reviews
+
+        result = await handle_get_user_reviews({})
+
+        data = json.loads(result[0].text)
+        assert "total" in data
+        assert "returned" in data
+        assert "offset" in data
+        assert "reviews" in data
+        assert isinstance(data["reviews"], list)
+        assert data["offset"] == 0
+
+    async def test_each_review_has_expected_fields(self):
+        from hardcover_mcp.tools.library import handle_get_user_reviews
+
+        result = await handle_get_user_reviews({})
+
+        data = json.loads(result[0].text)
+        for review in data["reviews"]:
+            assert "user_book_id" in review
+            assert "book_id" in review
+            assert "title" in review
+            assert "slug" in review
+            assert "authors" in review
+            assert "rating" in review
+            assert "review_raw" in review
+            assert "review_has_spoilers" in review
+            assert "reviewed_at" in review
+
+    async def test_pagination(self):
+        from hardcover_mcp.tools.library import handle_get_user_reviews
+
+        result = await handle_get_user_reviews({"limit": 1, "offset": 0})
+
+        data = json.loads(result[0].text)
+        assert data["returned"] <= 1
