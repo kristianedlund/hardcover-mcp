@@ -371,6 +371,188 @@ class TestFormatUserReview:
         assert result["review_has_spoilers"] is True
 
 
+class TestFormatUserBookDetailEdition:
+    """Verify that _format_user_book_detail surfaces edition info."""
+
+    def _make_ub(self, **extra: object) -> dict:
+        base: dict = {
+            "id": 1,
+            "book_id": 42,
+            "status_id": 3,
+            "rating": 4.0,
+            "updated_at": "2025-01-01",
+            "review_raw": None,
+            "review_has_spoilers": False,
+            "reviewed_at": None,
+            "private_notes": None,
+            "user_book_reads": [],
+            "book": {"title": "T", "slug": "t", "pages": 300, "contributions": []},
+        }
+        base.update(extra)
+        return base
+
+    def test_includes_edition_when_present(self):
+        edition = {
+            "id": 100,
+            "title": "Kindle Edition",
+            "isbn_13": None,
+            "asin": "B001234567",
+            "pages": 412,
+            "audio_seconds": None,
+            "edition_format": "Digital",
+            "release_date": "2010-01-01",
+            "language": {"language": "English"},
+        }
+        ub = self._make_ub(edition=edition)
+        result = _format_user_book_detail(ub)
+        assert result["edition"] == edition
+
+    def test_edition_none_when_absent(self):
+        ub = self._make_ub()
+        result = _format_user_book_detail(ub)
+        assert result["edition"] is None
+
+
+class TestHandleSetUserBookEdition:
+    """Verify that handle_set_user_book handles edition_id correctly."""
+
+    async def test_edition_id_passed_on_insert(self):
+        mock_user = {"id": 1}
+        mock_existing = {"data": {"user_books": []}}
+        mock_mutation = {
+            "data": {
+                "insert_user_book": {
+                    "error": None,
+                    "id": 99,
+                    "user_book": {
+                        "id": 99,
+                        "book_id": 42,
+                        "status_id": 3,
+                        "rating": None,
+                        "edition_id": 777,
+                    },
+                }
+            }
+        }
+
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(side_effect=[mock_existing, mock_mutation]),
+            ) as mock_exec,
+        ):
+            result = await handle_set_user_book(
+                {"book_id": 42, "status": "Read", "edition_id": 777}
+            )
+
+        insert_call_obj = mock_exec.call_args_list[1][0][1]["object"]
+        assert insert_call_obj["edition_id"] == 777
+        output = json.loads(result[0].text)
+        assert output["edition_id"] == 777
+
+    async def test_edition_id_preserved_on_update(self):
+        mock_user = {"id": 1}
+        mock_existing = {
+            "data": {
+                "user_books": [
+                    {
+                        "id": 10,
+                        "status_id": 3,
+                        "rating": 4.0,
+                        "review_slate": None,
+                        "review_has_spoilers": None,
+                        "reviewed_at": None,
+                        "private_notes": None,
+                        "edition_id": 555,
+                    }
+                ]
+            }
+        }
+        mock_mutation = {
+            "data": {
+                "update_user_book": {
+                    "error": None,
+                    "id": 10,
+                    "user_book": {
+                        "id": 10,
+                        "book_id": 42,
+                        "status_id": 3,
+                        "rating": 5.0,
+                        "edition_id": 555,
+                    },
+                }
+            }
+        }
+
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(side_effect=[mock_existing, mock_mutation]),
+            ) as mock_exec,
+        ):
+            await handle_set_user_book({"book_id": 42, "rating": 5.0})
+
+        update_call_obj = mock_exec.call_args_list[1][0][1]["object"]
+        assert update_call_obj["edition_id"] == 555
+
+    async def test_edition_id_updated(self):
+        mock_user = {"id": 1}
+        mock_existing = {
+            "data": {
+                "user_books": [
+                    {
+                        "id": 10,
+                        "status_id": 3,
+                        "rating": 4.0,
+                        "review_slate": None,
+                        "review_has_spoilers": None,
+                        "reviewed_at": None,
+                        "private_notes": None,
+                        "edition_id": 555,
+                    }
+                ]
+            }
+        }
+        mock_mutation = {
+            "data": {
+                "update_user_book": {
+                    "error": None,
+                    "id": 10,
+                    "user_book": {
+                        "id": 10,
+                        "book_id": 42,
+                        "status_id": 3,
+                        "rating": 4.0,
+                        "edition_id": 888,
+                    },
+                }
+            }
+        }
+
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(side_effect=[mock_existing, mock_mutation]),
+            ) as mock_exec,
+        ):
+            await handle_set_user_book({"book_id": 42, "edition_id": 888})
+
+        update_call_obj = mock_exec.call_args_list[1][0][1]["object"]
+        assert update_call_obj["edition_id"] == 888
+
+
 class TestHandleGetUserReviews:
     def _mock_api_response(self, reviews: list[dict], total: int = 1) -> dict:
         return {
