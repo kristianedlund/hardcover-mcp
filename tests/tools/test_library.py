@@ -1,5 +1,6 @@
 """Tests for tools/library.py — status resolution, formatting, input building."""
 
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -8,9 +9,11 @@ from hardcover_mcp.tools.library import (
     _build_read_input,
     _format_user_book,
     _format_user_book_detail,
+    _format_user_review,
     _merge_read_input,
     _resolve_status_id,
     _text_to_slate,
+    handle_get_user_reviews,
     handle_set_user_book,
 )
 
@@ -313,3 +316,190 @@ class TestFormatUserBookDetailReview:
         result = _format_user_book_detail(ub)
         assert "review_raw" in result
         assert result["review_raw"] is None
+
+
+class TestFormatUserReview:
+    def _make_ub(self, **extra: object) -> dict:
+        base: dict = {
+            "id": 5,
+            "book_id": 99,
+            "rating": 4.0,
+            "review_raw": "A great read.",
+            "review_has_spoilers": False,
+            "reviewed_at": "2025-03-10",
+            "book": {
+                "title": "Test Book",
+                "slug": "test-book",
+                "contributions": [{"author": {"name": "Author One"}}],
+            },
+        }
+        base.update(extra)
+        return base
+
+    def test_output_shape(self):
+        result = _format_user_review(self._make_ub())
+        assert result["user_book_id"] == 5
+        assert result["book_id"] == 99
+        assert result["title"] == "Test Book"
+        assert result["slug"] == "test-book"
+        assert result["authors"] == ["Author One"]
+        assert result["rating"] == 4.0
+        assert result["review_raw"] == "A great read."
+        assert result["review_has_spoilers"] is False
+        assert result["reviewed_at"] == "2025-03-10"
+
+    def test_multiple_authors(self):
+        ub = self._make_ub(
+            book={
+                "title": "Co-authored",
+                "slug": "co-authored",
+                "contributions": [
+                    {"author": {"name": "Alice"}},
+                    {"author": {"name": "Bob"}},
+                ],
+            }
+        )
+        result = _format_user_review(ub)
+        assert result["authors"] == ["Alice", "Bob"]
+
+    def test_none_rating(self):
+        result = _format_user_review(self._make_ub(rating=None))
+        assert result["rating"] is None
+
+    def test_spoiler_flag_true(self):
+        result = _format_user_review(self._make_ub(review_has_spoilers=True))
+        assert result["review_has_spoilers"] is True
+
+
+class TestHandleGetUserReviews:
+    def _mock_api_response(self, reviews: list[dict], total: int = 1) -> dict:
+        return {
+            "data": {
+                "user_books": reviews,
+                "user_books_aggregate": {"aggregate": {"count": total}},
+            }
+        }
+
+    def _make_review_record(self, book_id: int = 42) -> dict:
+        return {
+            "id": 10,
+            "book_id": book_id,
+            "rating": 5.0,
+            "review_raw": "Fantastic.",
+            "review_has_spoilers": False,
+            "reviewed_at": "2025-06-01",
+            "book": {
+                "title": "Some Book",
+                "slug": "some-book",
+                "contributions": [{"author": {"name": "Some Author"}}],
+            },
+        }
+
+    async def test_returns_expected_output_structure(self):
+        mock_user = {"id": 1}
+        mock_result = self._mock_api_response([self._make_review_record()], total=1)
+
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(return_value=mock_result),
+            ),
+        ):
+            result = await handle_get_user_reviews({})
+
+        data = json.loads(result[0].text)
+        assert data["total"] == 1
+        assert data["returned"] == 1
+        assert data["offset"] == 0
+        assert len(data["reviews"]) == 1
+        review = data["reviews"][0]
+        assert review["user_book_id"] == 10
+        assert review["review_raw"] == "Fantastic."
+        assert review["review_has_spoilers"] is False
+        assert review["reviewed_at"] == "2025-06-01"
+        assert review["title"] == "Some Book"
+        assert review["authors"] == ["Some Author"]
+
+    async def test_default_pagination_params(self):
+        mock_user = {"id": 1}
+        mock_result = self._mock_api_response([])
+
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(return_value=mock_result),
+            ) as mock_exec,
+        ):
+            await handle_get_user_reviews({})
+
+        call_vars = mock_exec.call_args[0][1]
+        assert call_vars["limit"] == 25
+        assert call_vars["offset"] == 0
+
+    async def test_custom_pagination_params(self):
+        mock_user = {"id": 1}
+        mock_result = self._mock_api_response([])
+
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(return_value=mock_result),
+            ) as mock_exec,
+        ):
+            await handle_get_user_reviews({"limit": 10, "offset": 20})
+
+        call_vars = mock_exec.call_args[0][1]
+        assert call_vars["limit"] == 10
+        assert call_vars["offset"] == 20
+
+    async def test_limit_capped_at_100(self):
+        mock_user = {"id": 1}
+        mock_result = self._mock_api_response([])
+
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(return_value=mock_result),
+            ) as mock_exec,
+        ):
+            await handle_get_user_reviews({"limit": 500})
+
+        call_vars = mock_exec.call_args[0][1]
+        assert call_vars["limit"] == 100
+
+    async def test_empty_reviews_list(self):
+        mock_user = {"id": 1}
+        mock_result = self._mock_api_response([], total=0)
+
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(return_value=mock_result),
+            ),
+        ):
+            result = await handle_get_user_reviews({})
+
+        data = json.loads(result[0].text)
+        assert data["total"] == 0
+        assert data["returned"] == 0
+        assert data["reviews"] == []

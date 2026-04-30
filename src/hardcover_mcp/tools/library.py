@@ -259,6 +259,91 @@ async def handle_get_user_book(arguments: dict[str, Any]) -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
+# ── Read: get_user_reviews ──
+
+GET_USER_REVIEWS_QUERY = """
+query GetUserReviews($user_id: Int!, $limit: Int!, $offset: Int!) {
+    user_books(
+        where: {user_id: {_eq: $user_id}, has_review: {_eq: true}},
+        order_by: {reviewed_at: desc},
+        limit: $limit,
+        offset: $offset
+    ) {
+        id
+        book_id
+        rating
+        review_raw
+        review_has_spoilers
+        reviewed_at
+        book {
+            title
+            slug
+            contributions {
+                author {
+                    name
+                }
+            }
+        }
+    }
+    user_books_aggregate(
+        where: {user_id: {_eq: $user_id}, has_review: {_eq: true}}
+    ) {
+        aggregate { count }
+    }
+}
+"""
+
+
+def _format_user_review(ub: dict[str, Any]) -> dict[str, Any]:
+    """Format a user_book review record into a flat review summary dict."""
+    book = ub.get("book", {})
+    authors = [c["author"]["name"] for c in book.get("contributions", [])]
+    return {
+        "user_book_id": ub["id"],
+        "book_id": ub["book_id"],
+        "title": book.get("title"),
+        "slug": book.get("slug"),
+        "authors": authors,
+        "rating": ub.get("rating"),
+        "review_raw": ub.get("review_raw"),
+        "review_has_spoilers": ub.get("review_has_spoilers"),
+        "reviewed_at": ub.get("reviewed_at"),
+    }
+
+
+async def handle_get_user_reviews(arguments: dict[str, Any]) -> list[TextContent]:
+    """List the authenticated user's reviews, newest first.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Optional: ``limit`` (int, default 25, max 100),
+        ``offset`` (int, default 0).
+
+    Returns
+    -------
+    list[TextContent]
+        JSON with ``total`` count, ``returned``, ``offset``, and ``reviews`` list.
+    """
+    user = await get_current_user()
+    user_id = user["id"]
+
+    limit = min(arguments.get("limit", 25), 100)
+    offset = arguments.get("offset", 0)
+
+    result = await execute(
+        GET_USER_REVIEWS_QUERY,
+        {"user_id": user_id, "limit": limit, "offset": offset},
+    )
+
+    total = result["data"]["user_books_aggregate"]["aggregate"]["count"]
+    user_books = result["data"]["user_books"]
+    formatted = [_format_user_review(ub) for ub in user_books]
+
+    output = {"total": total, "returned": len(formatted), "offset": offset, "reviews": formatted}
+    return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+
 # ── Write: set_user_book ──
 
 FIND_USER_BOOK_QUERY = """
