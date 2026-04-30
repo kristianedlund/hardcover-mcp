@@ -7,6 +7,7 @@ from mcp.types import TextContent
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools.books import SEARCH_QUERY
 
 # ── Read: get_author by id, slug, or name ──
 
@@ -160,8 +161,30 @@ async def handle_get_author(arguments: dict[str, Any]) -> list[TextContent]:
         vars["slug"] = slug
         result = await execute(GET_AUTHOR_BY_SLUG_QUERY, vars)
     else:
-        vars["name"] = name
-        result = await execute(GET_AUTHOR_BY_NAME_QUERY, vars)
+        # Hardcover GraphQL API disables LIKE operators (403), so use the
+        # Typesense search() endpoint for partial/fuzzy name matching, then
+        # fetch full details by ID.
+        search_result = await execute(
+            SEARCH_QUERY,
+            {
+                "query": name,
+                "query_type": "Author",
+                "per_page": 1,
+                "page": 1,
+            },
+        )
+        hits = search_result["data"]["search"]["results"].get("hits", [])
+        if not hits:
+            return [TextContent(type="text", text="No author found.")]
+        author_id = hits[0].get("document", {}).get("id")
+        if not author_id:
+            return [TextContent(type="text", text="No author found.")]
+        vars["id"] = author_id
+        vars["books_limit"] = min(
+            _require_int(arguments.get("books_limit", _DEFAULT_BOOKS_LIMIT), "books_limit"),
+            _MAX_BOOKS_LIMIT,
+        )
+        result = await execute(GET_AUTHOR_BY_ID_QUERY, vars)
 
     authors = result["data"]["authors"]
     if not authors:

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `get_series` and `get_author` tools now support partial, typo-tolerant name
+  matching via the Hardcover Typesense search endpoint instead of disabled GraphQL
+  LIKE operators.
+
 ### Added
 
 - `get_reading_stats` tool — returns library statistics (total books, books per status,
