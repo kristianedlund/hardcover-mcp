@@ -159,6 +159,51 @@ class TestUserBookLifecycle:
             assert deleted["deleted"] is True
 
 
+class TestUserBookReviewLifecycle:
+    """Add a book with a review and private notes → verify → delete."""
+
+    async def test_review_and_notes(self):
+        from hardcover_mcp.tools.library import (
+            handle_delete_user_book,
+            handle_get_user_book,
+            handle_set_user_book,
+        )
+
+        book_id = await _find_book_not_in_library()
+
+        # 1. Add to library with a review and private note
+        result = await handle_set_user_book(
+            {
+                "book_id": book_id,
+                "status": "Read",
+                "rating": 4.5,
+                "review_raw": "A fantastic read.\n\nHighly recommended.",
+                "review_has_spoilers": False,
+                "reviewed_at": "2025-06-01",
+                "private_notes": "The quote in chapter 12 is memorable.",
+            }
+        )
+        created = json.loads(result[0].text)
+        user_book_id = created["user_book_id"]
+        assert created["status"] == "Read"
+
+        try:
+            # 2. Read back and verify review fields
+            result = await handle_get_user_book({"book_id": book_id})
+            detail = json.loads(result[0].text)
+            assert detail["review_has_spoilers"] is False
+            assert detail["reviewed_at"] == "2025-06-01"
+            assert detail["private_notes"] == "The quote in chapter 12 is memorable."
+            # review_html is rendered by the API from review_slate
+            assert detail["review_html"] is not None
+
+        finally:
+            # 3. Delete (cleanup always runs)
+            result = await handle_delete_user_book({"user_book_id": user_book_id})
+            deleted = json.loads(result[0].text)
+            assert deleted["deleted"] is True
+
+
 class TestReadingProgress:
     """Add a book → log reading progress → update progress → clean up."""
 
