@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `set_user_book` now accepts `review_raw` (plain text, converted to Slate JSON),
+  `review_has_spoilers`, `reviewed_at`, and `private_notes`. All new fields are
+  preserved on update when not specified.
+- `get_user_book` now returns `review_raw`, `review_has_spoilers`, `reviewed_at`,
+  and `private_notes` in its response.
 - `get_reading_stats` tool — returns library statistics (total books, books per status,
   average rating, and books read in a given year) via `user_books_aggregate`.
 - `add_user_book_read` and `update_user_book_read` now accept `progress_seconds` for

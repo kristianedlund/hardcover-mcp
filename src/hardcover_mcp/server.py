@@ -305,7 +305,10 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
     (
         Tool(
             name="set_user_book",
-            description="Set a book's status/rating. Preserves unspecified fields.",
+            description=(
+                "Set a book's status, rating, review, and private notes."
+                " Preserves unspecified fields."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -320,6 +323,22 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
                     "rating": {
                         "type": "number",
                         "description": "Rating (e.g. 4.0, 3.5). Omit to leave unchanged.",
+                    },
+                    "review_raw": {
+                        "type": "string",
+                        "description": "Plain-text review content (converted to Slate format).",
+                    },
+                    "review_has_spoilers": {
+                        "type": "boolean",
+                        "description": "Whether the review contains spoilers.",
+                    },
+                    "reviewed_at": {
+                        "type": "string",
+                        "description": "ISO date of the review (e.g. '2025-06-01').",
+                    },
+                    "private_notes": {
+                        "type": "string",
+                        "description": "Private notes visible only to you.",
                     },
                 },
                 "required": ["book_id"],

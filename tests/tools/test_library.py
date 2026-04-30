@@ -1,12 +1,17 @@
 """Tests for tools/library.py — status resolution, formatting, input building."""
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from hardcover_mcp.tools.library import (
     _build_read_input,
     _format_user_book,
+    _format_user_book_detail,
     _merge_read_input,
     _resolve_status_id,
+    _text_to_slate,
+    handle_set_user_book,
 )
 
 
@@ -146,3 +151,165 @@ class TestBuildReadInput:
             "progress_pages": 100,
             "progress_seconds": 7200,
         }
+
+
+class TestTextToSlate:
+    def test_single_paragraph(self):
+        result = _text_to_slate("Hello world")
+        assert result == [{"type": "p", "children": [{"text": "Hello world"}]}]
+
+    def test_multiple_paragraphs(self):
+        result = _text_to_slate("First paragraph\n\nSecond paragraph")
+        assert result == [
+            {"type": "p", "children": [{"text": "First paragraph"}]},
+            {"type": "p", "children": [{"text": "Second paragraph"}]},
+        ]
+
+    def test_three_paragraphs(self):
+        result = _text_to_slate("One\n\nTwo\n\nThree")
+        assert len(result) == 3
+        assert result[0]["children"][0]["text"] == "One"
+        assert result[1]["children"][0]["text"] == "Two"
+        assert result[2]["children"][0]["text"] == "Three"
+
+    def test_empty_paragraphs_skipped(self):
+        # Trailing double-newline should not produce an empty node
+        result = _text_to_slate("Only one\n\n")
+        assert result == [{"type": "p", "children": [{"text": "Only one"}]}]
+
+    def test_single_newline_preserved_within_paragraph(self):
+        # A single newline is NOT a paragraph break — kept as-is
+        result = _text_to_slate("Line one\nLine two")
+        assert result == [{"type": "p", "children": [{"text": "Line one\nLine two"}]}]
+
+
+class TestHandleSetUserBookReview:
+    """Verify that handle_set_user_book converts review_raw to review_slate in the mutation."""
+
+    async def test_review_raw_converted_to_slate_on_insert(self):
+        mock_user = {"id": 1}
+        mock_existing = {"data": {"user_books": []}}
+        mock_mutation = {
+            "data": {
+                "insert_user_book": {
+                    "error": None,
+                    "id": 99,
+                    "user_book": {"id": 99, "book_id": 42, "status_id": 3, "rating": None},
+                }
+            }
+        }
+
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(side_effect=[mock_existing, mock_mutation]),
+            ) as mock_exec,
+        ):
+            await handle_set_user_book(
+                {"book_id": 42, "status": "Read", "review_raw": "Great book!"}
+            )
+
+        # Second call is the insert mutation; check its object arg
+        insert_call_obj = mock_exec.call_args_list[1][0][1]["object"]
+        assert insert_call_obj["review_slate"] == [
+            {"type": "p", "children": [{"text": "Great book!"}]}
+        ]
+        assert "review_raw" not in insert_call_obj
+
+    async def test_review_raw_converted_to_slate_on_update(self):
+        mock_user = {"id": 1}
+        mock_existing = {
+            "data": {
+                "user_books": [
+                    {
+                        "id": 10,
+                        "status_id": 3,
+                        "rating": 4.0,
+                        "review_slate": None,
+                        "review_has_spoilers": None,
+                        "reviewed_at": None,
+                        "private_notes": None,
+                    }
+                ]
+            }
+        }
+        mock_mutation = {
+            "data": {
+                "update_user_book": {
+                    "error": None,
+                    "id": 10,
+                    "user_book": {"id": 10, "book_id": 42, "status_id": 3, "rating": 4.0},
+                }
+            }
+        }
+
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(side_effect=[mock_existing, mock_mutation]),
+            ) as mock_exec,
+        ):
+            await handle_set_user_book(
+                {"book_id": 42, "review_raw": "Two paragraphs\n\nSecond one"}
+            )
+
+        update_call_obj = mock_exec.call_args_list[1][0][1]["object"]
+        assert update_call_obj["review_slate"] == [
+            {"type": "p", "children": [{"text": "Two paragraphs"}]},
+            {"type": "p", "children": [{"text": "Second one"}]},
+        ]
+
+
+class TestFormatUserBookDetailReview:
+    """Verify that _format_user_book_detail surfaces review fields."""
+
+    def _make_ub(self, **extra: object) -> dict:
+        base: dict = {
+            "id": 1,
+            "book_id": 42,
+            "status_id": 3,
+            "rating": 4.0,
+            "updated_at": "2025-01-01",
+            "review_raw": None,
+            "review_has_spoilers": False,
+            "reviewed_at": None,
+            "private_notes": None,
+            "user_book_reads": [],
+            "book": {"title": "T", "slug": "t", "pages": 300, "contributions": []},
+        }
+        base.update(extra)
+        return base
+
+    def test_includes_review_raw(self):
+        ub = self._make_ub(review_raw="A great book.")
+        result = _format_user_book_detail(ub)
+        assert result["review_raw"] == "A great book."
+
+    def test_includes_review_has_spoilers(self):
+        ub = self._make_ub(review_has_spoilers=True)
+        result = _format_user_book_detail(ub)
+        assert result["review_has_spoilers"] is True
+
+    def test_includes_reviewed_at(self):
+        ub = self._make_ub(reviewed_at="2025-06-15")
+        result = _format_user_book_detail(ub)
+        assert result["reviewed_at"] == "2025-06-15"
+
+    def test_includes_private_notes(self):
+        ub = self._make_ub(private_notes="Chapter 12 has the best quote.")
+        result = _format_user_book_detail(ub)
+        assert result["private_notes"] == "Chapter 12 has the best quote."
+
+    def test_none_fields_present_when_absent(self):
+        ub = self._make_ub()
+        result = _format_user_book_detail(ub)
+        assert "review_raw" in result
+        assert result["review_raw"] is None
