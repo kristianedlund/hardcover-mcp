@@ -54,27 +54,6 @@ query GetAuthorBySlug($slug: String!, $books_limit: Int!) {
 """
 )
 
-# Name lookup may return multiple candidates — rank by books_count then users_count.
-# Uses _eq (exact, case-sensitive) for name matching, consistent with series name lookup.
-GET_AUTHOR_BY_NAME_QUERY = (
-    """
-query GetAuthorByName($name: String!, $books_limit: Int!) {
-    authors(
-        where: {
-            name: {_eq: $name}
-        },
-        order_by: [
-            {books_count: desc_nulls_last},
-            {users_count: desc_nulls_last}
-        ],
-        limit: 5
-    ) {"""
-    + _AUTHOR_FIELDS
-    + """    }
-}
-"""
-)
-
 _DEFAULT_BOOKS_LIMIT = 20
 _MAX_BOOKS_LIMIT = 100
 
