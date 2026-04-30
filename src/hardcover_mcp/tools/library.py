@@ -329,9 +329,7 @@ def _text_to_slate(text: str) -> list[dict[str, Any]]:
     """
     paragraphs = text.split("\n\n")
     return [
-        {"type": "p", "children": [{"text": paragraph}]}
-        for paragraph in paragraphs
-        if paragraph
+        {"type": "p", "children": [{"text": paragraph}]} for paragraph in paragraphs if paragraph
     ]
 
 
