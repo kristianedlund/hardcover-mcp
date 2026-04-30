@@ -332,3 +332,60 @@ class TestReadingProgress:
             result = await handle_delete_user_book({"user_book_id": user_book_id})
             deleted = json.loads(result[0].text)
             assert deleted["deleted"] is True
+
+
+class TestPrivacyControls:
+    """Add a book → set privacy → verify via get_user_book → delete."""
+
+    async def test_set_and_read_privacy(self):
+        from hardcover_mcp.tools.library import (
+            handle_delete_user_book,
+            handle_get_user_book,
+            handle_set_user_book,
+        )
+
+        book_id = await _find_book_not_in_library()
+
+        # 1. Add to library as Private
+        result = await handle_set_user_book(
+            {
+                "book_id": book_id,
+                "status": "Want to Read",
+                "privacy": "Private",
+            }
+        )
+        created = json.loads(result[0].text)
+        user_book_id = created["user_book_id"]
+        assert created["privacy"] == "Private"
+
+        try:
+            # 2. Verify privacy is returned by get_user_book
+            result = await handle_get_user_book({"book_id": book_id})
+            detail = json.loads(result[0].text)
+            assert detail["privacy"] == "Private"
+
+            # 3. Update to Public — privacy_setting_id must change
+            result = await handle_set_user_book(
+                {
+                    "book_id": book_id,
+                    "privacy": "Public",
+                }
+            )
+            updated = json.loads(result[0].text)
+            assert updated["privacy"] == "Public"
+
+            # 4. Update without specifying privacy — should be preserved
+            result = await handle_set_user_book(
+                {
+                    "book_id": book_id,
+                    "status": "Want to Read",
+                }
+            )
+            preserved = json.loads(result[0].text)
+            assert preserved["privacy"] == "Public"
+
+        finally:
+            # 5. Clean up
+            result = await handle_delete_user_book({"user_book_id": user_book_id})
+            deleted = json.loads(result[0].text)
+            assert deleted["deleted"] is True
