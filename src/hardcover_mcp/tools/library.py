@@ -405,6 +405,7 @@ mutation InsertUserBookRead($userBookId: Int!, $userBookRead: DatesReadInput!) {
             started_at
             finished_at
             progress_pages
+            progress_seconds
         }
     }
 }
@@ -421,6 +422,7 @@ mutation UpdateUserBookRead($id: Int!, $object: DatesReadInput!) {
             started_at
             finished_at
             progress_pages
+            progress_seconds
         }
     }
 }
@@ -437,6 +439,7 @@ query FindActiveRead($user_book_id: Int!) {
         started_at
         finished_at
         progress_pages
+        progress_seconds
     }
 }
 """
@@ -448,6 +451,7 @@ query GetUserBookRead($id: Int!) {
         started_at
         finished_at
         progress_pages
+        progress_seconds
     }
 }
 """
@@ -456,7 +460,7 @@ query GetUserBookRead($id: Int!) {
 def _merge_read_input(existing: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
     """Merge updates onto existing read fields so unchanged values aren't nulled out."""
     merged: dict[str, Any] = {}
-    for field in ("started_at", "finished_at", "progress_pages"):
+    for field in ("started_at", "finished_at", "progress_pages", "progress_seconds"):
         if field in updates:
             merged[field] = updates[field]
         elif existing.get(field) is not None:
@@ -473,6 +477,10 @@ def _build_read_input(arguments: dict[str, Any]) -> dict[str, Any]:
         read_input["finished_at"] = arguments["finished_at"]
     if arguments.get("progress_pages") is not None:
         read_input["progress_pages"] = _require_int(arguments["progress_pages"], "progress_pages")
+    if arguments.get("progress_seconds") is not None:
+        read_input["progress_seconds"] = _require_int(
+            arguments["progress_seconds"], "progress_seconds"
+        )
     return read_input
 
 
@@ -513,7 +521,8 @@ async def handle_add_user_book_read(arguments: dict[str, Any]) -> list[TextConte
     ----------
     arguments : dict[str, Any]
         Provide ``book_id`` or ``user_book_id`` to identify the library entry.
-        Optional: ``started_at``, ``finished_at`` (ISO 8601), ``progress_pages``.
+        Optional: ``started_at``, ``finished_at`` (ISO 8601), ``progress_pages`` (int),
+        ``progress_seconds`` (int, for audiobooks).
 
     Returns
     -------
@@ -533,7 +542,10 @@ async def handle_add_user_book_read(arguments: dict[str, Any]) -> list[TextConte
         return [
             TextContent(
                 type="text",
-                text="Error: provide 'started_at', 'finished_at', or 'progress_pages'.",
+                text=(
+                    "Error: provide 'started_at', 'finished_at', 'progress_pages',"
+                    " or 'progress_seconds'."
+                ),
             )
         ]
 
@@ -579,7 +591,8 @@ async def handle_update_user_book_read(arguments: dict[str, Any]) -> list[TextCo
     ----------
     arguments : dict[str, Any]
         Required: ``id`` (int, user_book_read ID).
-        Optional: ``started_at``, ``finished_at`` (ISO 8601), ``progress_pages``.
+        Optional: ``started_at``, ``finished_at`` (ISO 8601), ``progress_pages`` (int),
+        ``progress_seconds`` (int, for audiobooks).
         Unspecified fields are preserved.
 
     Returns
@@ -599,7 +612,10 @@ async def handle_update_user_book_read(arguments: dict[str, Any]) -> list[TextCo
         return [
             TextContent(
                 type="text",
-                text="Error: provide 'started_at', 'finished_at', or 'progress_pages'.",
+                text=(
+                    "Error: provide 'started_at', 'finished_at', 'progress_pages',"
+                    " or 'progress_seconds'."
+                ),
             )
         ]
 

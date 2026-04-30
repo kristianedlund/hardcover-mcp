@@ -1,5 +1,7 @@
 """Tests for tools/library.py — status resolution, formatting, input building."""
 
+import pytest
+
 from hardcover_mcp.tools.library import (
     _build_read_input,
     _format_user_book,
@@ -62,7 +64,12 @@ class TestFormatUserBook:
 
 class TestMergeReadInput:
     def test_updates_override_existing(self):
-        existing = {"started_at": "2025-01-01", "finished_at": None, "progress_pages": 50}
+        existing = {
+            "started_at": "2025-01-01",
+            "finished_at": None,
+            "progress_pages": 50,
+            "progress_seconds": None,
+        }
         updates = {"finished_at": "2025-02-01"}
 
         merged = _merge_read_input(existing, updates)
@@ -72,12 +79,31 @@ class TestMergeReadInput:
         assert merged["progress_pages"] == 50
 
     def test_skips_none_existing_fields(self):
-        existing = {"started_at": None, "finished_at": None, "progress_pages": None}
+        existing = {
+            "started_at": None,
+            "finished_at": None,
+            "progress_pages": None,
+            "progress_seconds": None,
+        }
         updates = {"started_at": "2025-03-01"}
 
         merged = _merge_read_input(existing, updates)
 
         assert merged == {"started_at": "2025-03-01"}
+
+    def test_preserves_progress_seconds(self):
+        existing = {
+            "started_at": "2025-01-01",
+            "finished_at": None,
+            "progress_pages": None,
+            "progress_seconds": 3600,
+        }
+        updates = {"progress_seconds": 7200}
+
+        merged = _merge_read_input(existing, updates)
+
+        assert merged["progress_seconds"] == 7200
+        assert merged["started_at"] == "2025-01-01"
 
 
 class TestBuildReadInput:
@@ -92,7 +118,31 @@ class TestBuildReadInput:
         assert _build_read_input({"book_id": 42}) == {}
 
     def test_raises_on_non_numeric_progress_pages(self):
-        import pytest
-
         with pytest.raises(ValueError, match="'progress_pages' must be an integer"):
             _build_read_input({"progress_pages": "abc"})
+
+    def test_extracts_progress_seconds(self):
+        args = {"progress_seconds": 3600, "book_id": 42}
+        result = _build_read_input(args)
+
+        assert result == {"progress_seconds": 3600}
+
+    def test_raises_on_non_numeric_progress_seconds(self):
+        with pytest.raises(ValueError, match="'progress_seconds' must be an integer"):
+            _build_read_input({"progress_seconds": "abc"})
+
+    def test_extracts_all_fields(self):
+        args = {
+            "started_at": "2025-01-01",
+            "finished_at": "2025-02-01",
+            "progress_pages": 100,
+            "progress_seconds": 7200,
+        }
+        result = _build_read_input(args)
+
+        assert result == {
+            "started_at": "2025-01-01",
+            "finished_at": "2025-02-01",
+            "progress_pages": 100,
+            "progress_seconds": 7200,
+        }

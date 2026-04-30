@@ -104,7 +104,7 @@ Add to `claude_desktop_config.json`:
 | Browse your library, filter by reading status | `get_user_library` |
 | Check your status/rating for a specific book | `get_user_book` |
 | Add a book or update its status and rating | `set_user_book` |
-| Log reading dates and progress | `add_user_book_read` / `update_user_book_read` |
+| Log reading dates and progress (pages, audiobook time) | `add_user_book_read` / `update_user_book_read` |
 | Remove a book or reading entry | `delete_user_book` / `delete_user_book_read` |
 
 ### Lists

@@ -157,3 +157,68 @@ class TestUserBookLifecycle:
             result = await handle_delete_user_book({"user_book_id": user_book_id})
             deleted = json.loads(result[0].text)
             assert deleted["deleted"] is True
+
+
+class TestReadingProgress:
+    """Add a book → log reading progress → update progress → clean up."""
+
+    async def test_progress_tracking(self):
+        from hardcover_mcp.tools.library import (
+            handle_add_user_book_read,
+            handle_delete_user_book,
+            handle_delete_user_book_read,
+            handle_set_user_book,
+            handle_update_user_book_read,
+        )
+
+        book_id = await _find_book_not_in_library()
+
+        # 1. Add to library as currently reading
+        result = await handle_set_user_book(
+            {
+                "book_id": book_id,
+                "status": "Currently Reading",
+            }
+        )
+        created = json.loads(result[0].text)
+        user_book_id = created["user_book_id"]
+        assert created["status"] == "Currently Reading"
+
+        try:
+            # 2. Log initial progress (page count)
+            result = await handle_add_user_book_read(
+                {
+                    "user_book_id": user_book_id,
+                    "started_at": "2025-01-01",
+                    "progress_pages": 50,
+                }
+            )
+            read_entry = json.loads(result[0].text)
+            read_id = read_entry["id"]
+            assert read_entry["progress_pages"] == 50
+            assert read_entry["started_at"] == "2025-01-01"
+
+            # 3. Update progress further — also set progress_seconds for audiobook tracking
+            result = await handle_update_user_book_read(
+                {
+                    "id": read_id,
+                    "progress_pages": 150,
+                    "progress_seconds": 3600,
+                }
+            )
+            updated = json.loads(result[0].text)
+            assert updated["progress_pages"] == 150
+            assert updated["progress_seconds"] == 3600
+            # started_at must be preserved after update
+            assert updated["started_at"] == "2025-01-01"
+
+            # 4. Clean up the read entry
+            result = await handle_delete_user_book_read({"id": read_id})
+            deleted_read = json.loads(result[0].text)
+            assert deleted_read["deleted"] is True
+
+        finally:
+            # 5. Remove book from library (cleanup always runs)
+            result = await handle_delete_user_book({"user_book_id": user_book_id})
+            deleted = json.loads(result[0].text)
+            assert deleted["deleted"] is True
