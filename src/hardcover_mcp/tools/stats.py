@@ -41,7 +41,7 @@ query GetReadingStats($user_id: Int!, $year_start: date!, $year_end: date!) {
         where: {user_id: {_eq: $user_id}, status_id: {_eq: 5}}
     ) {
         aggregate { count }
-    }    
+    }
     ignored: user_books_aggregate(
         where: {user_id: {_eq: $user_id}, status_id: {_eq: 6}}
     ) {
