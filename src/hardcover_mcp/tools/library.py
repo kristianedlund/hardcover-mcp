@@ -45,7 +45,7 @@ _USER_BOOK_DETAIL_FIELDS = """
     status_id
     rating
     updated_at
-    review_html
+    review_raw
     review_has_spoilers
     reviewed_at
     private_notes
@@ -151,7 +151,7 @@ def _format_user_book_detail(ub: dict[str, Any]) -> dict[str, Any]:
         "status": STATUS_MAP.get(ub["status_id"], f"Unknown ({ub['status_id']})"),
         "rating": ub.get("rating"),
         "updated_at": ub.get("updated_at"),
-        "review_html": ub.get("review_html"),
+        "review_raw": ub.get("review_raw"),
         "review_has_spoilers": ub.get("review_has_spoilers"),
         "reviewed_at": ub.get("reviewed_at"),
         "private_notes": ub.get("private_notes"),

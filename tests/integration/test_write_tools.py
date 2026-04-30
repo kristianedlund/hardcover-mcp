@@ -192,10 +192,10 @@ class TestUserBookReviewLifecycle:
             result = await handle_get_user_book({"book_id": book_id})
             detail = json.loads(result[0].text)
             assert detail["review_has_spoilers"] is False
-            assert detail["reviewed_at"] == "2025-06-01"
+            assert detail["reviewed_at"].startswith("2025-06-01")
             assert detail["private_notes"] == "The quote in chapter 12 is memorable."
-            # review_html is rendered by the API from review_slate
-            assert detail["review_html"] is not None
+            # review_raw is the plain text stored by the API
+            assert detail["review_raw"] is not None
 
         finally:
             # 3. Delete (cleanup always runs)

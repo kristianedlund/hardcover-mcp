@@ -278,7 +278,7 @@ class TestFormatUserBookDetailReview:
             "status_id": 3,
             "rating": 4.0,
             "updated_at": "2025-01-01",
-            "review_html": None,
+            "review_raw": None,
             "review_has_spoilers": False,
             "reviewed_at": None,
             "private_notes": None,
@@ -288,10 +288,10 @@ class TestFormatUserBookDetailReview:
         base.update(extra)
         return base
 
-    def test_includes_review_html(self):
-        ub = self._make_ub(review_html="<p>Great</p>")
+    def test_includes_review_raw(self):
+        ub = self._make_ub(review_raw="A great book.")
         result = _format_user_book_detail(ub)
-        assert result["review_html"] == "<p>Great</p>"
+        assert result["review_raw"] == "A great book."
 
     def test_includes_review_has_spoilers(self):
         ub = self._make_ub(review_has_spoilers=True)
@@ -311,5 +311,5 @@ class TestFormatUserBookDetailReview:
     def test_none_fields_present_when_absent(self):
         ub = self._make_ub()
         result = _format_user_book_detail(ub)
-        assert "review_html" in result
-        assert result["review_html"] is None
+        assert "review_raw" in result
+        assert result["review_raw"] is None
