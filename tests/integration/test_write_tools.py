@@ -266,6 +266,8 @@ class TestEditionSelection:
             deleted = json.loads(result[0].text)
             assert deleted["deleted"] is True
 
+
+class TestReadingProgress:
     """Add a book → log reading progress → update progress → clean up."""
 
     async def test_progress_tracking(self):

@@ -67,6 +67,7 @@ _USER_BOOK_DETAIL_FIELDS = """
         started_at
         finished_at
         progress_pages
+        progress_seconds
     }
     book {
         title
