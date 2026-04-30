@@ -198,15 +198,17 @@ class TestReadingProgress:
             assert read_entry["progress_pages"] == 50
             assert read_entry["started_at"] == "2025-01-01"
 
-            # 3. Update progress further
+            # 3. Update progress further — also set progress_seconds for audiobook tracking
             result = await handle_update_user_book_read(
                 {
                     "id": read_id,
                     "progress_pages": 150,
+                    "progress_seconds": 3600,
                 }
             )
             updated = json.loads(result[0].text)
             assert updated["progress_pages"] == 150
+            assert updated["progress_seconds"] == 3600
             # started_at must be preserved after update
             assert updated["started_at"] == "2025-01-01"
 

@@ -1,5 +1,7 @@
 """Tests for tools/library.py — status resolution, formatting, input building."""
 
+import pytest
+
 from hardcover_mcp.tools.library import (
     _build_read_input,
     _format_user_book,
@@ -116,8 +118,6 @@ class TestBuildReadInput:
         assert _build_read_input({"book_id": 42}) == {}
 
     def test_raises_on_non_numeric_progress_pages(self):
-        import pytest
-
         with pytest.raises(ValueError, match="'progress_pages' must be an integer"):
             _build_read_input({"progress_pages": "abc"})
 
@@ -128,8 +128,6 @@ class TestBuildReadInput:
         assert result == {"progress_seconds": 3600}
 
     def test_raises_on_non_numeric_progress_seconds(self):
-        import pytest
-
         with pytest.raises(ValueError, match="'progress_seconds' must be an integer"):
             _build_read_input({"progress_seconds": "abc"})
 

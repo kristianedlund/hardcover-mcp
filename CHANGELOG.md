@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `add_user_book_read` and `update_user_book_read` now accept `progress_seconds` for
+  tracking audiobook listening progress.
+
 ## [0.2.0] - 2026-04-29
 
 ### Added
