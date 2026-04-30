@@ -51,51 +51,6 @@ GET_SERIES_BY_SLUG_QUERY = GET_SERIES_BY_ID_QUERY.replace(
     "GetSeriesById($id: Int!)", "GetSeriesBySlug($slug: String!)"
 ).replace("{id: {_eq: $id}}", "{slug: {_eq: $slug}}")
 
-# Name lookup may return multiple results — pick the best candidate.
-GET_SERIES_BY_NAME_QUERY = """
-query GetSeriesByName($name: String!) {
-    series(
-        where: {
-            name: {_eq: $name},
-            books_count: {_gt: 0},
-            canonical_id: {_is_null: true}
-        },
-        order_by: [{primary_books_count: desc_nulls_last}, {books_count: desc}],
-        limit: 5
-    ) {
-        id
-        name
-        slug
-        description
-        books_count
-        primary_books_count
-        is_completed
-        author {
-            name
-            slug
-        }
-        book_series(
-            distinct_on: position
-            order_by: [{position: asc}, {book: {users_count: desc}}]
-            where: {
-                book: {canonical_id: {_is_null: true}, is_partial_book: {_eq: false}},
-                compilation: {_eq: false}
-            }
-        ) {
-            position
-            book {
-                id
-                slug
-                title
-                release_year
-                rating
-                users_count
-            }
-        }
-    }
-}
-"""
-
 
 def _format_series(s: dict[str, Any]) -> dict[str, Any]:
     """Format a raw series record into a structured response dict."""
