@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `set_user_book` now accepts `edition_id` to select the specific edition being read.
+  `get_user_book` includes edition details in the response.
 - `get_user_reviews` tool — list your reviews with review text, rating, spoiler flag, and book info.
 - `set_user_book` now accepts `review_raw` (plain text, converted to Slate JSON),
   `review_has_spoilers`, `reviewed_at`, and `private_notes`. All new fields are

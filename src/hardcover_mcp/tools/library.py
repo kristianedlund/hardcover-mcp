@@ -49,11 +49,25 @@ _USER_BOOK_DETAIL_FIELDS = """
     review_has_spoilers
     reviewed_at
     private_notes
+    edition {
+        id
+        title
+        isbn_13
+        asin
+        pages
+        audio_seconds
+        edition_format
+        release_date
+        language {
+            language
+        }
+    }
     user_book_reads(order_by: {id: desc}) {
         id
         started_at
         finished_at
         progress_pages
+        progress_seconds
     }
     book {
         title
@@ -138,7 +152,7 @@ def _format_user_book(ub: dict[str, Any]) -> dict[str, Any]:
 
 
 def _format_user_book_detail(ub: dict[str, Any]) -> dict[str, Any]:
-    """Format a user_book record into a detailed dict including reads and review fields."""
+    """Format a user_book record into a detailed dict including reads, review, and edition."""
     book = ub.get("book", {})
     authors = [c["author"]["name"] for c in book.get("contributions", [])]
     return {
@@ -155,6 +169,7 @@ def _format_user_book_detail(ub: dict[str, Any]) -> dict[str, Any]:
         "review_has_spoilers": ub.get("review_has_spoilers"),
         "reviewed_at": ub.get("reviewed_at"),
         "private_notes": ub.get("private_notes"),
+        "edition": ub.get("edition"),
         "reads": ub.get("user_book_reads", []),
     }
 
@@ -360,6 +375,7 @@ query FindUserBook($user_id: Int!, $book_id: Int!) {
         review_has_spoilers
         reviewed_at
         private_notes
+        edition_id
     }
 }
 """
@@ -374,6 +390,7 @@ mutation InsertUserBook($object: UserBookCreateInput!) {
             book_id
             status_id
             rating
+            edition_id
         }
     }
 }
@@ -389,6 +406,7 @@ mutation UpdateUserBook($id: Int!, $object: UserBookUpdateInput!) {
             book_id
             status_id
             rating
+            edition_id
         }
     }
 }
@@ -419,7 +437,7 @@ def _text_to_slate(text: str) -> list[dict[str, Any]]:
 
 
 async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
-    """Set or update a book's status, rating, review, and private notes in the user's library.
+    """Set or update a book's status, rating, review, notes, and edition in the user's library.
 
     Parameters
     ----------
@@ -427,13 +445,14 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
         Required: ``book_id`` (int).
         Optional: ``status`` (str or int), ``rating`` (float),
         ``review_raw`` (str), ``review_has_spoilers`` (bool),
-        ``reviewed_at`` (str), ``private_notes`` (str).
+        ``reviewed_at`` (str), ``private_notes`` (str),
+        ``edition_id`` (int).
         Unspecified fields are preserved on existing entries.
 
     Returns
     -------
     list[TextContent]
-        JSON with the resulting ``user_book_id``, ``status``, and ``rating``.
+        JSON with the resulting ``user_book_id``, ``status``, ``rating``, and ``edition_id``.
     """
     book_id = arguments.get("book_id")
     if not book_id:
@@ -453,6 +472,7 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
     review_has_spoilers = arguments.get("review_has_spoilers")
     reviewed_at = arguments.get("reviewed_at")
     private_notes = arguments.get("private_notes")
+    edition_id = arguments.get("edition_id")
 
     # Convert plain-text review to Slate JSON if provided
     review_slate = _text_to_slate(review_raw) if review_raw is not None else None
@@ -461,6 +481,8 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
         book_id_int = _require_int(book_id, "book_id")
         if rating is not None:
             _require_float(rating, "rating")
+        if edition_id is not None:
+            edition_id = _require_int(edition_id, "edition_id")
     except ValueError as e:
         return [TextContent(type="text", text=f"Error: {e}")]
 
@@ -501,6 +523,10 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
             obj["private_notes"] = private_notes
         elif current.get("private_notes") is not None:
             obj["private_notes"] = current["private_notes"]
+        if edition_id is not None:
+            obj["edition_id"] = edition_id
+        elif current.get("edition_id") is not None:
+            obj["edition_id"] = current["edition_id"]
 
         ub_id = current["id"]
         result = await execute(UPDATE_USER_BOOK_MUTATION, {"id": ub_id, "object": obj})
@@ -520,6 +546,8 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
             obj["reviewed_at"] = reviewed_at
         if private_notes is not None:
             obj["private_notes"] = private_notes
+        if edition_id is not None:
+            obj["edition_id"] = edition_id
         result = await execute(INSERT_USER_BOOK_MUTATION, {"object": obj})
         mutation_result = result["data"]["insert_user_book"]
 
@@ -532,6 +560,7 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
         "book_id": ub.get("book_id"),
         "status": STATUS_MAP.get(ub.get("status_id"), str(ub.get("status_id"))),
         "rating": ub.get("rating"),
+        "edition_id": ub.get("edition_id"),
     }
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
 

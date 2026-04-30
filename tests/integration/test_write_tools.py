@@ -136,15 +136,17 @@ class TestUserBookLifecycle:
         assert created["status"] == "Want to Read"
 
         try:
-            # 2. Update rating
+            # 2. Update status to Read and set rating
             result = await handle_set_user_book(
                 {
                     "book_id": book_id,
+                    "status": "Read",
                     "rating": 4.0,
                 }
             )
             updated = json.loads(result[0].text)
             assert updated["rating"] == 4.0
+            assert updated["status"] == "Read"
 
             # 3. Verify via get
             result = await handle_get_user_book({"book_id": book_id})
@@ -199,6 +201,69 @@ class TestUserBookReviewLifecycle:
 
         finally:
             # 3. Delete (cleanup always runs)
+            result = await handle_delete_user_book({"user_book_id": user_book_id})
+            deleted = json.loads(result[0].text)
+            assert deleted["deleted"] is True
+
+
+async def _find_edition_for_book_not_in_library() -> tuple[int, int]:
+    """Return (book_id, edition_id) for a well-known book not in the test user's library."""
+    from hardcover_mcp.tools.editions import handle_get_edition
+    from hardcover_mcp.tools.library import handle_get_user_book
+
+    # Candidate ISBNs for common books — use the first whose book is not in library
+    candidate_isbns = [
+        "9780393316049",  # Surely You're Joking, Mr. Feynman! (W. W. Norton paperback)
+        "9780385495325",  # The Code Book (Simon Singh)
+        "9780385333481",  # A Short History of Nearly Everything (Anchor paperback)
+    ]
+    for isbn_13 in candidate_isbns:
+        edition_result = await handle_get_edition({"isbn_13": isbn_13})
+        edition_data = json.loads(edition_result[0].text)
+        if "id" not in edition_data or not edition_data.get("book"):
+            continue
+        edition_id = edition_data["id"]
+        book_id = edition_data["book"]["id"]
+        library_result = await handle_get_user_book({"book_id": book_id})
+        if "not in your library" in library_result[0].text.lower():
+            return book_id, edition_id
+
+    pytest.skip("No suitable book+edition found for edition selection test")
+
+
+class TestEditionSelection:
+    """Set an edition on a library entry → verify → delete."""
+
+    async def test_set_and_read_edition_id(self):
+        from hardcover_mcp.tools.library import (
+            handle_delete_user_book,
+            handle_get_user_book,
+            handle_set_user_book,
+        )
+
+        book_id, edition_id = await _find_edition_for_book_not_in_library()
+
+        # 1. Add book to library with a specific edition
+        result = await handle_set_user_book(
+            {
+                "book_id": book_id,
+                "status": "Want to Read",
+                "edition_id": edition_id,
+            }
+        )
+        created = json.loads(result[0].text)
+        user_book_id = created["user_book_id"]
+        assert created["edition_id"] == edition_id
+
+        try:
+            # 2. Verify edition info is returned by get_user_book
+            result = await handle_get_user_book({"book_id": book_id})
+            detail = json.loads(result[0].text)
+            assert detail["edition"] is not None
+            assert detail["edition"]["id"] == edition_id
+
+        finally:
+            # 3. Clean up
             result = await handle_delete_user_book({"user_book_id": user_book_id})
             deleted = json.loads(result[0].text)
             assert deleted["deleted"] is True

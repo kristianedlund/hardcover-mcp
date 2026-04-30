@@ -363,6 +363,12 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
                         "type": "string",
                         "description": "Private notes visible only to you.",
                     },
+                    "edition_id": {
+                        "type": "integer",
+                        "description": (
+                            "Edition ID (from get_edition). Sets which edition you're reading."
+                        ),
+                    },
                 },
                 "required": ["book_id"],
             },
