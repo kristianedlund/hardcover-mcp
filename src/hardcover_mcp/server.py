@@ -16,6 +16,7 @@ from hardcover_mcp.tools.library import (
     handle_add_user_book_read,
     handle_delete_user_book,
     handle_delete_user_book_read,
+    handle_get_owned_books,
     handle_get_user_book,
     handle_get_user_library,
     handle_get_user_reviews,
@@ -205,6 +206,29 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
     ),
     (
         Tool(
+            name="get_owned_books",
+            description=(
+                "List all books you have marked as owned."
+                " Returns title, authors, edition details, and owned_copies count."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "page": {
+                        "type": "integer",
+                        "description": "Page number (default 1).",
+                    },
+                    "per_page": {
+                        "type": "integer",
+                        "description": "Results per page (default 20, max 100).",
+                    },
+                },
+            },
+        ),
+        handle_get_owned_books,
+    ),
+    (
+        Tool(
             name="get_my_lists",
             description="Get your Hardcover lists. Returns id, name, books count, privacy.",
             inputSchema={
@@ -329,8 +353,8 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
         Tool(
             name="set_user_book",
             description=(
-                "Set a book's status, rating, review, privacy, and private notes."
-                " Preserves unspecified fields."
+                "Set a book's status, rating, review, privacy, private notes,"
+                " and ownership. Preserves unspecified fields."
             ),
             inputSchema={
                 "type": "object",
@@ -375,6 +399,14 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
                         "description": (
                             "Edition ID (from get_edition). Sets which edition you're reading."
                         ),
+                    },
+                    "owned": {
+                        "type": "boolean",
+                        "description": "Whether you own a physical or digital copy.",
+                    },
+                    "owned_copies": {
+                        "type": "integer",
+                        "description": "Number of copies you own (default 1 when owned is true).",
                     },
                 },
                 "required": ["book_id"],

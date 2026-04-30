@@ -389,3 +389,54 @@ class TestPrivacyControls:
             result = await handle_delete_user_book({"user_book_id": user_book_id})
             deleted = json.loads(result[0].text)
             assert deleted["deleted"] is True
+
+
+class TestOwnedBooksLifecycle:
+    """Add a book → mark as owned → verify get_owned_books returns it → delete."""
+
+    async def test_full_lifecycle(self):
+        from hardcover_mcp.tools.library import (
+            handle_delete_user_book,
+            handle_get_owned_books,
+            handle_set_user_book,
+        )
+
+        book_id = await _find_book_not_in_library()
+
+        # 1. Add to library and mark as owned
+        result = await handle_set_user_book(
+            {
+                "book_id": book_id,
+                "status": "Read",
+                "owned": True,
+                "owned_copies": 1,
+            }
+        )
+        created = json.loads(result[0].text)
+        user_book_id = created["user_book_id"]
+        assert created["owned"] is True
+        assert created["owned_copies"] == 1
+
+        try:
+            # 2. Verify get_owned_books returns the book
+            result = await handle_get_owned_books({})
+            owned = json.loads(result[0].text)
+            book_ids = [b["book_id"] for b in owned["books"]]
+            assert book_id in book_ids
+
+            # 3. Update owned_copies — owned flag must be preserved
+            result = await handle_set_user_book(
+                {
+                    "book_id": book_id,
+                    "owned_copies": 2,
+                }
+            )
+            updated = json.loads(result[0].text)
+            assert updated["owned_copies"] == 2
+            assert updated["owned"] is True
+
+        finally:
+            # 4. Delete (cleanup always runs)
+            result = await handle_delete_user_book({"user_book_id": user_book_id})
+            deleted = json.loads(result[0].text)
+            assert deleted["deleted"] is True

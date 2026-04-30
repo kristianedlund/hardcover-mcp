@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_owned_books` tool — list all books you have marked as owned; returns title,
+  authors, edition details, and `owned_copies` count. Supports pagination via
+  `page` and `per_page` (default 20, max 100).
+- `set_user_book` now accepts `owned` (bool) and `owned_copies` (int) to mark a book
+  as owned and record how many copies you have. Both fields are preserved on update
+  when not specified.
+
 - `get_user_book` now includes `privacy` (Public/Followers/Private) in its response,
   mapped from `privacy_setting_id`.
 - `set_user_book` now accepts a `privacy` parameter (label or numeric ID 1/2/3) to
