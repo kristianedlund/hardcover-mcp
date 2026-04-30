@@ -136,15 +136,17 @@ class TestUserBookLifecycle:
         assert created["status"] == "Want to Read"
 
         try:
-            # 2. Update rating
+            # 2. Update status to Read and set rating
             result = await handle_set_user_book(
                 {
                     "book_id": book_id,
+                    "status": "Read",
                     "rating": 4.0,
                 }
             )
             updated = json.loads(result[0].text)
             assert updated["rating"] == 4.0
+            assert updated["status"] == "Read"
 
             # 3. Verify via get
             result = await handle_get_user_book({"book_id": book_id})
