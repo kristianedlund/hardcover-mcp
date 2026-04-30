@@ -267,3 +267,50 @@ class TestSearchEntities:
         assert "id" in series
         assert "name" in series
         assert "slug" in series
+
+
+class TestGetReadingStats:
+    async def test_returns_required_fields(self):
+        from hardcover_mcp.tools.stats import handle_get_reading_stats
+
+        result = await handle_get_reading_stats({})
+
+        data = json.loads(result[0].text)
+        assert "total_books" in data
+        assert "by_status" in data
+        assert "average_rating" in data
+        assert "books_read_this_year" in data
+        assert "year" in data
+
+    async def test_by_status_has_all_statuses(self):
+        from hardcover_mcp.tools.stats import handle_get_reading_stats
+
+        result = await handle_get_reading_stats({})
+
+        data = json.loads(result[0].text)
+        by_status = data["by_status"]
+        assert "want_to_read" in by_status
+        assert "currently_reading" in by_status
+        assert "read" in by_status
+        assert "did_not_finish" in by_status
+        assert "paused" in by_status
+        assert "ignored" in by_status
+
+    async def test_total_books_is_non_negative(self):
+        from hardcover_mcp.tools.stats import handle_get_reading_stats
+
+        result = await handle_get_reading_stats({})
+
+        data = json.loads(result[0].text)
+        assert isinstance(data["total_books"], int)
+        assert data["total_books"] >= 0
+
+    async def test_year_filter_changes_books_read_count(self):
+        from hardcover_mcp.tools.stats import handle_get_reading_stats
+
+        result_past = await handle_get_reading_stats({"year": 1900})
+
+        data = json.loads(result_past[0].text)
+        # No books were read in 1900 — count should be 0
+        assert data["books_read_this_year"] == 0
+        assert data["year"] == 1900
