@@ -7,6 +7,7 @@ from mcp.types import TextContent
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools.books import SEARCH_QUERY
 
 # ── Read: get_series by id or slug ──
 
@@ -154,7 +155,25 @@ async def handle_get_series(arguments: dict[str, Any]) -> list[TextContent]:
         result = await execute(GET_SERIES_BY_SLUG_QUERY, {"slug": slug})
         series_list = result["data"]["series"]
     else:
-        result = await execute(GET_SERIES_BY_NAME_QUERY, {"name": name})
+        # Hardcover GraphQL API disables LIKE operators (403), so use the
+        # Typesense search() endpoint for partial/fuzzy name matching, then
+        # fetch full details by ID.
+        search_result = await execute(
+            SEARCH_QUERY,
+            {
+                "query": name,
+                "query_type": "Series",
+                "per_page": 1,
+                "page": 1,
+            },
+        )
+        hits = search_result["data"]["search"]["results"].get("hits", [])
+        if not hits:
+            return [TextContent(type="text", text="No series found.")]
+        series_id = hits[0].get("document", {}).get("id")
+        if not series_id:
+            return [TextContent(type="text", text="No series found.")]
+        result = await execute(GET_SERIES_BY_ID_QUERY, {"id": series_id})
         series_list = result["data"]["series"]
 
     if not series_list:
