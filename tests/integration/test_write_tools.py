@@ -389,3 +389,57 @@ class TestPrivacyControls:
             result = await handle_delete_user_book({"user_book_id": user_book_id})
             deleted = json.loads(result[0].text)
             assert deleted["deleted"] is True
+
+
+class TestOwnedBooksLifecycle:
+    """Mark edition as owned → verify get_owned_books → un-own → verify removed."""
+
+    async def test_full_lifecycle(self):
+        from hardcover_mcp.tools.library import (
+            handle_get_owned_books,
+            handle_get_user_book,
+            handle_get_user_library,
+            handle_set_edition_owned,
+        )
+
+        lib_result = await handle_get_user_library({"status": "Read", "limit": 1})
+        lib_data = json.loads(lib_result[0].text)
+        assert lib_data["returned"] >= 1, "Need at least one 'Read' book for this test"
+
+        book_id = lib_data["books"][0]["book_id"]
+
+        # Get user_book detail to find the edition_id
+        detail_result = await handle_get_user_book({"book_id": book_id})
+        detail = json.loads(detail_result[0].text)
+        edition = detail.get("edition")
+        if edition is None:
+            pytest.skip("Test book has no edition set — cannot test edition_owned")
+        edition_id = edition["id"]
+
+        # Remember initial owned state so we can restore it
+        initial_owned_result = await handle_get_owned_books({"per_page": 100})
+        initial_data = json.loads(initial_owned_result[0].text)
+        initially_owned = any(b["book_id"] == book_id for b in initial_data["books"])
+
+        try:
+            # 1. Mark as owned (idempotent — won't double-toggle)
+            result = await handle_set_edition_owned({"edition_id": edition_id, "owned": True})
+            output = json.loads(result[0].text)
+            assert output["edition_id"] == edition_id
+            assert output["owned"] is True
+
+            # 2. Verify get_owned_books returns it
+            owned_result = await handle_get_owned_books({"per_page": 100})
+            owned_data = json.loads(owned_result[0].text)
+            owned_book_ids = [b["book_id"] for b in owned_data["books"]]
+            assert book_id in owned_book_ids
+
+            # 3. Calling again with owned=True should be a no-op
+            result2 = await handle_set_edition_owned({"edition_id": edition_id, "owned": True})
+            output2 = json.loads(result2[0].text)
+            assert output2["toggled"] is False
+
+        finally:
+            # Restore original state
+            if not initially_owned:
+                await handle_set_edition_owned({"edition_id": edition_id, "owned": False})

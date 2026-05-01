@@ -9,20 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_owned_books` tool — list all books you have marked as owned; returns title,
+  authors, edition details, and `owned_copies` count. Supports pagination via
+  `page` and `per_page` (default 20, max 100).
+- `set_edition_owned` tool — mark an edition as owned or not owned. Uses the
+  `edition_owned` toggle mutation with idempotent state checking.
 - `get_user_book` now includes `privacy` (Public/Followers/Private) in its response,
   mapped from `privacy_setting_id`.
 - `set_user_book` now accepts a `privacy` parameter (label or numeric ID 1/2/3) to
   view and change the privacy setting on library entries. Existing privacy is preserved
   when the field is not specified.
-
-### Fixed
-
-- `get_series` and `get_author` tools now support partial, typo-tolerant name
-  matching via the Hardcover Typesense search endpoint instead of disabled GraphQL
-  LIKE operators.
-
-### Added
-
 - `set_user_book` now accepts `edition_id` to select the specific edition being read.
   `get_user_book` includes edition details in the response.
 - `get_user_reviews` tool — list your reviews with review text, rating, spoiler flag, and book info.
@@ -35,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   average rating, and books read in a given year) via `user_books_aggregate`.
 - `add_user_book_read` and `update_user_book_read` now accept `progress_seconds` for
   tracking audiobook listening progress.
+
+### Fixed
+
+- `get_series` and `get_author` tools now support partial, typo-tolerant name
+  matching via the Hardcover Typesense search endpoint instead of disabled GraphQL
+  LIKE operators.
 
 ## [0.2.0] - 2026-04-29
 

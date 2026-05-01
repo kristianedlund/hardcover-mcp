@@ -1,4 +1,4 @@
-"""Tools: get_user_library, get_user_book, set_user_book, reading log, delete_user_book."""
+"""Tools: get_user_library, get_user_book, get_owned_books, set_user_book, reading log, delete."""
 
 import json
 from typing import Any
@@ -374,6 +374,195 @@ async def handle_get_user_reviews(arguments: dict[str, Any]) -> list[TextContent
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
+# ── Read: get_owned_books ──
+
+GET_OWNED_BOOKS_QUERY = """
+query GetOwnedBooks($user_id: Int!, $limit: Int!, $offset: Int!) {
+    lists(where: {slug: {_eq: "owned"}, user_id: {_eq: $user_id}}, limit: 1) {
+        id
+        list_books(limit: $limit, offset: $offset, order_by: {date_added: desc}) {
+            id
+            edition_id
+            book_id
+            date_added
+            edition {
+                id
+                title
+                isbn_13
+                asin
+                pages
+                audio_seconds
+                edition_format
+                release_date
+                language {
+                    language
+                }
+            }
+            book {
+                title
+                slug
+                contributions {
+                    author {
+                        name
+                    }
+                }
+            }
+        }
+        list_books_aggregate {
+            aggregate { count }
+        }
+    }
+}
+"""
+
+
+def _format_owned_book(lb: dict[str, Any]) -> dict[str, Any]:
+    """Format a list_book record from the Owned list into a summary dict.
+
+    Parameters
+    ----------
+    lb : dict[str, Any]
+        Raw ``list_books`` entry from the Hardcover API. Expected to contain
+        ``id``, ``edition_id``, ``book_id``, ``date_added``,
+        ``book`` (with ``title``, ``slug``, ``contributions``), and
+        optionally ``edition``.
+
+    Returns
+    -------
+    dict[str, Any]
+        Flat dict with ``book_id``, ``edition_id``, ``title``, ``slug``,
+        ``authors``, ``edition``, and ``date_added``.
+    """
+    book = lb.get("book", {})
+    authors = [c["author"]["name"] for c in book.get("contributions", [])]
+    return {
+        "book_id": lb["book_id"],
+        "edition_id": lb.get("edition_id"),
+        "title": book.get("title"),
+        "slug": book.get("slug"),
+        "authors": authors,
+        "edition": lb.get("edition"),
+        "date_added": lb.get("date_added"),
+    }
+
+
+async def handle_get_owned_books(arguments: dict[str, Any]) -> list[TextContent]:
+    """Fetch all books the authenticated user has marked as owned.
+
+    Ownership is stored in the user's "Owned" list, managed via the
+    ``edition_owned`` toggle mutation.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Optional: ``page`` (int, default 1), ``per_page`` (int, default 20, max 100).
+
+    Returns
+    -------
+    list[TextContent]
+        JSON with ``total`` count, ``returned``, ``offset``, and ``books`` list.
+        Each book includes title, authors, and edition details.
+    """
+    user = await get_current_user()
+    user_id = user["id"]
+
+    per_page = min(arguments.get("per_page", 20), 100)
+    page = max(arguments.get("page", 1), 1)
+    offset = (page - 1) * per_page
+
+    result = await execute(
+        GET_OWNED_BOOKS_QUERY,
+        {"user_id": user_id, "limit": per_page, "offset": offset},
+    )
+
+    lists = result["data"]["lists"]
+    if not lists:
+        output = {"total": 0, "returned": 0, "offset": offset, "books": []}
+        return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+    owned_list = lists[0]
+    total = owned_list["list_books_aggregate"]["aggregate"]["count"]
+    list_books = owned_list["list_books"]
+    formatted = [_format_owned_book(lb) for lb in list_books]
+
+    output = {"total": total, "returned": len(formatted), "offset": offset, "books": formatted}
+    return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+
+# ── Write: set_edition_owned ──
+
+EDITION_OWNED_MUTATION = """
+mutation EditionOwned($id: Int!) {
+    edition_owned(id: $id) {
+        id
+        list_book {
+            id
+        }
+    }
+}
+"""
+
+CHECK_EDITION_OWNED_QUERY = """
+query CheckEditionOwned($user_id: Int!, $edition_id: Int!) {
+    lists(where: {slug: {_eq: "owned"}, user_id: {_eq: $user_id}}, limit: 1) {
+        list_books(where: {edition_id: {_eq: $edition_id}}, limit: 1) {
+            id
+        }
+    }
+}
+"""
+
+
+async def handle_set_edition_owned(arguments: dict[str, Any]) -> list[TextContent]:
+    """Mark an edition as owned or not owned.
+
+    Uses the ``edition_owned`` toggle mutation. Checks current state first
+    to avoid toggling the wrong way — the call is idempotent.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Required: ``edition_id`` (int).
+        Required: ``owned`` (bool) — ``true`` to own, ``false`` to un-own.
+
+    Returns
+    -------
+    list[TextContent]
+        JSON with ``edition_id``, ``owned``, and whether a toggle was needed.
+    """
+    edition_id = arguments.get("edition_id")
+    owned = arguments.get("owned")
+
+    if edition_id is None:
+        return [TextContent(type="text", text="Error: 'edition_id' is required.")]
+    if owned is None:
+        return [TextContent(type="text", text="Error: 'owned' (true/false) is required.")]
+
+    try:
+        edition_id_int = _require_int(edition_id, "edition_id")
+    except ValueError as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
+
+    # Check current ownership via the Owned list
+    user = await get_current_user()
+    existing = await execute(
+        CHECK_EDITION_OWNED_QUERY,
+        {"user_id": user["id"], "edition_id": edition_id_int},
+    )
+    lists = existing["data"]["lists"]
+    currently_owned = bool(lists and lists[0]["list_books"])
+
+    if currently_owned == bool(owned):
+        # Already in desired state — no toggle needed
+        output = {"edition_id": edition_id_int, "owned": bool(owned), "toggled": False}
+        return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+    # Toggle ownership
+    await execute(EDITION_OWNED_MUTATION, {"id": edition_id_int})
+    output = {"edition_id": edition_id_int, "owned": bool(owned), "toggled": True}
+    return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+
 # ── Write: set_user_book ──
 
 FIND_USER_BOOK_QUERY = """
@@ -596,6 +785,7 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
             obj["privacy_setting_id"] = privacy_setting_id
         if edition_id is not None:
             obj["edition_id"] = edition_id
+        # owned/owned_copies are not on UserBookCreateInput — set via update only
         result = await execute(INSERT_USER_BOOK_MUTATION, {"object": obj})
         mutation_result = result["data"]["insert_user_book"]
 

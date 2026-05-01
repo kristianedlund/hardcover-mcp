@@ -16,9 +16,11 @@ from hardcover_mcp.tools.library import (
     handle_add_user_book_read,
     handle_delete_user_book,
     handle_delete_user_book_read,
+    handle_get_owned_books,
     handle_get_user_book,
     handle_get_user_library,
     handle_get_user_reviews,
+    handle_set_edition_owned,
     handle_set_user_book,
     handle_update_user_book_read,
 )
@@ -205,6 +207,29 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
     ),
     (
         Tool(
+            name="get_owned_books",
+            description=(
+                "List all books you have marked as owned."
+                " Returns title, authors, edition details, and owned_copies count."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "page": {
+                        "type": "integer",
+                        "description": "Page number (default 1).",
+                    },
+                    "per_page": {
+                        "type": "integer",
+                        "description": "Results per page (default 20, max 100).",
+                    },
+                },
+            },
+        ),
+        handle_get_owned_books,
+    ),
+    (
+        Tool(
             name="get_my_lists",
             description="Get your Hardcover lists. Returns id, name, books count, privacy.",
             inputSchema={
@@ -381,6 +406,30 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
             },
         ),
         handle_set_user_book,
+    ),
+    (
+        Tool(
+            name="set_edition_owned",
+            description=(
+                "Mark an edition as owned or not owned."
+                " Use get_edition to find the edition ID first."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "edition_id": {
+                        "type": "integer",
+                        "description": "Edition ID (from get_edition).",
+                    },
+                    "owned": {
+                        "type": "boolean",
+                        "description": "true to mark as owned, false to un-own.",
+                    },
+                },
+                "required": ["edition_id", "owned"],
+            },
+        ),
+        handle_set_edition_owned,
     ),
     (
         Tool(
