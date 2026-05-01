@@ -17,6 +17,7 @@ from hardcover_mcp.tools.library import (
     _text_to_slate,
     handle_get_owned_books,
     handle_get_user_reviews,
+    handle_set_edition_owned,
     handle_set_user_book,
 )
 
@@ -932,13 +933,12 @@ class TestHandleSetUserBookPrivacy:
 class TestFormatOwnedBook:
     """Verify that _format_owned_book produces the correct shape."""
 
-    def _make_ub(self, **extra: object) -> dict:
+    def _make_lb(self, **extra: object) -> dict:
         base: dict = {
             "id": 7,
             "book_id": 55,
-            "owned_copies": 1,
-            "rating": 4.0,
-            "updated_at": "2025-03-01",
+            "edition_id": 200,
+            "date_added": "2025-03-01T00:00:00+00:00",
             "edition": None,
             "book": {
                 "title": "Owned Book",
@@ -950,19 +950,17 @@ class TestFormatOwnedBook:
         return base
 
     def test_output_shape(self):
-        result = _format_owned_book(self._make_ub())
-        assert result["user_book_id"] == 7
+        result = _format_owned_book(self._make_lb())
         assert result["book_id"] == 55
+        assert result["edition_id"] == 200
         assert result["title"] == "Owned Book"
         assert result["slug"] == "owned-book"
         assert result["authors"] == ["Jane Doe"]
-        assert result["owned_copies"] == 1
-        assert result["rating"] == 4.0
         assert result["edition"] is None
-        assert result["updated_at"] == "2025-03-01"
+        assert result["date_added"] == "2025-03-01T00:00:00+00:00"
 
     def test_multiple_authors(self):
-        ub = self._make_ub(
+        lb = self._make_lb(
             book={
                 "title": "Co-written",
                 "slug": "co-written",
@@ -972,7 +970,7 @@ class TestFormatOwnedBook:
                 ],
             }
         )
-        result = _format_owned_book(ub)
+        result = _format_owned_book(lb)
         assert result["authors"] == ["Alice", "Bob"]
 
     def test_edition_present(self):
@@ -987,13 +985,9 @@ class TestFormatOwnedBook:
             "release_date": "2020-01-01",
             "language": {"language": "English"},
         }
-        ub = self._make_ub(edition=edition)
-        result = _format_owned_book(ub)
+        lb = self._make_lb(edition=edition)
+        result = _format_owned_book(lb)
         assert result["edition"] == edition
-
-    def test_null_owned_copies(self):
-        result = _format_owned_book(self._make_ub(owned_copies=None))
-        assert result["owned_copies"] is None
 
 
 class TestHandleGetOwnedBooks:
@@ -1002,18 +996,25 @@ class TestHandleGetOwnedBooks:
     def _mock_api_response(self, books: list[dict], total: int = 1) -> dict:
         return {
             "data": {
-                "user_books": books,
-                "user_books_aggregate": {"aggregate": {"count": total}},
+                "lists": [
+                    {
+                        "id": 100,
+                        "list_books": books,
+                        "list_books_aggregate": {"aggregate": {"count": total}},
+                    }
+                ]
             }
         }
+
+    def _mock_empty_response(self) -> dict:
+        return {"data": {"lists": []}}
 
     def _make_owned_record(self) -> dict:
         return {
             "id": 7,
             "book_id": 55,
-            "owned_copies": 2,
-            "rating": 4.5,
-            "updated_at": "2025-03-01",
+            "edition_id": 200,
+            "date_added": "2025-03-01T00:00:00+00:00",
             "edition": None,
             "book": {
                 "title": "Owned Book",
@@ -1043,8 +1044,8 @@ class TestHandleGetOwnedBooks:
         assert data["returned"] == 1
         assert data["offset"] == 0
         book = data["books"][0]
-        assert book["user_book_id"] == 7
-        assert book["owned_copies"] == 2
+        assert book["book_id"] == 55
+        assert book["edition_id"] == 200
         assert book["authors"] == ["Jane Doe"]
 
     async def test_default_pagination_params(self):
@@ -1108,7 +1109,7 @@ class TestHandleGetOwnedBooks:
 
     async def test_empty_books_list(self):
         mock_user = {"id": 1}
-        mock_result = self._mock_api_response([], total=0)
+        mock_result = self._mock_empty_response()
 
         with (
             patch(
@@ -1127,100 +1128,19 @@ class TestHandleGetOwnedBooks:
         assert data["books"] == []
 
 
-class TestHandleSetUserBookOwned:
-    """Verify that handle_set_user_book handles owned and owned_copies correctly."""
+class TestHandleSetEditionOwned:
+    """Verify handle_set_edition_owned checks state and toggles correctly."""
 
-    def _make_existing(
-        self,
-        owned: bool | None = None,
-        owned_copies: int | None = None,
-    ) -> dict:
-        return {
-            "data": {
-                "user_books": [
-                    {
-                        "id": 10,
-                        "status_id": 3,
-                        "privacy_setting_id": None,
-                        "rating": 4.0,
-                        "review_slate": None,
-                        "review_has_spoilers": None,
-                        "reviewed_at": None,
-                        "private_notes": None,
-                        "edition_id": None,
-                        "owned": owned,
-                        "owned_copies": owned_copies,
-                    }
-                ]
-            }
-        }
+    def _mock_check_result(self, owned: bool) -> dict:
+        """Mock the CHECK_EDITION_OWNED_QUERY response."""
+        if owned:
+            return {"data": {"lists": [{"list_books": [{"id": 10}]}]}}
+        return {"data": {"lists": [{"list_books": []}]}}
 
-    def _make_mutation_result(
-        self,
-        owned: bool | None = None,
-        owned_copies: int | None = None,
-    ) -> dict:
-        return {
-            "data": {
-                "update_user_book": {
-                    "error": None,
-                    "id": 10,
-                    "user_book": {
-                        "id": 10,
-                        "book_id": 42,
-                        "status_id": 3,
-                        "privacy_setting_id": None,
-                        "rating": 4.0,
-                        "edition_id": None,
-                        "owned": owned,
-                        "owned_copies": owned_copies,
-                    },
-                }
-            }
-        }
+    def _mock_toggle_result(self) -> dict:
+        return {"data": {"edition_owned": {"id": 1, "list_book": {"id": 99}}}}
 
-    async def test_owned_passed_on_insert(self):
-        mock_user = {"id": 1}
-        mock_existing = {"data": {"user_books": []}}
-        mock_mutation = {
-            "data": {
-                "insert_user_book": {
-                    "error": None,
-                    "id": 99,
-                    "user_book": {
-                        "id": 99,
-                        "book_id": 42,
-                        "status_id": 3,
-                        "privacy_setting_id": None,
-                        "rating": None,
-                        "edition_id": None,
-                        "owned": True,
-                        "owned_copies": 1,
-                    },
-                }
-            }
-        }
-
-        with (
-            patch(
-                "hardcover_mcp.tools.library.get_current_user",
-                new=AsyncMock(return_value=mock_user),
-            ),
-            patch(
-                "hardcover_mcp.tools.library.execute",
-                new=AsyncMock(side_effect=[mock_existing, mock_mutation]),
-            ) as mock_exec,
-        ):
-            result = await handle_set_user_book({"book_id": 42, "owned": True, "owned_copies": 1})
-
-        insert_obj = mock_exec.call_args_list[1][0][1]["object"]
-        assert insert_obj["owned"] is True
-        assert insert_obj["owned_copies"] == 1
-        output = json.loads(result[0].text)
-        assert output["owned"] is True
-        assert output["owned_copies"] == 1
-
-    async def test_owned_passed_on_update(self):
+    async def test_marks_owned_when_not_currently_owned(self):
         mock_user = {"id": 1}
 
         with (
@@ -1231,23 +1151,41 @@ class TestHandleSetUserBookOwned:
             patch(
                 "hardcover_mcp.tools.library.execute",
                 new=AsyncMock(
-                    side_effect=[
-                        self._make_existing(owned=False, owned_copies=None),
-                        self._make_mutation_result(owned=True, owned_copies=2),
-                    ]
+                    side_effect=[self._mock_check_result(False), self._mock_toggle_result()]
                 ),
             ) as mock_exec,
         ):
-            result = await handle_set_user_book({"book_id": 42, "owned": True, "owned_copies": 2})
+            result = await handle_set_edition_owned({"edition_id": 500, "owned": True})
 
-        update_obj = mock_exec.call_args_list[1][0][1]["object"]
-        assert update_obj["owned"] is True
-        assert update_obj["owned_copies"] == 2
+        output = json.loads(result[0].text)
+        assert output["edition_id"] == 500
+        assert output["owned"] is True
+        assert output["toggled"] is True
+        # Should have called execute twice: check + toggle
+        assert mock_exec.call_count == 2
+
+    async def test_no_toggle_when_already_owned(self):
+        mock_user = {"id": 1}
+
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(return_value=self._mock_check_result(True)),
+            ) as mock_exec,
+        ):
+            result = await handle_set_edition_owned({"edition_id": 500, "owned": True})
+
         output = json.loads(result[0].text)
         assert output["owned"] is True
-        assert output["owned_copies"] == 2
+        assert output["toggled"] is False
+        # Should have called execute only once (check), no toggle
+        assert mock_exec.call_count == 1
 
-    async def test_owned_preserved_on_update_when_not_specified(self):
+    async def test_un_owns_when_currently_owned(self):
         mock_user = {"id": 1}
 
         with (
@@ -1258,40 +1196,19 @@ class TestHandleSetUserBookOwned:
             patch(
                 "hardcover_mcp.tools.library.execute",
                 new=AsyncMock(
-                    side_effect=[
-                        self._make_existing(owned=True, owned_copies=3),
-                        self._make_mutation_result(owned=True, owned_copies=3),
-                    ]
+                    side_effect=[self._mock_check_result(True), self._mock_toggle_result()]
                 ),
             ) as mock_exec,
         ):
-            await handle_set_user_book({"book_id": 42, "rating": 5.0})
+            result = await handle_set_edition_owned({"edition_id": 500, "owned": False})
 
-        update_obj = mock_exec.call_args_list[1][0][1]["object"]
-        assert update_obj["owned"] is True
-        assert update_obj["owned_copies"] == 3
+        output = json.loads(result[0].text)
+        assert output["owned"] is False
+        assert output["toggled"] is True
+        assert mock_exec.call_count == 2
 
-    async def test_owned_copies_coerced_to_int(self):
+    async def test_no_toggle_when_already_not_owned(self):
         mock_user = {"id": 1}
-        mock_existing = {"data": {"user_books": []}}
-        mock_mutation = {
-            "data": {
-                "insert_user_book": {
-                    "error": None,
-                    "id": 5,
-                    "user_book": {
-                        "id": 5,
-                        "book_id": 42,
-                        "status_id": 3,
-                        "privacy_setting_id": None,
-                        "rating": None,
-                        "edition_id": None,
-                        "owned": True,
-                        "owned_copies": 2,
-                    },
-                }
-            }
-        }
 
         with (
             patch(
@@ -1300,23 +1217,27 @@ class TestHandleSetUserBookOwned:
             ),
             patch(
                 "hardcover_mcp.tools.library.execute",
-                new=AsyncMock(side_effect=[mock_existing, mock_mutation]),
+                new=AsyncMock(return_value=self._mock_check_result(False)),
             ) as mock_exec,
         ):
-            # String "2" should be coerced to int 2
-            await handle_set_user_book({"book_id": 42, "owned": True, "owned_copies": "2"})
+            result = await handle_set_edition_owned({"edition_id": 500, "owned": False})
 
-        insert_obj = mock_exec.call_args_list[1][0][1]["object"]
-        assert insert_obj["owned_copies"] == 2
+        output = json.loads(result[0].text)
+        assert output["owned"] is False
+        assert output["toggled"] is False
+        assert mock_exec.call_count == 1
 
-    async def test_invalid_owned_copies_returns_error(self):
-        mock_user = {"id": 1}
-
-        with patch(
-            "hardcover_mcp.tools.library.get_current_user",
-            new=AsyncMock(return_value=mock_user),
-        ):
-            result = await handle_set_user_book({"book_id": 42, "owned_copies": "abc"})
-
+    async def test_missing_edition_id_returns_error(self):
+        result = await handle_set_edition_owned({"owned": True})
         assert "Error" in result[0].text
-        assert "owned_copies" in result[0].text
+        assert "edition_id" in result[0].text
+
+    async def test_missing_owned_returns_error(self):
+        result = await handle_set_edition_owned({"edition_id": 500})
+        assert "Error" in result[0].text
+        assert "owned" in result[0].text
+
+    async def test_invalid_edition_id_returns_error(self):
+        result = await handle_set_edition_owned({"edition_id": "abc", "owned": True})
+        assert "Error" in result[0].text
+        assert "edition_id" in result[0].text
