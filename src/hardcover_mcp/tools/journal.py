@@ -14,7 +14,6 @@ from hardcover_mcp.tools.user import get_current_user
 # Results are ordered newest-first by action_at.
 GET_READING_JOURNAL_QUERY = """
 query GetReadingJournal(
-    $user_id: Int!,
     $limit: Int!,
     $offset: Int!,
     $where: reading_journals_bool_exp!
@@ -144,7 +143,6 @@ async def handle_get_reading_journal(arguments: dict[str, Any]) -> list[TextCont
     result = await execute(
         GET_READING_JOURNAL_QUERY,
         {
-            "user_id": user_id,
             "limit": limit,
             "offset": offset,
             "where": where,
