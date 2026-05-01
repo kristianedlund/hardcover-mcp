@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `get_reading_journal` tool — fetch reading journal entries (notes, quotes, status changes,
+  ratings, reviews, and progress updates). Accepts optional filters: `book_id`, `event` type,
+  `limit` (default 25, max 100), and `offset`. Returns `id`, `event`, `entry`, `action_at`,
+  `book_id`, `edition_id`, `metadata`, `privacy_setting_id`, and book info (title, slug,
+  authors).
+
 ## [0.3.0] - 2026-05-01
 
 ### Added
