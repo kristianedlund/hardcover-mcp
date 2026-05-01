@@ -210,7 +210,7 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
             name="get_owned_books",
             description=(
                 "List all books you have marked as owned."
-                " Returns title, authors, edition details, and owned_copies count."
+                " Returns title, authors, and edition details."
             ),
             inputSchema={
                 "type": "object",

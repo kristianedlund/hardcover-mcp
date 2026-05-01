@@ -5,12 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-05-01
 
 ### Added
 
 - `get_owned_books` tool — list all books you have marked as owned; returns title,
-  authors, edition details, and `owned_copies` count. Supports pagination via
+  authors, and edition details. Supports pagination via
   `page` and `per_page` (default 20, max 100).
 - `set_edition_owned` tool — mark an edition as owned or not owned. Uses the
   `edition_owned` toggle mutation with idempotent state checking.

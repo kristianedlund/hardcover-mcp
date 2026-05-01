@@ -785,7 +785,7 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
             obj["privacy_setting_id"] = privacy_setting_id
         if edition_id is not None:
             obj["edition_id"] = edition_id
-        # owned/owned_copies are not on UserBookCreateInput — set via update only
+
         result = await execute(INSERT_USER_BOOK_MUTATION, {"object": obj})
         mutation_result = result["data"]["insert_user_book"]
 
