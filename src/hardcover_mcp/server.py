@@ -143,13 +143,42 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
     (
         Tool(
             name="get_user_library",
-            description="Get books from your library. Filter by reading status.",
+            description=(
+                "Get books from your library. Filter by reading status or finished-date range "
+                "(start_date + end_date). Sort by rating, title, or updated date. "
+                "Use sort='rating', order='desc' to get top-rated books. "
+                "Use start_date + end_date to answer 'what did I read in May last year?'"
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "status": {
                         "type": "string",
                         "description": "Status filter (e.g. 'Read', 'Currently Reading').",
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "description": (
+                            "Earliest finished_at date (ISO 8601, e.g. '2025-01-01'). "
+                            "Must be paired with end_date."
+                        ),
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": (
+                            "Latest finished_at date (ISO 8601, e.g. '2025-12-31'). "
+                            "Must be paired with start_date."
+                        ),
+                    },
+                    "sort": {
+                        "type": "string",
+                        "description": "Sort field: 'updated' (default), 'rating', or 'date_added'.",  # noqa: E501
+                        "enum": ["updated", "rating", "date_added"],
+                    },
+                    "order": {
+                        "type": "string",
+                        "description": "Sort direction: 'desc' (default) or 'asc'.",
+                        "enum": ["desc", "asc"],
                     },
                     "limit": {
                         "type": "integer",

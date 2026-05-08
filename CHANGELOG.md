@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_user_library` now accepts `start_date` and `end_date` parameters (ISO 8601) — returns
+  books whose `finished_at` falls within the range, with `finished_at` and `started_at` in
+  each result. Answers "what did I read in May last year?" in a single call.
+- `get_user_library` now accepts `sort` (`updated`, `rating`, `date_added`) and `order`
+  (`asc`, `desc`) parameters for server-side sorting. Use `sort=rating, order=desc` to get
+  top-rated books without paging through the entire library.
 - `get_reading_journal` tool — fetch reading journal entries (notes, quotes, status changes,
   ratings, reviews, and progress updates). Accepts optional filters: `book_id`, `event` type,
   `limit` (default 25, max 100), and `offset`. Returns `id`, `event`, `entry`, `action_at`,

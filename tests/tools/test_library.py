@@ -19,6 +19,7 @@ from hardcover_mcp.tools.library import (
     handle_get_user_reviews,
     handle_set_edition_owned,
     handle_set_user_book,
+    handle_get_user_library,
 )
 
 
@@ -1241,3 +1242,166 @@ class TestHandleSetEditionOwned:
         result = await handle_set_edition_owned({"edition_id": "abc", "owned": True})
         assert "Error" in result[0].text
         assert "edition_id" in result[0].text
+
+
+class TestGetUserLibrarySort:
+    """Tests for sort/order parameters in handle_get_user_library."""
+
+    def _mock_result(self, books=None):
+        return {
+            "data": {
+                "user_books": books or [],
+                "user_books_aggregate": {"aggregate": {"count": 0}},
+            }
+        }
+
+    async def test_default_sort_calls_execute(self):
+        mock_user = {"id": 1}
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(return_value=self._mock_result()),
+            ) as mock_exec,
+        ):
+            result = await handle_get_user_library({})
+
+        assert len(result) == 1
+        query = mock_exec.call_args[0][0]
+        assert "updated_at" in query
+        assert "desc" in query
+
+    async def test_sort_by_rating_desc(self):
+        mock_user = {"id": 1}
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(return_value=self._mock_result()),
+            ) as mock_exec,
+        ):
+            result = await handle_get_user_library({"sort": "rating", "order": "desc"})
+
+        assert len(result) == 1
+        query = mock_exec.call_args[0][0]
+        assert "rating" in query
+        assert "desc" in query
+
+    async def test_sort_by_date_added_asc(self):
+        mock_user = {"id": 1}
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(return_value=self._mock_result()),
+            ) as mock_exec,
+        ):
+            result = await handle_get_user_library({"sort": "date_added", "order": "asc"})
+
+        assert len(result) == 1
+        query = mock_exec.call_args[0][0]
+        assert "date_added" in query
+        assert "asc" in query
+
+    async def test_invalid_sort_returns_error(self):
+        result = await handle_get_user_library({"sort": "banana"})
+        assert "Error" in result[0].text
+        assert "sort" in result[0].text
+
+    async def test_invalid_order_returns_error(self):
+        result = await handle_get_user_library({"order": "sideways"})
+        assert "Error" in result[0].text
+        assert "order" in result[0].text
+
+
+class TestGetUserLibraryDateRange:
+    """Tests for start_date/end_date filtering in handle_get_user_library."""
+
+    def _mock_result(self, books=None):
+        return {
+            "data": {
+                "user_books": books or [],
+                "user_books_aggregate": {"aggregate": {"count": 0}},
+            }
+        }
+
+    async def test_date_range_uses_date_range_query(self):
+        mock_user = {"id": 1}
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(return_value=self._mock_result()),
+            ) as mock_exec,
+        ):
+            result = await handle_get_user_library(
+                {"start_date": "2025-05-01", "end_date": "2025-05-31"}
+            )
+
+        assert len(result) == 1
+        call_vars = mock_exec.call_args[0][1]
+        assert call_vars["start_date"] == "2025-05-01"
+        assert call_vars["end_date"] == "2025-05-31"
+
+    async def test_start_date_without_end_date_returns_error(self):
+        result = await handle_get_user_library({"start_date": "2025-01-01"})
+        assert "Error" in result[0].text
+        assert "end_date" in result[0].text
+
+    async def test_end_date_without_start_date_returns_error(self):
+        result = await handle_get_user_library({"end_date": "2025-12-31"})
+        assert "Error" in result[0].text
+        assert "start_date" in result[0].text
+
+    async def test_date_range_result_includes_finished_at(self):
+        mock_user = {"id": 1}
+        book = {
+            "id": 10,
+            "book_id": 99,
+            "status_id": 3,
+            "rating": 4.5,
+            "updated_at": "2025-05-15",
+            "book": {
+                "title": "Test Book",
+                "slug": "test-book",
+                "contributions": [{"author": {"name": "Author A"}}],
+            },
+            "user_book_reads": [{"finished_at": "2025-05-15", "started_at": "2025-05-01"}],
+        }
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(
+                    return_value={
+                        "data": {
+                            "user_books": [book],
+                            "user_books_aggregate": {"aggregate": {"count": 1}},
+                        }
+                    }
+                ),
+            ),
+        ):
+            result = await handle_get_user_library(
+                {"start_date": "2025-05-01", "end_date": "2025-05-31"}
+            )
+
+        output = json.loads(result[0].text)
+        assert output["total"] == 1
+        assert output["books"][0]["finished_at"] == "2025-05-15"
+        assert output["books"][0]["started_at"] == "2025-05-01"

@@ -93,6 +93,12 @@ _USER_BOOK_DETAIL_FIELDS = """
 
 # ── Read: get_user_library (single query, optional status filter) ──
 
+LIBRARY_SORT_FIELDS: dict[str, str] = {
+    "updated": "updated_at",
+    "rating": "rating",
+    "date_added": "date_added",
+}
+
 
 def _build_library_query(with_status: bool) -> str:
     """Build a GetUserLibrary GraphQL query, optionally filtering by status."""
@@ -104,7 +110,7 @@ query GetUserLibrary($user_id: Int!, $limit: Int!, $offset: Int!{status_var}) {{
         where: {{user_id: {{_eq: $user_id}}{status_filter}}},
         limit: $limit,
         offset: $offset,
-        order_by: {{updated_at: desc}}
+        order_by: {{__ORDER_FIELD__: __ORDER_DIR__}}
     ) {{
         {_USER_BOOK_FIELDS}
     }}
@@ -117,8 +123,54 @@ query GetUserLibrary($user_id: Int!, $limit: Int!, $offset: Int!{status_var}) {{
 """
 
 
-GET_USER_LIBRARY_QUERY = _build_library_query(with_status=True)
-GET_USER_LIBRARY_ALL_QUERY = _build_library_query(with_status=False)
+def _render_library_query(with_status: bool, order_field: str, order_dir: str) -> str:
+    """Render a GetUserLibrary query with the given sort field and direction."""
+    return (
+        _build_library_query(with_status)
+        .replace("__ORDER_FIELD__", order_field)
+        .replace("__ORDER_DIR__", order_dir)
+    )
+
+
+_USER_BOOK_FIELDS_WITH_READS = (
+    _USER_BOOK_FIELDS
+    + """
+    user_book_reads(
+        where: {finished_at: {_gte: $start_date, _lte: $end_date}},
+        order_by: {finished_at: desc},
+        limit: 1
+    ) {
+        started_at
+        finished_at
+    }
+"""
+)
+
+GET_USER_LIBRARY_BY_DATE_RANGE_QUERY = f"""
+query GetUserLibraryByDateRange(
+    $user_id: Int!, $limit: Int!, $offset: Int!, $start_date: date!, $end_date: date!
+) {{
+    user_books(
+        where: {{
+            user_id: {{_eq: $user_id}},
+            user_book_reads: {{finished_at: {{_gte: $start_date, _lte: $end_date}}}}
+        }},
+        limit: $limit,
+        offset: $offset,
+        order_by: {{finished_at: desc}}
+    ) {{
+        {_USER_BOOK_FIELDS_WITH_READS}
+    }}
+    user_books_aggregate(
+        where: {{
+            user_id: {{_eq: $user_id}},
+            user_book_reads: {{finished_at: {{_gte: $start_date, _lte: $end_date}}}}
+        }}
+    ) {{
+        aggregate {{ count }}
+    }}
+}}
+"""
 
 
 # ── Read: get_user_book ──
@@ -148,7 +200,7 @@ def _format_user_book(ub: dict[str, Any]) -> dict[str, Any]:
     """Format a user_book record into a flat summary dict."""
     book = ub.get("book", {})
     authors = [c["author"]["name"] for c in book.get("contributions", [])]
-    return {
+    result: dict[str, Any] = {
         "user_book_id": ub["id"],
         "book_id": ub["book_id"],
         "title": book.get("title"),
@@ -158,6 +210,11 @@ def _format_user_book(ub: dict[str, Any]) -> dict[str, Any]:
         "rating": ub.get("rating"),
         "updated_at": ub.get("updated_at"),
     }
+    reads = ub.get("user_book_reads")
+    if reads:
+        result["finished_at"] = reads[0].get("finished_at")
+        result["started_at"] = reads[0].get("started_at")
+    return result
 
 
 def _format_user_book_detail(ub: dict[str, Any]) -> dict[str, Any]:
@@ -195,8 +252,10 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
     Parameters
     ----------
     arguments : dict[str, Any]
-        Optional: ``status`` (str), ``limit`` (int, default 25, max 100),
-        ``offset`` (int, default 0).
+        Optional: ``status`` (str), ``start_date`` (str, ISO 8601 date),
+        ``end_date`` (str, ISO 8601 date), ``sort`` (str, default ``'updated'``),
+        ``order`` (str, ``'asc'`` or ``'desc'``, default ``'desc'``),
+        ``limit`` (int, default 25, max 100), ``offset`` (int, default 0).
 
     Returns
     -------
@@ -209,31 +268,55 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
     limit = min(arguments.get("limit", 25), 100)
     offset = arguments.get("offset", 0)
     status = arguments.get("status")
+    start_date = arguments.get("start_date")
+    end_date = arguments.get("end_date")
+    sort = arguments.get("sort", "updated")
+    order = arguments.get("order", "desc")
 
-    status_id = _resolve_status_id(status)
-    if status is not None and status_id is None:
-        valid = ", ".join(STATUS_MAP.values())
-        return [TextContent(type="text", text=f"Error: unknown status '{status}'. Valid: {valid}")]
+    if sort not in LIBRARY_SORT_FIELDS:
+        valid = ", ".join(LIBRARY_SORT_FIELDS)
+        return [TextContent(type="text", text=f"Error: unknown sort '{sort}'. Valid: {valid}")]
+    if order not in ("asc", "desc"):
+        return [TextContent(type="text", text="Error: order must be 'asc' or 'desc'.")]
 
-    if status_id is not None:
+    order_field = LIBRARY_SORT_FIELDS[sort]
+    order_dir = order
+
+    if start_date is not None or end_date is not None:
+        if start_date is None or end_date is None:
+            return [
+                TextContent(
+                    type="text",
+                    text="Error: start_date and end_date must both be provided.",
+                )
+            ]
         result = await execute(
-            GET_USER_LIBRARY_QUERY,
+            GET_USER_LIBRARY_BY_DATE_RANGE_QUERY,
             {
                 "user_id": user_id,
                 "limit": limit,
                 "offset": offset,
-                "status_id": status_id,
+                "start_date": start_date,
+                "end_date": end_date,
             },
         )
     else:
-        result = await execute(
-            GET_USER_LIBRARY_ALL_QUERY,
-            {
-                "user_id": user_id,
-                "limit": limit,
-                "offset": offset,
-            },
+        status_id = _resolve_status_id(status)
+        if status is not None and status_id is None:
+            valid = ", ".join(STATUS_MAP.values())
+            return [
+                TextContent(type="text", text=f"Error: unknown status '{status}'. Valid: {valid}")
+            ]
+
+        query = _render_library_query(
+            with_status=status_id is not None,
+            order_field=order_field,
+            order_dir=order_dir,
         )
+        vars: dict[str, Any] = {"user_id": user_id, "limit": limit, "offset": offset}
+        if status_id is not None:
+            vars["status_id"] = status_id
+        result = await execute(query, vars)
 
     total = result["data"]["user_books_aggregate"]["aggregate"]["count"]
     user_books = result["data"]["user_books"]
