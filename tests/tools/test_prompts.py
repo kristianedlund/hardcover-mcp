@@ -166,6 +166,12 @@ class TestHandleAnswerPrompt:
         assert "Error" in result[0].text
 
     @pytest.mark.asyncio
+    async def test_returns_error_for_non_integer_book_id(self):
+        result = await handle_answer_prompt({"prompt_id": 7, "book_id": "xyz"})
+
+        assert "Error" in result[0].text
+
+    @pytest.mark.asyncio
     async def test_submits_answer_and_returns_prompt_answer(self):
         mock_answer = {"id": 99, "prompt_id": 7, "book_id": 42}
         mock_result = {"data": {"insert_prompt_answer": {"id": 1, "prompt_answer": mock_answer}}}
