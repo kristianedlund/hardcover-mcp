@@ -241,6 +241,8 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
         raw_goal = mutation_result["data"]["update_reading_goal"].get("reading_goal") or {
             **goal_input,
             "id": existing_goals[0]["id"],
+            "progress": None,
+            "state": None,
         }
     else:
         mutation_result = await execute(INSERT_READING_GOAL_MUTATION, {"object": goal_input})
@@ -248,6 +250,8 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
         raw_goal = insert_payload.get("reading_goal") or {
             **goal_input,
             "id": insert_payload.get("id"),
+            "progress": None,
+            "state": None,
         }
 
     # --- 4. Format and return
