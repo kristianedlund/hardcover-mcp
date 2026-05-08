@@ -22,14 +22,14 @@ class TestReadingGoalsLifecycle:
         result = await handle_set_reading_goal(
             {
                 "goal": 52,
-                "metric": "books",
+                "metric": "book",
                 "start_date": start_date,
                 "end_date": end_date,
             }
         )
         saved = json.loads(result[0].text)
         assert saved["goal"] == 52
-        assert saved["metric"] == "books"
+        assert saved["metric"] == "book"
 
         # 2. Verify the goal appears in active goals
         result = await handle_get_reading_goal({"limit": 25})
@@ -37,7 +37,7 @@ class TestReadingGoalsLifecycle:
         goals = data["goals"]
 
         assert any(
-            goal["metric"] == "books"
+            goal["metric"] == "book"
             and goal["start_date"] == start_date
             and goal["end_date"] == end_date
             and goal["goal"] == 52

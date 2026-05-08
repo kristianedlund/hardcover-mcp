@@ -80,24 +80,6 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
     ),
     (
         Tool(
-            name="get_reading_goal",
-            description=(
-                "Get your active reading goals with target, metric, progress, and date range."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "limit": {
-                        "type": "integer",
-                        "description": "Max goals to return (default 10, max 100).",
-                    },
-                },
-            },
-        ),
-        handle_get_reading_goal,
-    ),
-    (
-        Tool(
             name="search_books",
             description=(
                 "Search Hardcover by title, author, or ISBN. Supports multiple entity types: "
@@ -276,6 +258,24 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
             },
         ),
         handle_get_owned_books,
+    ),
+    (
+        Tool(
+            name="get_reading_goal",
+            description=(
+                "Get your active reading goals with target, metric, progress, and date range."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max goals to return (default 10, max 100).",
+                    },
+                },
+            },
+        ),
+        handle_get_reading_goal,
     ),
     (
         Tool(
@@ -472,8 +472,8 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
                     },
                     "metric": {
                         "type": "string",
-                        "description": "Goal metric: 'books' or 'pages'.",
-                        "enum": ["books", "pages"],
+                        "description": "Goal metric: 'book' or 'page'.",
+                        "enum": ["book", "page"],
                     },
                     "start_date": {
                         "type": "string",

@@ -16,7 +16,7 @@ class TestFormatReadingGoal:
             {
                 "id": 7,
                 "goal": 52,
-                "metric": "books",
+                "metric": "book",
                 "progress": 12,
                 "start_date": "2026-01-01",
                 "end_date": "2026-12-31",
@@ -28,7 +28,7 @@ class TestFormatReadingGoal:
         assert result == {
             "id": 7,
             "goal": 52,
-            "metric": "books",
+            "metric": "book",
             "progress": 12,
             "start_date": "2026-01-01",
             "end_date": "2026-12-31",
@@ -48,7 +48,7 @@ class TestHandleGetReadingGoal:
                     {
                         "id": 10,
                         "goal": 52,
-                        "metric": "books",
+                        "metric": "book",
                         "progress": 11,
                         "start_date": "2026-01-01",
                         "end_date": "2026-12-31",
@@ -64,7 +64,7 @@ class TestHandleGetReadingGoal:
 
         assert data["returned"] == 1
         assert data["goals"][0]["goal"] == 52
-        assert data["goals"][0]["metric"] == "books"
+        assert data["goals"][0]["metric"] == "book"
 
         query_vars = mock_execute.call_args[0][1]
         assert query_vars["limit"] == 10
@@ -95,13 +95,13 @@ class TestHandleSetReadingGoal:
                 "end_date": "2026-12-31",
             }
         )
-        assert result[0].text == "Error: 'metric' must be either 'books' or 'pages'"
+        assert result[0].text == "Error: 'metric' must be either 'book' or 'page'"
 
     async def test_invalid_date_returns_error(self):
         result = await handle_set_reading_goal(
             {
                 "goal": 52,
-                "metric": "books",
+                "metric": "book",
                 "start_date": "2026-13-01",
                 "end_date": "2026-12-31",
             }
@@ -112,7 +112,7 @@ class TestHandleSetReadingGoal:
         result = await handle_set_reading_goal(
             {
                 "goal": 52,
-                "metric": "books",
+                "metric": "book",
                 "start_date": "2026-12-31",
                 "end_date": "2026-01-01",
             }
@@ -127,12 +127,13 @@ class TestHandleSetReadingGoal:
             {"data": {"goals": []}},
             {
                 "data": {
-                    "insert_reading_goal": {
+                    "insert_goal": {
                         "id": 55,
-                        "reading_goal": {
+                        "errors": None,
+                        "goal": {
                             "id": 55,
                             "goal": 52,
-                            "metric": "books",
+                            "metric": "book",
                             "progress": 0,
                             "start_date": "2026-01-01",
                             "end_date": "2026-12-31",
@@ -147,7 +148,7 @@ class TestHandleSetReadingGoal:
         result = await handle_set_reading_goal(
             {
                 "goal": 52,
-                "metric": "books",
+                "metric": "book",
                 "start_date": "2026-01-01",
                 "end_date": "2026-12-31",
                 "description": "Read one per week",
@@ -158,12 +159,11 @@ class TestHandleSetReadingGoal:
 
         assert data["id"] == 55
         assert data["goal"] == 52
-        assert data["metric"] == "books"
+        assert data["metric"] == "book"
 
         insert_vars = mock_execute.call_args_list[1][0][1]["object"]
         assert insert_vars["description"] == "Read one per week"
         assert insert_vars["privacy_setting_id"] == 2
-        assert insert_vars["user_id"] == 1
 
     @patch("hardcover_mcp.tools.goals.get_current_user", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.goals.execute", new_callable=AsyncMock)
@@ -173,12 +173,13 @@ class TestHandleSetReadingGoal:
             {"data": {"goals": [{"id": 12}]}},
             {
                 "data": {
-                    "update_reading_goal": {
+                    "update_goal": {
                         "id": 12,
-                        "reading_goal": {
+                        "errors": None,
+                        "goal": {
                             "id": 12,
                             "goal": 60,
-                            "metric": "books",
+                            "metric": "book",
                             "progress": 14,
                             "start_date": "2026-01-01",
                             "end_date": "2026-12-31",
@@ -193,7 +194,7 @@ class TestHandleSetReadingGoal:
         result = await handle_set_reading_goal(
             {
                 "goal": 60,
-                "metric": "books",
+                "metric": "book",
                 "start_date": "2026-01-01",
                 "end_date": "2026-12-31",
             }
@@ -202,7 +203,7 @@ class TestHandleSetReadingGoal:
 
         assert data["id"] == 12
         assert data["goal"] == 60
-        assert data["metric"] == "books"
+        assert data["metric"] == "book"
 
         update_vars = mock_execute.call_args_list[1][0][1]
         assert update_vars["id"] == 12

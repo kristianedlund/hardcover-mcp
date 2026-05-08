@@ -1,16 +1,15 @@
 """Tools: get_reading_goal and set_reading_goal."""
 
 import json
-from datetime import date
 from typing import Any
 
 from mcp.types import TextContent
 
 from hardcover_mcp.client import execute
-from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools._validation import _require_int, _require_iso_date
 from hardcover_mcp.tools.user import get_current_user
 
-VALID_GOAL_METRICS = {"books", "pages"}
+VALID_GOAL_METRICS = {"book", "page"}
 
 GET_READING_GOAL_QUERY = """
 query GetReadingGoal($user_id: Int!, $limit: Int!) {
@@ -55,10 +54,11 @@ query FindMatchingReadingGoal(
 """
 
 INSERT_READING_GOAL_MUTATION = """
-mutation InsertReadingGoal($object: ReadingGoalInput!) {
-    insert_reading_goal(object: $object) {
+mutation InsertReadingGoal($object: GoalInput!) {
+    insert_goal(object: $object) {
         id
-        reading_goal {
+        errors
+        goal {
             id
             goal
             metric
@@ -73,10 +73,11 @@ mutation InsertReadingGoal($object: ReadingGoalInput!) {
 """
 
 UPDATE_READING_GOAL_MUTATION = """
-mutation UpdateReadingGoal($id: Int!, $object: ReadingGoalInput!) {
-    update_reading_goal(id: $id, object: $object) {
+mutation UpdateReadingGoal($id: Int!, $object: GoalInput!) {
+    update_goal(id: $id, object: $object) {
         id
-        reading_goal {
+        errors
+        goal {
             id
             goal
             metric
@@ -105,27 +106,13 @@ def _format_reading_goal(goal: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _require_iso_date(value: Any, name: str) -> str:
-    """Validate and return an ISO 8601 date string."""
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"'{name}' must be a non-empty ISO 8601 date string")
-    normalized = value.strip()
-    try:
-        date.fromisoformat(normalized)
-    except ValueError:
-        raise ValueError(
-            f"'{name}' must be an ISO 8601 date (YYYY-MM-DD), got: {value!r}"
-        ) from None
-    return normalized
-
-
 def _require_metric(value: Any) -> str:
     """Validate and normalize goal metric values."""
     if not isinstance(value, str) or not value.strip():
-        raise ValueError("'metric' must be a non-empty string ('books' or 'pages')")
+        raise ValueError("'metric' must be a non-empty string ('book' or 'page')")
     metric = value.strip().lower()
     if metric not in VALID_GOAL_METRICS:
-        raise ValueError("'metric' must be either 'books' or 'pages'")
+        raise ValueError("'metric' must be either 'book' or 'page'")
     return metric
 
 
@@ -194,9 +181,10 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
         if end_date < start_date:
             raise ValueError("'end_date' must be on or after 'start_date'")
 
-        description = arguments.get("description")
-        if description is not None and not isinstance(description, str):
+        description_raw = arguments.get("description")
+        if description_raw is not None and not isinstance(description_raw, str):
             raise ValueError("'description' must be a string")
+        description = description_raw if description_raw else f"{goal} {metric}s"
 
         privacy_setting_id = None
         if "privacy_setting_id" in arguments and arguments["privacy_setting_id"] is not None:
@@ -210,14 +198,13 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
     # --- 2. Build mutation input
     user = await get_current_user()
     goal_input: dict[str, Any] = {
-        "user_id": user["id"],
         "goal": goal,
         "metric": metric,
         "start_date": start_date,
         "end_date": end_date,
+        "description": description,
+        "conditions": {},
     }
-    if description is not None:
-        goal_input["description"] = description
     if privacy_setting_id is not None:
         goal_input["privacy_setting_id"] = privacy_setting_id
 
@@ -238,7 +225,11 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
             UPDATE_READING_GOAL_MUTATION,
             {"id": existing_goals[0]["id"], "object": goal_input},
         )
-        raw_goal = mutation_result["data"]["update_reading_goal"].get("reading_goal") or {
+        update_payload = mutation_result["data"]["update_goal"]
+        if update_payload.get("errors"):
+            errors = "; ".join(update_payload["errors"])
+            return [TextContent(type="text", text=f"Error: {errors}")]
+        raw_goal = update_payload.get("goal") or {
             **goal_input,
             "id": existing_goals[0]["id"],
             "progress": None,
@@ -246,8 +237,11 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
         }
     else:
         mutation_result = await execute(INSERT_READING_GOAL_MUTATION, {"object": goal_input})
-        insert_payload = mutation_result["data"]["insert_reading_goal"]
-        raw_goal = insert_payload.get("reading_goal") or {
+        insert_payload = mutation_result["data"]["insert_goal"]
+        if insert_payload.get("errors"):
+            errors = "; ".join(insert_payload["errors"])
+            return [TextContent(type="text", text=f"Error: {errors}")]
+        raw_goal = insert_payload.get("goal") or {
             **goal_input,
             "id": insert_payload.get("id"),
             "progress": None,
