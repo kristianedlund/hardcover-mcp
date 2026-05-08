@@ -354,3 +354,46 @@ class TestGetUserReviews:
 
         data = json.loads(result[0].text)
         assert data["returned"] <= 1
+
+
+class TestGetReadingJournal:
+    async def test_returns_list(self):
+        from hardcover_mcp.tools.journal import handle_get_reading_journal
+
+        result = await handle_get_reading_journal({})
+
+        data = json.loads(result[0].text)
+        assert isinstance(data, list)
+
+    async def test_each_entry_has_expected_fields(self):
+        from hardcover_mcp.tools.journal import handle_get_reading_journal
+
+        result = await handle_get_reading_journal({"limit": 5})
+
+        data = json.loads(result[0].text)
+        for entry in data:
+            assert "id" in entry
+            assert "event" in entry
+            assert "action_at" in entry
+            assert "book_id" in entry
+            assert "book" in entry
+            assert "title" in entry["book"]
+            assert "authors" in entry["book"]
+
+    async def test_limit_is_respected(self):
+        from hardcover_mcp.tools.journal import handle_get_reading_journal
+
+        result = await handle_get_reading_journal({"limit": 2})
+
+        data = json.loads(result[0].text)
+        assert len(data) <= 2
+
+    async def test_filter_by_event_type(self):
+        from hardcover_mcp.tools.journal import handle_get_reading_journal
+
+        result = await handle_get_reading_journal({"event": "status_read", "limit": 10})
+
+        data = json.loads(result[0].text)
+        assert isinstance(data, list)
+        for entry in data:
+            assert entry["event"] == "status_read"

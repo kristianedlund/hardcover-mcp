@@ -12,6 +12,7 @@ from mcp.types import TextContent, Tool
 from hardcover_mcp.tools.authors import handle_get_author
 from hardcover_mcp.tools.books import handle_get_book, handle_search_books
 from hardcover_mcp.tools.editions import handle_get_edition
+from hardcover_mcp.tools.journal import handle_get_reading_journal
 from hardcover_mcp.tools.library import (
     handle_add_user_book_read,
     handle_delete_user_book,
@@ -663,6 +664,42 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
             },
         ),
         handle_remove_book_from_list,
+    ),
+    (
+        Tool(
+            name="get_reading_journal",
+            description=(
+                "Fetch reading journal entries for the authenticated user. "
+                "Includes notes, quotes, status changes, ratings, reviews, and progress updates. "
+                "Supports optional filters: book_id, event type, limit, and offset."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "type": "integer",
+                        "description": "Filter entries to a specific book by Hardcover book ID.",
+                    },
+                    "event": {
+                        "type": "string",
+                        "description": (
+                            "Filter by event type. Examples: 'note', 'quote', "
+                            "'status_currently_reading', 'status_read', 'rated', "
+                            "'reviewed', 'progress_updated'."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max entries to return (default 25, max 100).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Pagination offset (default 0).",
+                    },
+                },
+            },
+        ),
+        handle_get_reading_journal,
     ),
 ]
 
