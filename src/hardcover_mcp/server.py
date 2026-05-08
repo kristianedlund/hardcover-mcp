@@ -13,7 +13,11 @@ from hardcover_mcp.tools.authors import handle_get_author
 from hardcover_mcp.tools.books import handle_get_book, handle_search_books
 from hardcover_mcp.tools.editions import handle_get_edition
 from hardcover_mcp.tools.goals import handle_get_reading_goal, handle_set_reading_goal
-from hardcover_mcp.tools.journal import handle_get_reading_journal
+from hardcover_mcp.tools.journal import (
+    handle_add_journal_entry,
+    handle_delete_journal_entry,
+    handle_get_reading_journal,
+)
 from hardcover_mcp.tools.library import (
     handle_add_user_book_read,
     handle_delete_user_book,
@@ -789,6 +793,59 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
             },
         ),
         handle_get_reading_journal,
+    ),
+    (
+        Tool(
+            name="add_journal_entry",
+            description=(
+                "Create a reading journal entry (for example a note or quote) for a book."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "type": "integer",
+                        "description": "Hardcover book ID.",
+                    },
+                    "entry": {
+                        "type": "string",
+                        "description": "Journal entry text.",
+                    },
+                    "event": {
+                        "type": "string",
+                        "enum": ["note", "quote"],
+                        "description": "Journal event type.",
+                    },
+                    "edition_id": {
+                        "type": "integer",
+                        "description": "Optional Hardcover edition ID.",
+                    },
+                    "privacy_setting_id": {
+                        "type": "integer",
+                        "description": "Optional privacy setting ID (1 public, 2 followers, 3 private).",  # noqa: E501
+                    },
+                },
+                "required": ["book_id", "entry", "event"],
+            },
+        ),
+        handle_add_journal_entry,
+    ),
+    (
+        Tool(
+            name="delete_journal_entry",
+            description="Delete a reading journal entry by ID.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Reading journal entry ID.",
+                    },
+                },
+                "required": ["id"],
+            },
+        ),
+        handle_delete_journal_entry,
     ),
 ]
 

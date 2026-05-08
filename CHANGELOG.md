@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `limit` (default 25, max 100), and `offset`. Returns `id`, `event`, `entry`, `action_at`,
   `book_id`, `edition_id`, `metadata`, `privacy_setting_id`, and book info (title, slug,
   authors).
+- Added journal write tools: `add_journal_entry` (create note/quote entries) and
+  `delete_journal_entry` (delete by ID).
 - Added reading goal tools: `get_reading_goal` (active goals + progress) and
   `set_reading_goal` (create/update goal target, metric, and date range).
 
