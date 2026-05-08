@@ -12,6 +12,7 @@ from mcp.types import TextContent, Tool
 from hardcover_mcp.tools.authors import handle_get_author
 from hardcover_mcp.tools.books import handle_get_book, handle_search_books
 from hardcover_mcp.tools.editions import handle_get_edition
+from hardcover_mcp.tools.goals import handle_get_reading_goal, handle_set_reading_goal
 from hardcover_mcp.tools.journal import handle_get_reading_journal
 from hardcover_mcp.tools.library import (
     handle_add_user_book_read,
@@ -260,6 +261,24 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
     ),
     (
         Tool(
+            name="get_reading_goal",
+            description=(
+                "Get your active reading goals with target, metric, progress, and date range."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max goals to return (default 10, max 100).",
+                    },
+                },
+            },
+        ),
+        handle_get_reading_goal,
+    ),
+    (
+        Tool(
             name="get_my_lists",
             description="Get your Hardcover lists. Returns id, name, books count, privacy.",
             inputSchema={
@@ -436,6 +455,47 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
             },
         ),
         handle_set_user_book,
+    ),
+    (
+        Tool(
+            name="set_reading_goal",
+            description=(
+                "Create or update a reading goal with target, metric, dates, and optional "
+                "description/privacy."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "goal": {
+                        "type": "integer",
+                        "description": "Target count to reach by end_date.",
+                    },
+                    "metric": {
+                        "type": "string",
+                        "description": "Goal metric: 'book' or 'page'.",
+                        "enum": ["book", "page"],
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "description": "Start date (ISO 8601, e.g. '2026-01-01').",
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "End date (ISO 8601, e.g. '2026-12-31').",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional goal description.",
+                    },
+                    "privacy_setting_id": {
+                        "type": "integer",
+                        "description": "Optional privacy setting ID.",
+                    },
+                },
+                "required": ["goal", "metric", "start_date", "end_date"],
+            },
+        ),
+        handle_set_reading_goal,
     ),
     (
         Tool(
