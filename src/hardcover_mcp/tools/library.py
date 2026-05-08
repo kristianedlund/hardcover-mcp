@@ -262,9 +262,6 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
     list[TextContent]
         JSON with ``total`` count, ``returned``, ``offset``, and ``books`` list.
     """
-    user = await get_current_user()
-    user_id = user["id"]
-
     limit = min(arguments.get("limit", 25), 100)
     offset = arguments.get("offset", 0)
     status = arguments.get("status")
@@ -278,18 +275,21 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
         return [TextContent(type="text", text=f"Error: unknown sort '{sort}'. Valid: {valid}")]
     if order not in ("asc", "desc"):
         return [TextContent(type="text", text="Error: order must be 'asc' or 'desc'.")]
+    if (start_date is None) != (end_date is None):
+        return [
+            TextContent(
+                type="text",
+                text="Error: start_date and end_date must both be provided.",
+            )
+        ]
+
+    user = await get_current_user()
+    user_id = user["id"]
 
     order_field = LIBRARY_SORT_FIELDS[sort]
     order_dir = order
 
-    if start_date is not None or end_date is not None:
-        if start_date is None or end_date is None:
-            return [
-                TextContent(
-                    type="text",
-                    text="Error: start_date and end_date must both be provided.",
-                )
-            ]
+    if start_date is not None:
         result = await execute(
             GET_USER_LIBRARY_BY_DATE_RANGE_QUERY,
             {
