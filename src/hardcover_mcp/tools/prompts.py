@@ -115,7 +115,7 @@ async def handle_answer_prompt(arguments: dict[str, Any]) -> list[TextContent]:
     prompt_id = arguments.get("prompt_id")
     book_id = arguments.get("book_id")
 
-    if not prompt_id or not book_id:
+    if prompt_id is None or book_id is None:
         return [TextContent(type="text", text="Error: 'prompt_id' and 'book_id' are required.")]
 
     try:
