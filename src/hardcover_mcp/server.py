@@ -34,6 +34,7 @@ from hardcover_mcp.tools.lists import (
     handle_remove_book_from_list,
     handle_update_list,
 )
+from hardcover_mcp.tools.prompts import handle_answer_prompt, handle_get_prompts
 from hardcover_mcp.tools.series import handle_get_series
 from hardcover_mcp.tools.stats import handle_get_reading_stats
 from hardcover_mcp.tools.user import handle_me
@@ -700,6 +701,55 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
             },
         ),
         handle_get_reading_journal,
+    ),
+    # ── Prompts ──
+    (
+        Tool(
+            name="get_prompts",
+            description=(
+                "List community book prompts. Optionally filter to featured prompts only. "
+                "Returns question, description, answers_count, and books_count."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "featured": {
+                        "type": "boolean",
+                        "description": "If true, return only featured prompts (default false).",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max prompts to return (default 25, max 100).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Pagination offset (default 0).",
+                    },
+                },
+            },
+        ),
+        handle_get_prompts,
+    ),
+    (
+        Tool(
+            name="answer_prompt",
+            description="Submit a book as an answer to a community book prompt.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "prompt_id": {
+                        "type": "integer",
+                        "description": "Hardcover prompt ID (use get_prompts to find IDs).",
+                    },
+                    "book_id": {
+                        "type": "integer",
+                        "description": "Hardcover book ID to submit as the answer.",
+                    },
+                },
+                "required": ["prompt_id", "book_id"],
+            },
+        ),
+        handle_answer_prompt,
     ),
 ]
 
