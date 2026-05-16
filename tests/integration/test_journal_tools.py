@@ -53,16 +53,22 @@ class TestJournalEntryLifecycle:
             entries = json.loads(read_result[0].text)
             assert any(entry["id"] == entry_id for entry in entries)
 
+            # Delete and verify removal in the same block so cleanup is
+            # guaranteed by the finally even if verification fails.
+            await handle_delete_journal_entry({"id": entry_id})
+            deleted_id = entry_id
+            entry_id = None  # Prevent double-delete in finally
+
+            verify_result = await handle_get_reading_journal(
+                {
+                    "book_id": book_id,
+                    "event": "note",
+                    "limit": 100,
+                }
+            )
+            entries_after = json.loads(verify_result[0].text)
+            assert all(e["id"] != deleted_id for e in entries_after)
+
         finally:
             if entry_id is not None:
                 await handle_delete_journal_entry({"id": entry_id})
-
-        verify_deleted_result = await handle_get_reading_journal(
-            {
-                "book_id": book_id,
-                "event": "note",
-                "limit": 100,
-            }
-        )
-        entries_after_delete = json.loads(verify_deleted_result[0].text)
-        assert all(entry["id"] != entry_id for entry in entries_after_delete)

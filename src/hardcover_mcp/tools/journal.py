@@ -224,6 +224,7 @@ async def handle_add_journal_entry(arguments: dict[str, Any]) -> list[TextConten
     except ValueError as exc:
         return [TextContent(type="text", text=f"Error: {exc}")]
 
+    # Auth gate — the API scopes the mutation to the authenticated user via token.
     await get_current_user()
     result = await execute(INSERT_READING_JOURNAL_MUTATION, {"object": obj})
     created = result["data"]["insert_reading_journal"]["reading_journal"]
@@ -262,6 +263,7 @@ async def handle_delete_journal_entry(arguments: dict[str, Any]) -> list[TextCon
     except ValueError as exc:
         return [TextContent(type="text", text=f"Error: {exc}")]
 
+    # Auth gate — the API scopes the mutation to the authenticated user via token.
     await get_current_user()
     await execute(DELETE_READING_JOURNAL_MUTATION, {"id": entry_id_int})
     return [TextContent(type="text", text=json.dumps({"deleted": True, "id": entry_id_int}))]
