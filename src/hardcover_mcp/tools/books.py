@@ -59,6 +59,17 @@ GET_BOOK_BY_SLUG_QUERY = GET_BOOK_BY_ID_QUERY.replace(
     "GetBookById($id: Int!)", "GetBookBySlug($slug: String!)"
 ).replace("{id: {_eq: $id}}", "{slug: {_eq: $slug}}")
 
+GET_CHARACTERS_QUERY = """
+query GetCharacters($book_id: Int!) {
+    characters(where: {book_characters: {book_id: {_eq: $book_id}}}) {
+        id
+        name
+        slug
+        description
+    }
+}
+"""
+
 
 def _format_book_hit(doc: dict[str, Any]) -> dict[str, Any]:
     """Extract fields from a Book search hit document."""
@@ -264,3 +275,57 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
     del book["contributions"]
 
     return [TextContent(type="text", text=json.dumps(book, indent=2))]
+
+
+def _format_character(character: dict[str, Any]) -> dict[str, Any]:
+    """Extract relevant fields from a character record.
+
+    Parameters
+    ----------
+    character : dict[str, Any]
+        Raw character object from the Hardcover API.
+
+    Returns
+    -------
+    dict[str, Any]
+        Flat dict with ``id``, ``name``, ``slug``, and ``description``.
+    """
+    return {
+        "id": character.get("id"),
+        "name": character.get("name"),
+        "slug": character.get("slug"),
+        "description": character.get("description"),
+    }
+
+
+async def handle_get_characters(arguments: dict[str, Any]) -> list[TextContent]:
+    """Fetch characters associated with a book by its Hardcover ID.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Tool arguments. Required key: ``book_id`` (int).
+
+    Returns
+    -------
+    list[TextContent]
+        JSON list of characters with ``id``, ``name``, ``slug``, and ``description``.
+    """
+    book_id = arguments.get("book_id")
+    if not book_id:
+        return [TextContent(type="text", text="Error: 'book_id' is required.")]
+
+    try:
+        result = await execute(
+            GET_CHARACTERS_QUERY,
+            {"book_id": _require_int(book_id, "book_id")},
+        )
+    except ValueError as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
+
+    characters = result["data"]["characters"]
+    if not characters:
+        return [TextContent(type="text", text="No characters found for this book.")]
+
+    output = [_format_character(c) for c in characters]
+    return [TextContent(type="text", text=json.dumps(output, indent=2))]
