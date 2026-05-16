@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-16
+
 ### Added
 
 - `get_user_library` now accepts `start_date` and `end_date` parameters (ISO 8601) — returns
@@ -24,6 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `delete_journal_entry` (delete by ID).
 - Added reading goal tools: `get_reading_goal` (active goals + progress) and
   `set_reading_goal` (create/update goal target, metric, and date range).
+
+### Fixed
+
+- Input validation for `get_user_library` sort/order/date parameters now runs before
+  the authenticated user lookup, failing fast on bad input.
+- Reading goal responses include complete fallback fields when the API returns
+  partial data.
+
+### Changed
+
+- Moved shared `_require_iso_date` helper to `tools/_validation.py` for consistency
+  with other validators.
 
 ## [0.3.0] - 2026-05-01
 
