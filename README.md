@@ -103,7 +103,7 @@ Add to `claude_desktop_config.json`:
 | See your profile and book count | `me` |
 | Get reading statistics (totals, ratings, books read per year) | `get_reading_stats` |
 | Get your active reading goals and progress | `get_reading_goal` |
-| Browse your library, filter by reading status | `get_user_library` |
+| Browse your library, filter by status, date range, or sort by rating/date | `get_user_library` |
 | Check your status/rating for a specific book (includes privacy setting) | `get_user_book` |
 | List your reviews | `get_user_reviews` |
 | Read your journal entries (notes, quotes, status events) | `get_reading_journal` |

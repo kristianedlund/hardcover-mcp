@@ -72,6 +72,12 @@ explicitly discussed.
 - Keep the first line under 72 characters.
 - Reference issues when applicable: `fix: handle empty search results (closes #5)`.
 
+## Running Commands
+
+- Always use `uv` to run Python commands — never activate the virtualenv manually.
+- Examples: `uv run pytest`, `uv run ruff check .`, `uv run python -m hardcover_mcp`.
+- Do not use `source .venv/bin/activate`, `python -m pytest`, or bare `pytest`.
+
 ## Communication Style
 
 - Be direct. Skip filler phrases and unsolicited validation.
