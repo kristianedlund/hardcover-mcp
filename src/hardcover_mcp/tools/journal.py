@@ -1,4 +1,4 @@
-"""Tools: get_reading_journal — fetch reading journal entries."""
+"""Tools for reading journal entries."""
 
 import json
 from typing import Any
@@ -41,6 +41,31 @@ query GetReadingJournal(
                 }
             }
         }
+    }
+}
+"""
+
+INSERT_READING_JOURNAL_MUTATION = """
+mutation InsertReadingJournal($object: ReadingJournalInput!) {
+    insert_reading_journal(object: $object) {
+        reading_journal {
+            id
+            book_id
+            edition_id
+            event
+            entry
+            action_at
+            metadata
+            privacy_setting_id
+        }
+    }
+}
+"""
+
+DELETE_READING_JOURNAL_MUTATION = """
+mutation DeleteReadingJournal($id: Int!) {
+    delete_reading_journal(id: $id) {
+        __typename
     }
 }
 """
@@ -153,3 +178,92 @@ async def handle_get_reading_journal(arguments: dict[str, Any]) -> list[TextCont
     entries = result["data"]["reading_journals"]
     formatted = [_format_journal_entry(e) for e in entries]
     return [TextContent(type="text", text=json.dumps(formatted, indent=2))]
+
+
+async def handle_add_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
+    """Create a reading journal entry for a book.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Required: ``book_id`` (int), ``entry`` (str), ``event`` (``"note"`` or ``"quote"``).
+        Optional: ``edition_id`` (int), ``privacy_setting_id`` (int).
+
+    Returns
+    -------
+    list[TextContent]
+        Single-element list with JSON for the created journal entry.
+    """
+    book_id = arguments.get("book_id")
+    if book_id is None:
+        return [TextContent(type="text", text="Error: 'book_id' is required.")]
+
+    entry = arguments.get("entry")
+    if not isinstance(entry, str) or not entry.strip():
+        return [TextContent(type="text", text="Error: 'entry' must be a non-empty string.")]
+
+    event = arguments.get("event")
+    if not isinstance(event, str):
+        return [TextContent(type="text", text="Error: 'event' is required.")]
+    event_value = event.strip().lower()
+    if event_value not in {"note", "quote"}:
+        return [TextContent(type="text", text="Error: 'event' must be one of: note, quote.")]
+
+    try:
+        obj: dict[str, Any] = {
+            "book_id": _require_int(book_id, "book_id"),
+            "entry": entry.strip(),
+            "event": event_value,
+        }
+        if arguments.get("edition_id") is not None:
+            obj["edition_id"] = _require_int(arguments["edition_id"], "edition_id")
+        if arguments.get("privacy_setting_id") is not None:
+            obj["privacy_setting_id"] = _require_int(
+                arguments["privacy_setting_id"], "privacy_setting_id"
+            )
+    except ValueError as exc:
+        return [TextContent(type="text", text=f"Error: {exc}")]
+
+    # Auth gate — the API scopes the mutation to the authenticated user via token.
+    await get_current_user()
+    result = await execute(INSERT_READING_JOURNAL_MUTATION, {"object": obj})
+    created = result["data"]["insert_reading_journal"]["reading_journal"]
+    output = {
+        "id": created.get("id"),
+        "book_id": created.get("book_id"),
+        "edition_id": created.get("edition_id"),
+        "event": created.get("event"),
+        "entry": created.get("entry"),
+        "action_at": created.get("action_at"),
+        "metadata": created.get("metadata"),
+        "privacy_setting_id": created.get("privacy_setting_id"),
+    }
+    return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+
+async def handle_delete_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
+    """Delete a reading journal entry by ID.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Required: ``id`` (int).
+
+    Returns
+    -------
+    list[TextContent]
+        Single-element list with JSON confirmation for the deleted entry.
+    """
+    entry_id = arguments.get("id")
+    if entry_id is None:
+        return [TextContent(type="text", text="Error: 'id' is required.")]
+
+    try:
+        entry_id_int = _require_int(entry_id, "id")
+    except ValueError as exc:
+        return [TextContent(type="text", text=f"Error: {exc}")]
+
+    # Auth gate — the API scopes the mutation to the authenticated user via token.
+    await get_current_user()
+    await execute(DELETE_READING_JOURNAL_MUTATION, {"id": entry_id_int})
+    return [TextContent(type="text", text=json.dumps({"deleted": True, "id": entry_id_int}))]

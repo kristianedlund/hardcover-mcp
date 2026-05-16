@@ -106,12 +106,14 @@ Add to `claude_desktop_config.json`:
 | Browse your library, filter by reading status | `get_user_library` |
 | Check your status/rating for a specific book (includes privacy setting) | `get_user_book` |
 | List your reviews | `get_user_reviews` |
+| Read your journal entries (notes, quotes, status events) | `get_reading_journal` |
 | List books you own, with edition details | `get_owned_books` |
 | Create or update a reading goal (books/pages, date range) | `set_reading_goal` |
 | Add a book or update its status, rating, review, notes, privacy, and edition | `set_user_book` |
 | Mark an edition as owned or not owned | `set_edition_owned` |
 | Log reading dates and progress (pages, audiobook time) | `add_user_book_read` / `update_user_book_read` |
 | Remove a book or reading entry | `delete_user_book` / `delete_user_book_read` |
+| Create or delete a journal note/quote entry | `add_journal_entry` / `delete_journal_entry` |
 
 ### Lists
 
