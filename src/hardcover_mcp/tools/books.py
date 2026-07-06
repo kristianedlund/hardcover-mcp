@@ -312,7 +312,7 @@ async def handle_get_characters(arguments: dict[str, Any]) -> list[TextContent]:
         JSON list of characters with ``id``, ``name``, ``slug``, and ``description``.
     """
     book_id = arguments.get("book_id")
-    if not book_id:
+    if book_id is None:
         return [TextContent(type="text", text="Error: 'book_id' is required.")]
 
     try:
