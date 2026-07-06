@@ -902,6 +902,7 @@ mutation InsertUserBookRead($userBookId: Int!, $userBookRead: DatesReadInput!) {
             finished_at
             progress_pages
             progress_seconds
+            edition_id
         }
     }
 }
@@ -919,6 +920,7 @@ mutation UpdateUserBookRead($id: Int!, $object: DatesReadInput!) {
             finished_at
             progress_pages
             progress_seconds
+            edition_id
         }
     }
 }
@@ -936,6 +938,7 @@ query FindActiveRead($user_book_id: Int!) {
         finished_at
         progress_pages
         progress_seconds
+        edition_id
     }
 }
 """
@@ -948,6 +951,7 @@ query GetUserBookRead($id: Int!) {
         finished_at
         progress_pages
         progress_seconds
+        edition_id
     }
 }
 """
@@ -956,7 +960,7 @@ query GetUserBookRead($id: Int!) {
 def _merge_read_input(existing: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
     """Merge updates onto existing read fields so unchanged values aren't nulled out."""
     merged: dict[str, Any] = {}
-    for field in ("started_at", "finished_at", "progress_pages", "progress_seconds"):
+    for field in ("started_at", "finished_at", "progress_pages", "progress_seconds", "edition_id"):
         if field in updates:
             merged[field] = updates[field]
         elif existing.get(field) is not None:
@@ -977,6 +981,8 @@ def _build_read_input(arguments: dict[str, Any]) -> dict[str, Any]:
         read_input["progress_seconds"] = _require_int(
             arguments["progress_seconds"], "progress_seconds"
         )
+    if arguments.get("edition_id") is not None:
+        read_input["edition_id"] = _require_int(arguments["edition_id"], "edition_id")
     return read_input
 
 

@@ -293,6 +293,7 @@ class TestHandleAddJournalEntry:
             "event": "note",
             "edition_id": 7,
             "privacy_setting_id": 3,
+            "tags": [],
         }
 
     @patch("hardcover_mcp.tools.journal.get_current_user", new_callable=AsyncMock)

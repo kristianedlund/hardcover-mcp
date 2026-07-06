@@ -46,7 +46,7 @@ query GetReadingJournal(
 """
 
 INSERT_READING_JOURNAL_MUTATION = """
-mutation InsertReadingJournal($object: ReadingJournalInput!) {
+mutation InsertReadingJournal($object: ReadingJournalCreateType!) {
     insert_reading_journal(object: $object) {
         reading_journal {
             id
@@ -217,10 +217,12 @@ async def handle_add_journal_entry(arguments: dict[str, Any]) -> list[TextConten
         }
         if arguments.get("edition_id") is not None:
             obj["edition_id"] = _require_int(arguments["edition_id"], "edition_id")
-        if arguments.get("privacy_setting_id") is not None:
-            obj["privacy_setting_id"] = _require_int(
-                arguments["privacy_setting_id"], "privacy_setting_id"
-            )
+        obj["privacy_setting_id"] = (
+            _require_int(arguments["privacy_setting_id"], "privacy_setting_id")
+            if arguments.get("privacy_setting_id") is not None
+            else 0
+        )
+        obj["tags"] = arguments.get("tags", [])
     except ValueError as exc:
         return [TextContent(type="text", text=f"Error: {exc}")]
 

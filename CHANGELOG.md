@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `get_characters` tool — fetch characters associated with a book by Hardcover ID. Returns character `id`, `name`, `slug`, and `description`.
+- `add_user_book_read` and `update_user_book_read` now accept `edition_id` parameter, enabling audiobook `progress_seconds` tracking (the Hardcover API requires an audiobook edition to be linked for time-based progress to persist).
+
+### Fixed
+
+- Journal `insert_reading_journal` mutation updated to match Hardcover API schema changes
+  (`ReadingJournalCreateType!`, required `privacy_setting_id` and `tags` fields).
+
+
 ## [0.4.0] - 2026-05-16
 
 ### Added
