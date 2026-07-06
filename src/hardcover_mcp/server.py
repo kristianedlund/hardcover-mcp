@@ -10,7 +10,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from hardcover_mcp.tools.authors import handle_get_author
-from hardcover_mcp.tools.books import handle_get_book, handle_search_books
+from hardcover_mcp.tools.books import handle_get_book, handle_get_characters, handle_search_books
 from hardcover_mcp.tools.editions import handle_get_edition
 from hardcover_mcp.tools.goals import handle_get_reading_goal, handle_set_reading_goal
 from hardcover_mcp.tools.journal import (
@@ -144,6 +144,26 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
             },
         ),
         handle_get_book,
+    ),
+    (
+        Tool(
+            name="get_characters",
+            description=(
+                "Get characters associated with a book by its Hardcover ID. "
+                "Returns character names and descriptions."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "type": "integer",
+                        "description": "Hardcover book ID.",
+                    },
+                },
+                "required": ["book_id"],
+            },
+        ),
+        handle_get_characters,
     ),
     (
         Tool(
