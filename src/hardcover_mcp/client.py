@@ -76,7 +76,7 @@ async def execute(
     headers = {
         "authorization": token,
         "content-type": "application/json",
-        "user-agent": "hardcover-mcp/0.3.0",
+        "user-agent": "hardcover-mcp/0.5.0",
     }
     payload: dict[str, Any] = {"query": query}
     if variables:
