@@ -579,6 +579,10 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
                         "type": "integer",
                         "description": "Seconds of audiobook listened to so far.",
                     },
+                    "edition_id": {
+                        "type": "integer",
+                        "description": "Edition ID (required for audiobook progress tracking).",
+                    },
                 },
             },
         ),
@@ -613,6 +617,10 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
                     "progress_seconds": {
                         "type": "integer",
                         "description": "Seconds of audiobook listened to so far.",
+                    },
+                    "edition_id": {
+                        "type": "integer",
+                        "description": "Edition ID (required for audiobook progress tracking).",
                     },
                 },
                 "required": ["id"],

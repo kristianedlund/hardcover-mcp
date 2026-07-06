@@ -1,5 +1,6 @@
 """Integration tests for journal write tools."""
 
+import asyncio
 import json
 import uuid
 
@@ -41,7 +42,6 @@ class TestJournalEntryLifecycle:
             entry_id = created["id"]
             assert created["book_id"] == book_id
             assert created["event"] == "note"
-            assert created["entry"] == unique_note
 
             read_result = await handle_get_reading_journal(
                 {
@@ -51,7 +51,9 @@ class TestJournalEntryLifecycle:
                 }
             )
             entries = json.loads(read_result[0].text)
-            assert any(entry["id"] == entry_id for entry in entries)
+            matching = [e for e in entries if e["id"] == entry_id]
+            assert len(matching) == 1
+            assert matching[0]["entry"] == unique_note
 
             # Delete and verify removal in the same block so cleanup is
             # guaranteed by the finally even if verification fails.
@@ -59,14 +61,19 @@ class TestJournalEntryLifecycle:
             deleted_id = entry_id
             entry_id = None  # Prevent double-delete in finally
 
-            verify_result = await handle_get_reading_journal(
-                {
-                    "book_id": book_id,
-                    "event": "note",
-                    "limit": 100,
-                }
-            )
-            entries_after = json.loads(verify_result[0].text)
+            # Allow time for eventual consistency
+            for _ in range(3):
+                await asyncio.sleep(1)
+                verify_result = await handle_get_reading_journal(
+                    {
+                        "book_id": book_id,
+                        "event": "note",
+                        "limit": 100,
+                    }
+                )
+                entries_after = json.loads(verify_result[0].text)
+                if all(e["id"] != deleted_id for e in entries_after):
+                    break
             assert all(e["id"] != deleted_id for e in entries_after)
 
         finally:

@@ -204,7 +204,7 @@ class TestGetEdition:
     async def test_get_edition_returns_not_found_for_unknown_isbn(self):
         from hardcover_mcp.tools.editions import handle_get_edition
 
-        result = await handle_get_edition({"isbn_13": "9780000000000"})
+        result = await handle_get_edition({"isbn_13": "9799999999999"})
 
         assert "No edition found" in result[0].text
 
