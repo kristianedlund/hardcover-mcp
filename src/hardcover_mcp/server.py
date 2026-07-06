@@ -39,6 +39,7 @@ from hardcover_mcp.tools.lists import (
     handle_remove_book_from_list,
     handle_update_list,
 )
+from hardcover_mcp.tools.publishers import handle_get_publisher
 from hardcover_mcp.tools.series import handle_get_series
 from hardcover_mcp.tools.stats import handle_get_reading_stats
 from hardcover_mcp.tools.user import handle_me
@@ -397,6 +398,41 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
             },
         ),
         handle_get_author,
+    ),
+    (
+        Tool(
+            name="get_publisher",
+            description=(
+                "Look up a publisher by Hardcover ID, slug, or name."
+                " Returns publisher info and a paginated list of editions."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Hardcover publisher ID.",
+                    },
+                    "slug": {
+                        "type": "string",
+                        "description": "Publisher slug (e.g. 'tor-books').",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Publisher name (e.g. 'Tor Books').",
+                    },
+                    "editions_limit": {
+                        "type": "integer",
+                        "description": "Max editions to return (default 20, max 100).",
+                    },
+                    "editions_offset": {
+                        "type": "integer",
+                        "description": "Offset for editions pagination (default 0).",
+                    },
+                },
+            },
+        ),
+        handle_get_publisher,
     ),
     (
         Tool(

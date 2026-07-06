@@ -5,41 +5,54 @@ from datetime import date
 
 import pytest
 
+from hardcover_mcp.client import execute
+
 pytestmark = pytest.mark.integration
+
+DELETE_GOAL_MUTATION = """
+mutation DeleteGoal($id: Int!) {
+    delete_goal(id: $id) {
+        __typename
+    }
+}
+"""
 
 
 class TestReadingGoalsLifecycle:
-    """Create or update a goal, then verify it appears in active goals."""
+    """Create a goal → verify it appears → delete it."""
 
     async def test_set_then_get_reading_goal(self):
         from hardcover_mcp.tools.goals import handle_get_reading_goal, handle_set_reading_goal
 
         current_year = date.today().year
-        start_date = f"{current_year}-01-01"
-        end_date = f"{current_year}-12-31"
+        start_date = f"{current_year}-06-01"
+        end_date = f"{current_year}-06-30"
 
-        # 1. Create or update the active yearly books goal
-        result = await handle_set_reading_goal(
-            {
-                "goal": 52,
-                "metric": "book",
-                "start_date": start_date,
-                "end_date": end_date,
-            }
-        )
-        saved = json.loads(result[0].text)
-        assert saved["goal"] == 52
-        assert saved["metric"] == "book"
+        goal_id = None
+        try:
+            # 1. Create a short-range test goal (won't collide with real yearly goals)
+            result = await handle_set_reading_goal(
+                {
+                    "goal": 99,
+                    "metric": "book",
+                    "start_date": start_date,
+                    "end_date": end_date,
+                }
+            )
+            saved = json.loads(result[0].text)
+            goal_id = saved["id"]
+            assert saved["goal"] == 99
+            assert saved["metric"] == "book"
 
-        # 2. Verify the goal appears in active goals
-        result = await handle_get_reading_goal({"limit": 25})
-        data = json.loads(result[0].text)
-        goals = data["goals"]
+            # 2. Verify the goal appears in active goals
+            result = await handle_get_reading_goal({"limit": 25})
+            data = json.loads(result[0].text)
+            goals = data["goals"]
 
-        assert any(
-            goal["metric"] == "book"
-            and goal["start_date"] == start_date
-            and goal["end_date"] == end_date
-            and goal["goal"] == 52
-            for goal in goals
-        )
+            assert any(
+                goal["id"] == goal_id and goal["goal"] == 99 for goal in goals
+            )
+        finally:
+            # 3. Always clean up the test goal
+            if goal_id is not None:
+                await execute(DELETE_GOAL_MUTATION, {"id": goal_id})

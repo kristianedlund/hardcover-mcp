@@ -269,6 +269,51 @@ class TestSearchEntities:
         assert "slug" in series
 
 
+class TestGetPublisher:
+    async def test_lookup_by_name(self):
+        from hardcover_mcp.tools.publishers import handle_get_publisher
+
+        result = await handle_get_publisher({"name": "Tor Books"})
+
+        data = json.loads(result[0].text)
+        assert data["id"] == 185
+        assert data["name"] == "Tor Books"
+        assert data["editions_count"] > 0
+        assert data["state"] == "active"
+
+    async def test_lookup_by_slug(self):
+        from hardcover_mcp.tools.publishers import handle_get_publisher
+
+        result = await handle_get_publisher({"slug": "tor-books"})
+
+        data = json.loads(result[0].text)
+        assert data["name"] == "Tor Books"
+
+    async def test_lookup_by_id(self):
+        from hardcover_mcp.tools.publishers import handle_get_publisher
+
+        result = await handle_get_publisher({"id": 185})
+
+        data = json.loads(result[0].text)
+        assert data["name"] == "Tor Books"
+        assert len(data["editions"]) > 0
+
+    async def test_editions_pagination(self):
+        from hardcover_mcp.tools.publishers import handle_get_publisher
+
+        result = await handle_get_publisher({"id": 185, "editions_limit": 5})
+
+        data = json.loads(result[0].text)
+        assert len(data["editions"]) <= 5
+
+    async def test_not_found(self):
+        from hardcover_mcp.tools.publishers import handle_get_publisher
+
+        result = await handle_get_publisher({"name": "zzz_nonexistent_publisher_xyz"})
+
+        assert "No publisher found" in result[0].text
+
+
 class TestGetReadingStats:
     async def test_returns_required_fields(self):
         from hardcover_mcp.tools.stats import handle_get_reading_stats

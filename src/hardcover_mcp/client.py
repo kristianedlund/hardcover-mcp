@@ -18,8 +18,8 @@ _RATE_WINDOW = 60.0  # seconds
 _request_timestamps: list[float] = []
 
 # Retry config for 429 responses
-_MAX_RETRIES = 3
-_RETRY_BACKOFF = 2.0  # seconds, doubles each retry
+_MAX_RETRIES = 5
+_RETRY_BACKOFF = 3.0  # seconds, doubles each retry
 
 
 async def _wait_for_rate_limit() -> None:
