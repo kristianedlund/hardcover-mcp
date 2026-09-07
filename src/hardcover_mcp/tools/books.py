@@ -106,7 +106,7 @@ _HIT_FIELDS: dict[str, dict[str, str]] = {
         "slug": "slug",
         "books_count": "books_count",
         "image": "image",
-    },  # noqa: E501
+    },
     "Series": {"id": "id", "name": "name", "slug": "slug", "books_count": "books_count"},
     "List": {
         "id": "id",
@@ -114,7 +114,7 @@ _HIT_FIELDS: dict[str, dict[str, str]] = {
         "slug": "slug",
         "books_count": "books_count",
         "user": "user_username",
-    },  # noqa: E501
+    },
     "User": {"id": "id", "username": "username", "name": "name"},
     "Publisher": {"id": "id", "name": "name", "slug": "slug"},
     "Character": {"id": "id", "name": "name", "slug": "slug"},
