@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `get_prompts` tool — list community book prompts, optionally filtered to featured only,
+  with `limit`/`offset` pagination. Returns `question`, `description`, `answers_count`, and
+  `books_count`.
+- `answer_prompt` tool — submit a book as an answer to a community prompt by `prompt_id` and
+  `book_id`.
+
 ### Fixed
 
 - `get_reading_stats` returned a 403 (`request_exceeds_capacity`) because it fired 9 top-level
