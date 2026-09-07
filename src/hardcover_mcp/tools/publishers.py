@@ -7,7 +7,7 @@ from mcp.types import TextContent
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._validation import _require_int
-from hardcover_mcp.tools.books import SEARCH_QUERY
+from hardcover_mcp.tools.books import resolve_id_by_name
 
 _DEFAULT_EDITIONS_LIMIT = 20
 _MAX_EDITIONS_LIMIT = 100
@@ -132,19 +132,7 @@ async def handle_get_publisher(arguments: dict[str, Any]) -> list[TextContent]:
         variables["slug"] = slug
         result = await execute(GET_PUBLISHER_BY_SLUG_QUERY, variables)
     else:
-        search_result = await execute(
-            SEARCH_QUERY,
-            {
-                "query": name,
-                "query_type": "Publisher",
-                "per_page": 1,
-                "page": 1,
-            },
-        )
-        hits = search_result["data"]["search"]["results"].get("hits", [])
-        if not hits:
-            return [TextContent(type="text", text="No publisher found.")]
-        found_id = hits[0].get("document", {}).get("id")
+        found_id = await resolve_id_by_name(name, "Publisher")
         if not found_id:
             return [TextContent(type="text", text="No publisher found.")]
         variables["id"] = found_id

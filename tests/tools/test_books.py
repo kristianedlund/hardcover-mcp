@@ -4,85 +4,69 @@ import json
 from unittest.mock import AsyncMock, patch
 
 from hardcover_mcp.tools.books import (
-    _format_author_hit,
-    _format_book_hit,
     _format_character,
     _format_search_hit,
-    _format_series_hit,
     handle_get_book,
     handle_get_characters,
     handle_search_books,
 )
 
 
-class TestFormatBookHit:
-    def test_extracts_fields_from_document(self):
-        doc = {
-            "id": 42,
-            "title": "Project Hail Mary",
-            "slug": "project-hail-mary",
-            "author_names": ["Andy Weir"],
-            "release_year": 2021,
-            "rating": 4.5,
-            "pages": 476,
-            "featured_series": "Standalone",
+class TestFormatSearchHit:
+    def test_book_extracts_fields_from_document(self):
+        hit = {
+            "document": {
+                "id": 42,
+                "title": "Project Hail Mary",
+                "slug": "project-hail-mary",
+                "author_names": ["Andy Weir"],
+                "release_year": 2021,
+                "rating": 4.5,
+                "pages": 476,
+                "featured_series": "Standalone",
+            }
         }
-        result = _format_book_hit(doc)
+        result = _format_search_hit(hit)
 
         assert result["id"] == 42
         assert result["title"] == "Project Hail Mary"
         assert result["authors"] == ["Andy Weir"]
         assert result["pages"] == 476
+        assert result["series"] == "Standalone"
 
-    def test_handles_missing_fields_gracefully(self):
-        result = _format_book_hit({})
-
-        assert result["id"] is None
-        assert result["title"] is None
-        assert result["authors"] == []
-
-
-class TestFormatAuthorHit:
-    def test_extracts_fields_from_document(self):
-        doc = {
-            "id": 100,
-            "name": "Brandon Sanderson",
-            "slug": "brandon-sanderson",
-            "books_count": 50,
-            "image": "https://example.com/img.jpg",
+    def test_author_extracts_fields_from_document(self):
+        hit = {
+            "document": {
+                "id": 100,
+                "name": "Brandon Sanderson",
+                "slug": "brandon-sanderson",
+                "books_count": 50,
+                "image": "https://example.com/img.jpg",
+            }
         }
-        result = _format_author_hit(doc)
+        result = _format_search_hit(hit, query_type="Author")
 
         assert result["id"] == 100
         assert result["name"] == "Brandon Sanderson"
-        assert result["slug"] == "brandon-sanderson"
         assert result["books_count"] == 50
+        assert result["image"] == "https://example.com/img.jpg"
 
-    def test_handles_missing_fields_gracefully(self):
-        result = _format_author_hit({})
-
-        assert result["id"] is None
-        assert result["name"] is None
-        assert result["books_count"] is None
-
-
-class TestFormatSeriesHit:
-    def test_extracts_fields_from_document(self):
-        doc = {
-            "id": 7,
-            "name": "The Stormlight Archive",
-            "slug": "the-stormlight-archive",
-            "books_count": 5,
+    def test_series_extracts_fields_from_document(self):
+        hit = {
+            "document": {
+                "id": 7,
+                "name": "The Stormlight Archive",
+                "slug": "the-stormlight-archive",
+                "books_count": 5,
+            }
         }
-        result = _format_series_hit(doc)
+        result = _format_search_hit(hit, query_type="Series")
 
         assert result["id"] == 7
         assert result["name"] == "The Stormlight Archive"
-        assert result["slug"] == "the-stormlight-archive"
         assert result["books_count"] == 5
+        assert "title" not in result
 
-
-class TestFormatSearchHit:
     def test_dispatches_to_book_formatter_by_default(self):
         hit = {
             "document": {

@@ -100,8 +100,13 @@ LIBRARY_SORT_FIELDS: dict[str, str] = {
 }
 
 
-def _build_library_query(with_status: bool) -> str:
-    """Build a GetUserLibrary GraphQL query, optionally filtering by status."""
+def _render_library_query(with_status: bool, order_field: str, order_dir: str) -> str:
+    """Render a GetUserLibrary query with an optional status filter and sort.
+
+    ``order_field``/``order_dir`` come from validated maps (never raw user
+    input), so they are interpolated directly — Hasura order_by keys are
+    enums and can't be GraphQL variables.
+    """
     status_filter = ", status_id: {_eq: $status_id}" if with_status else ""
     status_var = ", $status_id: Int!" if with_status else ""
     return f"""
@@ -110,7 +115,7 @@ query GetUserLibrary($user_id: Int!, $limit: Int!, $offset: Int!{status_var}) {{
         where: {{user_id: {{_eq: $user_id}}{status_filter}}},
         limit: $limit,
         offset: $offset,
-        order_by: {{__ORDER_FIELD__: __ORDER_DIR__}}
+        order_by: {{{order_field}: {order_dir}}}
     ) {{
         {_USER_BOOK_FIELDS}
     }}
@@ -121,15 +126,6 @@ query GetUserLibrary($user_id: Int!, $limit: Int!, $offset: Int!{status_var}) {{
     }}
 }}
 """
-
-
-def _render_library_query(with_status: bool, order_field: str, order_dir: str) -> str:
-    """Render a GetUserLibrary query with the given sort field and direction."""
-    return (
-        _build_library_query(with_status)
-        .replace("__ORDER_FIELD__", order_field)
-        .replace("__ORDER_DIR__", order_dir)
-    )
 
 
 _USER_BOOK_FIELDS_WITH_READS = (

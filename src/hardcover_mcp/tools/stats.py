@@ -10,10 +10,14 @@ from hardcover_mcp.client import execute
 from hardcover_mcp.tools._validation import _require_int
 from hardcover_mcp.tools.user import get_current_user
 
-# Uses aliased user_books_aggregate calls to fetch all counts in one round trip.
-# Each alias maps to a distinct where-filter; GraphQL executes them in parallel.
-GET_READING_STATS_QUERY = """
-query GetReadingStats($user_id: Int!, $year_start: date!, $year_end: date!) {
+# Aliased user_books_aggregate calls, each a distinct where-filter. The API
+# caps a request at 5 top-level fields (burst capacity), so the 9 aggregates
+# are split across two requests and merged. Splitting also means each request
+# stays well under the cap.
+# ponytail: hardcoded 5-field split for the current tier; if the cap changes,
+# rebalance the two query bodies below.
+GET_READING_STATS_QUERY_A = """
+query GetReadingStatsA($user_id: Int!) {
     total: user_books_aggregate(where: {user_id: {_eq: $user_id}}) {
         aggregate { count }
     }
@@ -37,6 +41,11 @@ query GetReadingStats($user_id: Int!, $year_start: date!, $year_end: date!) {
     ) {
         aggregate { count }
     }
+}
+"""
+
+GET_READING_STATS_QUERY_B = """
+query GetReadingStatsB($user_id: Int!, $year_start: date!, $year_end: date!) {
     did_not_finish: user_books_aggregate(
         where: {user_id: {_eq: $user_id}, status_id: {_eq: 5}}
     ) {
@@ -131,16 +140,14 @@ async def handle_get_reading_stats(arguments: dict[str, Any]) -> list[TextConten
     user = await get_current_user()
     user_id = user["id"]
 
-    # --- 3. Execute all aggregates in a single query
-    result = await execute(
-        GET_READING_STATS_QUERY,
-        {
-            "user_id": user_id,
-            "year_start": year_start,
-            "year_end": year_end,
-        },
+    # --- 3. Execute aggregates across two requests (5-field burst cap) and merge
+    result_a = await execute(GET_READING_STATS_QUERY_A, {"user_id": user_id})
+    result_b = await execute(
+        GET_READING_STATS_QUERY_B,
+        {"user_id": user_id, "year_start": year_start, "year_end": year_end},
     )
+    merged = {**result_a["data"], **result_b["data"]}
 
     # --- 4. Format and return
-    stats = _format_reading_stats(result["data"], year)
+    stats = _format_reading_stats(merged, year)
     return [TextContent(type="text", text=json.dumps(stats, indent=2))]

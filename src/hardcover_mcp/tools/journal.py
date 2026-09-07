@@ -217,10 +217,12 @@ async def handle_add_journal_entry(arguments: dict[str, Any]) -> list[TextConten
         }
         if arguments.get("edition_id") is not None:
             obj["edition_id"] = _require_int(arguments["edition_id"], "edition_id")
+        # Required by the API; valid values are 1 (public), 2 (followers),
+        # 3 (private). A 0 is silently rejected (returns a null entry).
         obj["privacy_setting_id"] = (
             _require_int(arguments["privacy_setting_id"], "privacy_setting_id")
             if arguments.get("privacy_setting_id") is not None
-            else 0
+            else 1
         )
         obj["tags"] = arguments.get("tags", [])
     except ValueError as exc:
@@ -230,6 +232,13 @@ async def handle_add_journal_entry(arguments: dict[str, Any]) -> list[TextConten
     await get_current_user()
     result = await execute(INSERT_READING_JOURNAL_MUTATION, {"object": obj})
     created = result["data"]["insert_reading_journal"]["reading_journal"]
+    if created is None:
+        return [
+            TextContent(
+                type="text",
+                text="Error: journal entry not created (privacy_setting_id must be 1, 2, or 3).",
+            )
+        ]
     output = {
         "id": created.get("id"),
         "book_id": created.get("book_id"),

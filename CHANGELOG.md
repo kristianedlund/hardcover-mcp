@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `get_reading_stats` returned a 403 (`request_exceeds_capacity`) because it fired 9 top-level
+  aggregate fields in one request, exceeding the API tier's burst capacity of 5. The aggregates
+  are now split across two requests and merged.
+- `add_journal_entry` defaulted `privacy_setting_id` to `0` when omitted, which the API silently
+  rejects (returning a null entry and causing a crash). The default is now `1` (public), and a
+  null response is surfaced as a clear error.
+
+
 ## [0.5.0] - 2026-07-06
 
 ### Added

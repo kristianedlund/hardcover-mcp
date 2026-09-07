@@ -71,109 +71,54 @@ query GetCharacters($book_id: Int!) {
 """
 
 
-def _format_book_hit(doc: dict[str, Any]) -> dict[str, Any]:
-    """Extract fields from a Book search hit document."""
-    return {
-        "id": doc.get("id"),
-        "title": doc.get("title"),
-        "slug": doc.get("slug"),
-        "authors": doc.get("author_names", []),
-        "release_year": doc.get("release_year"),
-        "rating": doc.get("rating"),
-        "pages": doc.get("pages"),
-        "series": doc.get("featured_series"),
-    }
+async def resolve_id_by_name(name: str, query_type: str) -> Any:
+    """Resolve an entity name to its Hardcover id via the search endpoint.
+
+    Hardcover's GraphQL API disables LIKE operators (403), so name lookups
+    go through the Typesense ``search()`` endpoint; callers then fetch full
+    details by id. Returns the top-ranked id, or ``None`` if no hit.
+    """
+    result = await execute(
+        SEARCH_QUERY,
+        {"query": name, "query_type": query_type, "per_page": 1, "page": 1},
+    )
+    hits = result["data"]["search"]["results"].get("hits", [])
+    if not hits:
+        return None
+    return hits[0].get("document", {}).get("id")
 
 
-def _format_author_hit(doc: dict[str, Any]) -> dict[str, Any]:
-    """Extract fields from an Author search hit document."""
-    return {
-        "id": doc.get("id"),
-        "name": doc.get("name"),
-        "slug": doc.get("slug"),
-        "books_count": doc.get("books_count"),
-        "image": doc.get("image"),
-    }
-
-
-def _format_series_hit(doc: dict[str, Any]) -> dict[str, Any]:
-    """Extract fields from a Series search hit document."""
-    return {
-        "id": doc.get("id"),
-        "name": doc.get("name"),
-        "slug": doc.get("slug"),
-        "books_count": doc.get("books_count"),
-    }
-
-
-def _format_list_hit(doc: dict[str, Any]) -> dict[str, Any]:
-    """Extract fields from a List search hit document."""
-    return {
-        "id": doc.get("id"),
-        "name": doc.get("name"),
-        "slug": doc.get("slug"),
-        "books_count": doc.get("books_count"),
-        "user": doc.get("user_username"),
-    }
-
-
-def _format_user_hit(doc: dict[str, Any]) -> dict[str, Any]:
-    """Extract fields from a User search hit document."""
-    return {
-        "id": doc.get("id"),
-        "username": doc.get("username"),
-        "name": doc.get("name"),
-    }
-
-
-def _format_publisher_hit(doc: dict[str, Any]) -> dict[str, Any]:
-    """Extract fields from a Publisher search hit document."""
-    return {
-        "id": doc.get("id"),
-        "name": doc.get("name"),
-        "slug": doc.get("slug"),
-    }
-
-
-def _format_character_hit(doc: dict[str, Any]) -> dict[str, Any]:
-    """Extract fields from a Character search hit document."""
-    return {
-        "id": doc.get("id"),
-        "name": doc.get("name"),
-        "slug": doc.get("slug"),
-    }
-
-
-def _format_prompt_hit(doc: dict[str, Any]) -> dict[str, Any]:
-    """Extract fields from a Prompt search hit document."""
-    return {
-        "id": doc.get("id"),
-        "name": doc.get("name"),
-    }
-
-
-_HIT_FORMATTERS = {
-    "Book": _format_book_hit,
-    "Author": _format_author_hit,
-    "Series": _format_series_hit,
-    "List": _format_list_hit,
-    "User": _format_user_hit,
-    "Publisher": _format_publisher_hit,
-    "Character": _format_character_hit,
-    "Prompt": _format_prompt_hit,
+# Per-type search-hit projection: output_key -> document_key.
+_HIT_FIELDS: dict[str, dict[str, str]] = {
+    "Book": {
+        "id": "id",
+        "title": "title",
+        "slug": "slug",
+        "authors": "author_names",
+        "release_year": "release_year",
+        "rating": "rating",
+        "pages": "pages",
+        "series": "featured_series",
+    },
+    "Author": {"id": "id", "name": "name", "slug": "slug", "books_count": "books_count", "image": "image"},  # noqa: E501
+    "Series": {"id": "id", "name": "name", "slug": "slug", "books_count": "books_count"},
+    "List": {"id": "id", "name": "name", "slug": "slug", "books_count": "books_count", "user": "user_username"},  # noqa: E501
+    "User": {"id": "id", "username": "username", "name": "name"},
+    "Publisher": {"id": "id", "name": "name", "slug": "slug"},
+    "Character": {"id": "id", "name": "name", "slug": "slug"},
+    "Prompt": {"id": "id", "name": "name"},
 }
 
 
 def _format_search_hit(hit: dict[str, Any], query_type: str = "Book") -> dict[str, Any]:
-    """Dispatch a search hit to the appropriate per-type formatter.
+    """Project a search hit's document into the fields for its entity type.
 
     Parameters
     ----------
     hit : dict[str, Any]
         Raw search hit containing a ``document`` field from Typesense.
     query_type : str, optional
-        Entity type to format for. Must be one of ``VALID_QUERY_TYPES``.
-        Defaults to ``"Book"``.
+        Entity type to format for. Falls back to ``"Book"`` if unknown.
 
     Returns
     -------
@@ -181,8 +126,11 @@ def _format_search_hit(hit: dict[str, Any], query_type: str = "Book") -> dict[st
         Flattened dict of relevant fields for the given entity type.
     """
     doc = hit.get("document", {})
-    formatter = _HIT_FORMATTERS.get(query_type, _format_book_hit)
-    return formatter(doc)
+    fields = _HIT_FIELDS.get(query_type, _HIT_FIELDS["Book"])
+    out = {out_key: doc.get(doc_key) for out_key, doc_key in fields.items()}
+    if out.get("authors") is None and "authors" in out:
+        out["authors"] = []
+    return out
 
 
 async def handle_search_books(arguments: dict[str, Any]) -> list[TextContent]:

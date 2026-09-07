@@ -113,39 +113,39 @@ class TestHandleGetPublisher:
         assert data["id"] == 185
         assert data["name"] == "Tor Books"
 
+    @patch("hardcover_mcp.tools.books.execute", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.publishers.execute", new_callable=AsyncMock)
-    async def test_name_search_fallback(self, mock_execute):
-        mock_execute.side_effect = [
-            {"data": {"search": {"results": {"hits": [{"document": {"id": 185}}]}}}},
-            {
-                "data": {
-                    "publishers": [
-                        {
-                            "id": 185,
-                            "name": "Tor Books",
-                            "slug": "tor-books",
-                            "editions_count": 2914,
-                            "state": "active",
-                            "parent_publisher": None,
-                            "editions": [],
-                        }
-                    ]
-                }
-            },
-        ]
+    async def test_name_search_fallback(self, mock_execute, mock_search):
+        mock_search.return_value = {
+            "data": {"search": {"results": {"hits": [{"document": {"id": 185}}]}}}
+        }
+        mock_execute.return_value = {
+            "data": {
+                "publishers": [
+                    {
+                        "id": 185,
+                        "name": "Tor Books",
+                        "slug": "tor-books",
+                        "editions_count": 2914,
+                        "state": "active",
+                        "parent_publisher": None,
+                        "editions": [],
+                    }
+                ]
+            }
+        }
 
         result = await handle_get_publisher({"name": "Tor Books"})
         data = json.loads(result[0].text)
 
         assert data["id"] == 185
         assert data["name"] == "Tor Books"
-        # Verify search was called first
-        search_call = mock_execute.call_args_list[0]
-        assert "Publisher" in str(search_call)
+        # Verify the search endpoint was queried for a Publisher
+        assert "Publisher" in str(mock_search.call_args)
 
-    @patch("hardcover_mcp.tools.publishers.execute", new_callable=AsyncMock)
-    async def test_name_search_no_hits(self, mock_execute):
-        mock_execute.return_value = {"data": {"search": {"results": {"hits": []}}}}
+    @patch("hardcover_mcp.tools.books.execute", new_callable=AsyncMock)
+    async def test_name_search_no_hits(self, mock_search):
+        mock_search.return_value = {"data": {"search": {"results": {"hits": []}}}}
 
         result = await handle_get_publisher({"name": "Nonexistent Publisher"})
 
