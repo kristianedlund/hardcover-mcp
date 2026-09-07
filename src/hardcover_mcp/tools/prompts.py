@@ -28,7 +28,7 @@ query GetPrompts($limit: Int!, $offset: Int!, $where: prompts_bool_exp) {
 """
 
 ANSWER_PROMPT_MUTATION = """
-mutation InsertPromptAnswer($object: PromptAnswerInput!) {
+mutation InsertPromptAnswer($object: PromptAnswerCreateInput!) {
     insert_prompt_answer(object: $object) {
         id
         prompt_answer {
