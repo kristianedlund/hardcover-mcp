@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Returns bio, book/follower/following counts, flair, and privacy setting. Set
   `include_library=true` to also fetch recent library entries, optionally filtered by
   `library_status` and capped by `library_limit` (subject to the target user's privacy).
+- `get_activity_feed` tool — recent reading activity (status changes, ratings, reviews, list
+  updates), newest first. Defaults to the feed of users you follow; pass `user_id` or `username`
+  to fetch a single user's activity. Paginated via `limit`/`offset`.
 
 ## [0.6.0] - 2026-09-07
 
