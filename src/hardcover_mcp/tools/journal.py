@@ -7,6 +7,7 @@ from mcp.types import TextContent
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools.books import author_names
 from hardcover_mcp.tools.user import get_current_user
 
 # Fetch reading journal entries for the authenticated user.
@@ -90,8 +91,7 @@ def _format_journal_entry(raw: dict[str, Any]) -> dict[str, Any]:
         and ``book`` (with ``title``, ``slug``, ``authors``).
     """
     book_raw = raw.get("book") or {}
-    contributions = book_raw.get("contributions") or []
-    authors = [c["author"]["name"] for c in contributions if c.get("author")]
+    authors = author_names(book_raw)
 
     return {
         "id": raw.get("id"),

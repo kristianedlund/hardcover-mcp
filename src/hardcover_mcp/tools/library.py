@@ -7,6 +7,7 @@ from mcp.types import TextContent
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._validation import _require_float, _require_int
+from hardcover_mcp.tools.books import author_names
 from hardcover_mcp.tools.user import get_current_user
 
 STATUS_MAP: dict[int, str] = {
@@ -195,7 +196,7 @@ query GetBookIdBySlug($slug: String!) {
 def _format_user_book(ub: dict[str, Any]) -> dict[str, Any]:
     """Format a user_book record into a flat summary dict."""
     book = ub.get("book", {})
-    authors = [c["author"]["name"] for c in book.get("contributions", [])]
+    authors = author_names(book)
     result: dict[str, Any] = {
         "user_book_id": ub["id"],
         "book_id": ub["book_id"],
@@ -216,7 +217,7 @@ def _format_user_book(ub: dict[str, Any]) -> dict[str, Any]:
 def _format_user_book_detail(ub: dict[str, Any]) -> dict[str, Any]:
     """Format a user_book record into a detailed dict including reads, review, and edition."""
     book = ub.get("book", {})
-    authors = [c["author"]["name"] for c in book.get("contributions", [])]
+    authors = author_names(book)
     privacy_id = ub.get("privacy_setting_id")
     return {
         "user_book_id": ub["id"],
@@ -406,7 +407,7 @@ query GetUserReviews($user_id: Int!, $limit: Int!, $offset: Int!) {
 def _format_user_review(ub: dict[str, Any]) -> dict[str, Any]:
     """Format a user_book review record into a flat review summary dict."""
     book = ub.get("book", {})
-    authors = [c["author"]["name"] for c in book.get("contributions", [])]
+    authors = author_names(book)
     return {
         "user_book_id": ub["id"],
         "book_id": ub["book_id"],
@@ -513,7 +514,7 @@ def _format_owned_book(lb: dict[str, Any]) -> dict[str, Any]:
         ``authors``, ``edition``, and ``date_added``.
     """
     book = lb.get("book", {})
-    authors = [c["author"]["name"] for c in book.get("contributions", [])]
+    authors = author_names(book)
     return {
         "book_id": lb["book_id"],
         "edition_id": lb.get("edition_id"),

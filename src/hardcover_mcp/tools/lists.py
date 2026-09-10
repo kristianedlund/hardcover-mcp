@@ -7,6 +7,7 @@ from mcp.types import TextContent
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools.books import author_names
 from hardcover_mcp.tools.user import get_current_user
 
 PRIVACY_MAP = {
@@ -78,7 +79,7 @@ def _format_list_summary(lst: dict[str, Any]) -> dict[str, Any]:
 def _format_list_book(lb: dict[str, Any]) -> dict[str, Any]:
     """Format a list_book entry into a flat dict with position and book info."""
     book = lb.get("book", {})
-    authors = [c["author"]["name"] for c in book.get("contributions", [])]
+    authors = author_names(book)
     return {
         "position": lb.get("position"),
         "book_id": book.get("id"),
