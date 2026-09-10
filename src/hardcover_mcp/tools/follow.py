@@ -11,8 +11,8 @@ from hardcover_mcp.tools.activity import GET_USER_ID_BY_USERNAME_QUERY
 
 FOLLOW_USER_MUTATION = """
 mutation FollowUser($id: Int!) {
-    insert_follow(followable_id: $id, followable_type: "User") {
-        follow
+    insert_followed_user(user_id: $id) {
+        followed_user_id
         error
     }
 }
@@ -20,8 +20,8 @@ mutation FollowUser($id: Int!) {
 
 UNFOLLOW_USER_MUTATION = """
 mutation UnfollowUser($id: Int!) {
-    delete_follow(followable_id: $id, followable_type: "User") {
-        success
+    delete_followed_user(user_id: $id) {
+        followed_user_id
         error
     }
 }
@@ -59,10 +59,14 @@ async def handle_follow_user(arguments: dict[str, Any]) -> list[TextContent]:
         return [TextContent(type="text", text=resolved)]
 
     result = await execute(FOLLOW_USER_MUTATION, {"id": resolved})
-    follow = result["data"]["insert_follow"]
+    follow = result["data"]["insert_followed_user"]
     if follow.get("error"):
         return [TextContent(type="text", text=f"Error: {follow['error']}")]
-    return [TextContent(type="text", text=json.dumps({"followed": bool(follow.get("follow"))}))]
+    return [
+        TextContent(
+            type="text", text=json.dumps({"followed": follow.get("followed_user_id") is not None})
+        )
+    ]
 
 
 async def handle_unfollow_user(arguments: dict[str, Any]) -> list[TextContent]:
@@ -72,9 +76,12 @@ async def handle_unfollow_user(arguments: dict[str, Any]) -> list[TextContent]:
         return [TextContent(type="text", text=resolved)]
 
     result = await execute(UNFOLLOW_USER_MUTATION, {"id": resolved})
-    deleted = result["data"]["delete_follow"]
+    deleted = result["data"]["delete_followed_user"]
     if deleted.get("error"):
         return [TextContent(type="text", text=f"Error: {deleted['error']}")]
     return [
-        TextContent(type="text", text=json.dumps({"unfollowed": bool(deleted.get("success"))}))
+        TextContent(
+            type="text",
+            text=json.dumps({"unfollowed": deleted.get("followed_user_id") is not None}),
+        )
     ]

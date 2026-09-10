@@ -1,6 +1,5 @@
 """Unit tests for tools.discovery (query rendering + validation)."""
 
-
 from hardcover_mcp.tools.discovery import (
     _TRENDING_DURATIONS,
     _render_vibes_query,
