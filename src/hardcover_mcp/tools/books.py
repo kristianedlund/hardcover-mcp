@@ -9,8 +9,14 @@ from hardcover_mcp.client import execute
 from hardcover_mcp.tools._validation import _require_int
 
 SEARCH_QUERY = """
-query Search($query: String!, $query_type: String!, $per_page: Int!, $page: Int!) {
-    search(query: $query, query_type: $query_type, per_page: $per_page, page: $page) {
+query Search(
+    $query: String!, $query_type: String!, $per_page: Int!, $page: Int!,
+    $sort: String, $filter_by: String
+) {
+    search(
+        query: $query, query_type: $query_type, per_page: $per_page, page: $page,
+        sort: $sort, filter_by: $filter_by
+    ) {
         results
     }
 }
@@ -145,6 +151,49 @@ def _format_search_hit(hit: dict[str, Any], query_type: str = "Book") -> dict[st
     return out
 
 
+BOOKS_BY_IDS_QUERY = """
+query BooksByIds($ids: [Int!]) {
+    books(where: {id: {_in: $ids}}) {
+        id
+        slug
+        title
+        rating
+        release_year
+        contributions {
+            author {
+                name
+            }
+        }
+    }
+}
+"""
+
+
+async def fetch_books_by_ids(ids: list[int]) -> list[dict[str, Any]]:
+    """Fetch book summaries for a list of ids, preserving the input order.
+
+    Used by discovery tools (trending, vibes) that receive an ordered list of
+    book ids and need to hydrate them into title/authors/rating summaries.
+    The ``_in`` query returns rows in arbitrary order, so results are re-sorted
+    to match ``ids``. Ids with no matching book are dropped.
+    """
+    if not ids:
+        return []
+    result = await execute(BOOKS_BY_IDS_QUERY, {"ids": ids})
+    by_id = {
+        b["id"]: {
+            "book_id": b["id"],
+            "slug": b.get("slug"),
+            "title": b.get("title"),
+            "rating": b.get("rating"),
+            "release_year": b.get("release_year"),
+            "authors": [c["author"]["name"] for c in b.get("contributions", [])],
+        }
+        for b in result["data"]["books"]
+    }
+    return [by_id[i] for i in ids if i in by_id]
+
+
 async def handle_search_books(arguments: dict[str, Any]) -> list[TextContent]:
     """Search Hardcover for entities matching a query string.
 
@@ -154,6 +203,8 @@ async def handle_search_books(arguments: dict[str, Any]) -> list[TextContent]:
         Tool arguments. Required: ``query`` (str).
         Optional: ``per_page`` (int, default 10, max 25), ``page`` (int, default 1),
         ``query_type`` (str, default ``"Book"``). Must be one of ``VALID_QUERY_TYPES``.
+        ``sort`` (str, e.g. ``"rating:desc"``) and ``filter_by`` (str, e.g.
+        ``"release_year:>2020"``) are passed through to the Typesense search engine.
 
     Returns
     -------
@@ -185,6 +236,8 @@ async def handle_search_books(arguments: dict[str, Any]) -> list[TextContent]:
             "query_type": query_type,
             "per_page": per_page,
             "page": page,
+            "sort": arguments.get("sort"),
+            "filter_by": arguments.get("filter_by"),
         },
     )
 

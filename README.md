@@ -90,8 +90,10 @@ Add to `claude_desktop_config.json`:
 
 | What you can do | Tool |
 |-----------------|------|
-| Search for books, authors, series, and more | `search_books` |
+| Search for books, authors, series, and more (with sort/filter) | `search_books` |
 | Look up a book by title or ID | `get_book` |
+| See what's trending now | `get_trending_books` |
+| Browse curated recommendation collections (vibes) | `get_vibes` |
 | Look up a specific edition by ISBN or ASIN | `get_edition` |
 | Explore a series in reading order | `get_series` |
 | Browse an author's catalogue | `get_author` |

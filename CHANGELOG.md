@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_trending_books` tool — currently trending books, most popular first, with a `duration`
+  window (`all`/`week`/`month`/`three_month`/`one_year`) and `limit`/`offset` pagination.
+- `get_vibes` tool — list Hardcover "vibes" (curated, themed book recommendation collections),
+  each hydrated with its books. Filter to `featured` only; paginate with `limit`/`offset` and
+  cap books per vibe with `books_per_vibe`.
+- `search_books` now accepts `sort` (e.g. `rating:desc`) and `filter_by` (e.g.
+  `release_year:>2020`), enabling faceted discovery like "top-rated fantasy since 2020".
 - `get_user` tool — look up another user's public profile by `id`, `username`, or `name`.
   Returns bio, book/follower/following counts, flair, and privacy setting. Set
   `include_library=true` to also fetch recent library entries, optionally filtered by

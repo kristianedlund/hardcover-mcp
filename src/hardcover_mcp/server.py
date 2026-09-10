@@ -12,6 +12,7 @@ from mcp.types import TextContent, Tool
 from hardcover_mcp.tools.activity import handle_get_activity_feed
 from hardcover_mcp.tools.authors import handle_get_author
 from hardcover_mcp.tools.books import handle_get_book, handle_get_characters, handle_search_books
+from hardcover_mcp.tools.discovery import handle_get_trending_books, handle_get_vibes
 from hardcover_mcp.tools.editions import handle_get_edition
 from hardcover_mcp.tools.goals import handle_get_reading_goal, handle_set_reading_goal
 from hardcover_mcp.tools.journal import (
@@ -195,6 +196,20 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
                     "page": {
                         "type": "integer",
                         "description": "Page number (default 1).",
+                    },
+                    "sort": {
+                        "type": "string",
+                        "description": (
+                            "Typesense sort expression, e.g. 'rating:desc' or "
+                            "'users_count:desc' for most popular first."
+                        ),
+                    },
+                    "filter_by": {
+                        "type": "string",
+                        "description": (
+                            "Typesense filter expression, e.g. 'release_year:>2020' or "
+                            "'release_year:[2020..2024]'."
+                        ),
                     },
                 },
                 "required": ["query"],
@@ -474,6 +489,65 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
             },
         ),
         handle_get_author,
+    ),
+    (
+        Tool(
+            name="get_trending_books",
+            description=(
+                "Get currently trending books, most popular first. "
+                "Choose a time window with 'duration'."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "duration": {
+                        "type": "string",
+                        "description": "Time window (default 'week').",
+                        "enum": ["all", "week", "month", "three_month", "one_year"],
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max books to return (default 25, max 100).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Pagination offset (default 0).",
+                    },
+                },
+            },
+        ),
+        handle_get_trending_books,
+    ),
+    (
+        Tool(
+            name="get_vibes",
+            description=(
+                "List Hardcover 'vibes' — curated, themed book recommendation collections "
+                "(e.g. 'Hidden Gem Fantasy'). Each vibe includes its books."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "featured": {
+                        "type": "boolean",
+                        "description": "If true (default), return only featured vibes.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max vibes to return (default 10, max 50).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Pagination offset (default 0).",
+                    },
+                    "books_per_vibe": {
+                        "type": "integer",
+                        "description": "Books to include per vibe (default 10, max 50).",
+                    },
+                },
+            },
+        ),
+        handle_get_vibes,
     ),
     (
         Tool(
