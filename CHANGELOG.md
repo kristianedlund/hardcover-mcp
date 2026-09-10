@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `follow_user` / `unfollow_user` tools — follow or unfollow a user by `user_id` or `username`.
 - `get_trending_books` tool — currently trending books, most popular first, with a `duration`
   window (`all`/`week`/`month`/`three_month`/`one_year`) and `limit`/`offset` pagination.
 - `get_vibes` tool — list Hardcover "vibes" (curated, themed book recommendation collections),

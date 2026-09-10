@@ -14,6 +14,7 @@ from hardcover_mcp.tools.authors import handle_get_author
 from hardcover_mcp.tools.books import handle_get_book, handle_get_characters, handle_search_books
 from hardcover_mcp.tools.discovery import handle_get_trending_books, handle_get_vibes
 from hardcover_mcp.tools.editions import handle_get_edition
+from hardcover_mcp.tools.follow import handle_follow_user, handle_unfollow_user
 from hardcover_mcp.tools.goals import handle_get_reading_goal, handle_set_reading_goal
 from hardcover_mcp.tools.journal import (
     handle_add_journal_entry,
@@ -1109,6 +1110,47 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
             },
         ),
         handle_answer_prompt,
+    ),
+    # ── Follow ──
+    (
+        Tool(
+            name="follow_user",
+            description="Follow a Hardcover user by user_id or username.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "integer",
+                        "description": "Hardcover user ID to follow.",
+                    },
+                    "username": {
+                        "type": "string",
+                        "description": "Username to follow (resolved to an ID).",
+                    },
+                },
+            },
+        ),
+        handle_follow_user,
+    ),
+    (
+        Tool(
+            name="unfollow_user",
+            description="Unfollow a Hardcover user by user_id or username.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "integer",
+                        "description": "Hardcover user ID to unfollow.",
+                    },
+                    "username": {
+                        "type": "string",
+                        "description": "Username to unfollow (resolved to an ID).",
+                    },
+                },
+            },
+        ),
+        handle_unfollow_user,
     ),
 ]
 
