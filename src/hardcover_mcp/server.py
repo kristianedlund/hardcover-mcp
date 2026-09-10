@@ -7,7 +7,7 @@ from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 
 from hardcover_mcp.tools.activity import handle_get_activity_feed
 from hardcover_mcp.tools.authors import handle_get_author
@@ -47,8 +47,6 @@ from hardcover_mcp.tools.publishers import handle_get_publisher
 from hardcover_mcp.tools.series import handle_get_series
 from hardcover_mcp.tools.stats import handle_get_reading_stats
 from hardcover_mcp.tools.user import handle_get_user, handle_me
-
-server = Server("hardcover")
 
 # ── Tool registry ──
 # Each entry: (Tool schema, handler function)
@@ -1158,27 +1156,35 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
 _DISPATCH: dict[str, Handler] = {tool.name: handler for tool, handler in TOOL_REGISTRY}
 
 
-@server.list_tools()
-async def list_tools() -> list[Tool]:
+async def list_tools(ctx: Any, params: Any) -> ListToolsResult:
     """Return all registered MCP tool schemas."""
-    return [tool for tool, _ in TOOL_REGISTRY]
+    return ListToolsResult(tools=[tool for tool, _ in TOOL_REGISTRY])
 
 
-@server.call_tool()
-async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+async def call_tool(ctx: Any, params: Any) -> CallToolResult:
     """Dispatch an MCP tool call to the matching handler."""
-    handler = _DISPATCH.get(name)
+    handler = _DISPATCH.get(params.name)
     if not handler:
-        return [TextContent(type="text", text=f"Unknown tool: {name}")]
+        return CallToolResult(
+            content=[TextContent(type="text", text=f"Unknown tool: {params.name}")],
+            is_error=True,
+        )
     try:
-        return await handler(arguments)
+        content = await handler(params.arguments or {})
+        return CallToolResult(content=content)
     except Exception as exc:
-        return [
-            TextContent(
-                type="text",
-                text=f"Error in {name}: {exc}\n{traceback.format_exc()}",
-            )
-        ]
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"Error in {params.name}: {exc}\n{traceback.format_exc()}",
+                )
+            ],
+            is_error=True,
+        )
+
+
+server = Server("hardcover", on_list_tools=list_tools, on_call_tool=call_tool)
 
 
 async def _run() -> None:

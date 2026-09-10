@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-09-10
+
+### Fixed
+
+- Server failed to start (`AttributeError: 'Server' object has no attribute 'list_tools'`) when
+  installed against the MCP SDK 2.x, whose low-level `Server` replaced the decorator API
+  (`@server.list_tools()` / `@server.call_tool()`) with `on_list_tools` / `on_call_tool`
+  constructor handlers. Migrated to the 2.x API and pinned `mcp>=2.0.0`. Added server-wiring
+  smoke tests so SDK API drift is caught before release.
+
 ## [0.7.0] - 2026-09-10
 
 ### Added
@@ -195,7 +205,8 @@ Initial release.
 - `add_book_to_list` / `remove_book_from_list` — manage books within a list.
 - Ruff linter configuration, `.env.example`, and initial README.
 
-[Unreleased]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.4.0...v0.5.0
