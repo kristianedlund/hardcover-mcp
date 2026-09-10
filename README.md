@@ -99,6 +99,7 @@ Add to `claude_desktop_config.json`:
 | Browse an author's catalogue | `get_author` |
 | Look up another user's public profile (and optionally their library) | `get_user` |
 | See recent activity from people you follow (or one user) | `get_activity_feed` |
+| Follow or unfollow a user | `follow_user` / `unfollow_user` |
 
 ### Your library
 
