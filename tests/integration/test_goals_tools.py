@@ -49,9 +49,7 @@ class TestReadingGoalsLifecycle:
             data = json.loads(result[0].text)
             goals = data["goals"]
 
-            assert any(
-                goal["id"] == goal_id and goal["goal"] == 99 for goal in goals
-            )
+            assert any(goal["id"] == goal_id and goal["goal"] == 99 for goal in goals)
         finally:
             # 3. Always clean up the test goal
             if goal_id is not None:
