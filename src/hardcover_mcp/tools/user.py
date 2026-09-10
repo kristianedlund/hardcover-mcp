@@ -233,7 +233,7 @@ async def handle_get_user(arguments: dict[str, Any]) -> list[TextContent]:
         variables["username"] = username
         by = "username"
 
-    query = _render_user_query(by, include_library, status_id is not None)
+    query = _render_user_query(by, include_library, include_library and status_id is not None)
     result = await execute(query, variables)
     users = result["data"]["users"]
     if not users:
