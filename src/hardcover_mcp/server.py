@@ -43,7 +43,7 @@ from hardcover_mcp.tools.prompts import handle_answer_prompt, handle_get_prompts
 from hardcover_mcp.tools.publishers import handle_get_publisher
 from hardcover_mcp.tools.series import handle_get_series
 from hardcover_mcp.tools.stats import handle_get_reading_stats
-from hardcover_mcp.tools.user import handle_me
+from hardcover_mcp.tools.user import handle_get_user, handle_me
 
 server = Server("hardcover")
 
@@ -62,6 +62,48 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
             inputSchema={"type": "object", "properties": {}},
         ),
         lambda args: handle_me(),
+    ),
+    (
+        Tool(
+            name="get_user",
+            description=(
+                "Look up another Hardcover user's public profile by id, username, or name. "
+                "Returns bio, book/follower counts, and privacy. Set include_library=true to "
+                "also fetch their recent library entries (subject to their privacy setting)."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Hardcover user ID.",
+                    },
+                    "username": {
+                        "type": "string",
+                        "description": "Hardcover username (e.g. 'adam').",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Display name to search for (resolves to the top match).",
+                    },
+                    "include_library": {
+                        "type": "boolean",
+                        "description": "If true, include recent library entries (default false).",
+                    },
+                    "library_status": {
+                        "type": "string",
+                        "description": (
+                            "Filter library entries by status (e.g. 'Read', 'Currently Reading')."
+                        ),
+                    },
+                    "library_limit": {
+                        "type": "integer",
+                        "description": "Max library entries to return (default 10, max 50).",
+                    },
+                },
+            },
+        ),
+        handle_get_user,
     ),
     (
         Tool(

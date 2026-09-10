@@ -95,6 +95,7 @@ Add to `claude_desktop_config.json`:
 | Look up a specific edition by ISBN or ASIN | `get_edition` |
 | Explore a series in reading order | `get_series` |
 | Browse an author's catalogue | `get_author` |
+| Look up another user's public profile (and optionally their library) | `get_user` |
 
 ### Your library
 

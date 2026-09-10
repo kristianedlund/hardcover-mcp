@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `get_user` tool — look up another user's public profile by `id`, `username`, or `name`.
+  Returns bio, book/follower/following counts, flair, and privacy setting. Set
+  `include_library=true` to also fetch recent library entries, optionally filtered by
+  `library_status` and capped by `library_limit` (subject to the target user's privacy).
+
 ## [0.6.0] - 2026-09-07
 
 ### Added
