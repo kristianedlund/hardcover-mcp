@@ -8,6 +8,12 @@ from mcp.types import TextContent
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._validation import _require_int
 
+
+def author_names(book: dict[str, Any]) -> list[str]:
+    """Flatten a book's contributions into a list of author names."""
+    return [c["author"]["name"] for c in (book.get("contributions") or []) if c.get("author")]
+
+
 SEARCH_QUERY = """
 query Search(
     $query: String!, $query_type: String!, $per_page: Int!, $page: Int!,
@@ -187,7 +193,7 @@ async def fetch_books_by_ids(ids: list[int]) -> list[dict[str, Any]]:
             "title": b.get("title"),
             "rating": b.get("rating"),
             "release_year": b.get("release_year"),
-            "authors": [c["author"]["name"] for c in b.get("contributions", [])],
+            "authors": author_names(b),
         }
         for b in result["data"]["books"]
     }
@@ -284,7 +290,7 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
 
     book = books[0]
     # Flatten authors for readability
-    book["authors"] = [c["author"]["name"] for c in book.get("contributions", [])]
+    book["authors"] = author_names(book)
     del book["contributions"]
 
     return [TextContent(type="text", text=json.dumps(book, indent=2))]
