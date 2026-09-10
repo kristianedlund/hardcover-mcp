@@ -96,6 +96,7 @@ Add to `claude_desktop_config.json`:
 | Explore a series in reading order | `get_series` |
 | Browse an author's catalogue | `get_author` |
 | Look up another user's public profile (and optionally their library) | `get_user` |
+| See recent activity from people you follow (or one user) | `get_activity_feed` |
 
 ### Your library
 

@@ -9,6 +9,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
+from hardcover_mcp.tools.activity import handle_get_activity_feed
 from hardcover_mcp.tools.authors import handle_get_author
 from hardcover_mcp.tools.books import handle_get_book, handle_get_characters, handle_search_books
 from hardcover_mcp.tools.editions import handle_get_edition
@@ -104,6 +105,38 @@ TOOL_REGISTRY: list[tuple[Tool, Handler]] = [
             },
         ),
         handle_get_user,
+    ),
+    (
+        Tool(
+            name="get_activity_feed",
+            description=(
+                "Get recent reading activity (status changes, ratings, reviews, list updates), "
+                "newest first. Defaults to the feed of users you follow. Pass user_id or username "
+                "to fetch a single user's activity instead."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "integer",
+                        "description": "Fetch one user's activity by Hardcover user ID.",
+                    },
+                    "username": {
+                        "type": "string",
+                        "description": "Fetch one user's activity by username.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max events to return (default 25, max 100).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Pagination offset (default 0).",
+                    },
+                },
+            },
+        ),
+        handle_get_activity_feed,
     ),
     (
         Tool(
