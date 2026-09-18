@@ -74,7 +74,7 @@ async def execute(
 
     token = _get_token()
     headers = {
-        "authorization": token,
+        "authorization": f"Bearer {token}",
         "content-type": "application/json",
         "user-agent": "hardcover-mcp/0.7.1",
     }
