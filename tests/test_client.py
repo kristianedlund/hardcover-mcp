@@ -53,6 +53,17 @@ async def test_execute_sends_bearer_prefixed_authorization_header(monkeypatch):
     assert headers["authorization"] == "Bearer test-token-not-real"
 
 
+async def test_execute_does_not_double_prefix_existing_bearer_token(monkeypatch):
+    monkeypatch.setenv("HARDCOVER_API_TOKEN", "Bearer test-token-not-real")
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClient)
+
+    await client.execute("query { me { id } }")
+
+    headers = _FakeAsyncClient.captured_headers
+    assert headers is not None
+    assert headers["authorization"] == "Bearer test-token-not-real"
+
+
 async def test_execute_raises_without_token(monkeypatch):
     monkeypatch.delenv("HARDCOVER_API_TOKEN", raising=False)
     monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClient)

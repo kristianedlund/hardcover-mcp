@@ -73,8 +73,10 @@ async def execute(
     await _wait_for_rate_limit()
 
     token = _get_token()
+    if not token.startswith("Bearer "):
+        token = f"Bearer {token}"
     headers = {
-        "authorization": f"Bearer {token}",
+        "authorization": token,
         "content-type": "application/json",
         "user-agent": "hardcover-mcp/0.7.1",
     }
