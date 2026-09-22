@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-09-22
+
+### Fixed
+
+- The `authorization` header now sends the API token as `Bearer <token>`. Previously the raw
+  token was passed through as-is, so a token stored in the env file without the `Bearer ` prefix
+  produced an unauthenticated request. The prefix is added when missing and left intact when the
+  stored value already includes it. (#54, thanks @laforcem)
+
 ## [0.7.1] - 2026-09-10
 
 ### Fixed
@@ -205,7 +214,8 @@ Initial release.
 - `add_book_to_list` / `remove_book_from_list` — manage books within a list.
 - Ruff linter configuration, `.env.example`, and initial README.
 
-[Unreleased]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.5.0...v0.6.0
