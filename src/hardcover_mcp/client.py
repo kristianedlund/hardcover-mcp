@@ -73,6 +73,8 @@ async def execute(
     await _wait_for_rate_limit()
 
     token = _get_token()
+    if not token.startswith("Bearer "):
+        token = f"Bearer {token}"
     headers = {
         "authorization": token,
         "content-type": "application/json",
