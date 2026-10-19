@@ -65,7 +65,7 @@ mutation InsertReadingJournal($object: ReadingJournalCreateType!) {
 """
 
 GET_OWN_JOURNAL_ENTRY_QUERY = """
-query GetOwnJournalEntry($id: Int!, $user_id: Int!) {
+query GetOwnJournalEntry($id: bigint!, $user_id: Int!) {
     reading_journals(where: {id: {_eq: $id}, user_id: {_eq: $user_id}}, limit: 1) {
         id
         book_id
@@ -454,6 +454,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_reading_journal,
         toolset="journal",
+        scopes=("read:journal", "read:me"),
     ),
     ToolSpec(
         Tool(
@@ -509,6 +510,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_set_journal_entry,
         toolset="journal",
+        scopes=("read:journal", "read:me", "write:library"),
     ),
     ToolSpec(
         Tool(
@@ -532,5 +534,6 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_delete_journal_entry,
         toolset="journal",
+        scopes=("read:me", "write:library"),
     ),
 ]

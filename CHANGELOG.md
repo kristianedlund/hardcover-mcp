@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Editing a journal entry with `set_journal_entry(id=...)` failed with the newer, scoped API keys
+  ("variable 'id' is declared as 'Int!', but used where 'bigint' is expected"). The lookup now
+  uses the `bigint` type the API schema specifies; legacy keys had tolerated the mismatch.
+- With a scoped API key, `set_user_book` failed on every update of a book already in your
+  library unless the key had `write:reviews`, because it re-sent the existing review fields.
+  It now sends review fields only when you change them, so status, rating, and notes updates
+  work without that scope (the API keeps the review as it is).
+
+### Added
+
+- README section **API key and scopes**: the Hardcover API scopes each toolset needs, with links
+  that open Hardcover's new-key form with the right scopes pre-selected (one for everything, one
+  read-only). Each tool now declares its scopes in code; the README section is generated from
+  them and a test keeps it in sync.
+
+### Changed
+
+- Clear errors for API failures instead of raw HTTP errors and tracebacks:
+  - an invalid or expired token explains that and links to create a new key;
+  - a key missing a scope names the missing scopes and links to a key form with them selected;
+  - requests over the burst limit, operations not allowed for API tokens, and other refusals
+    each get a specific message.
+- Rate limiting follows the API's `RateLimit` and `Retry-After` headers. When the daily limit is
+  used up, calls stop immediately with a message instead of retrying. 503 responses are retried
+  like 429s.
+- The User-Agent now reports the installed version (it was stuck at `0.7.1`) and links to the
+  project.
+
 ## [0.8.0] - 2026-10-19
 
 ### Breaking: tools merged and renamed (39 → 31)

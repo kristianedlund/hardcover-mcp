@@ -227,6 +227,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_prompts,
         toolset="social",
+        scopes=("read:prompts",),
     ),
     ToolSpec(
         Tool(
@@ -266,5 +267,6 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_set_prompt_answer,
         toolset="social",
+        scopes=("read:me", "read:prompts", "write:prompts"),
     ),
 ]

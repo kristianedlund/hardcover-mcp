@@ -188,6 +188,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_trending_books,
         toolset="catalog",
+        scopes=("read:catalog",),
     ),
     ToolSpec(
         Tool(
@@ -224,5 +225,6 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_vibes,
         toolset="catalog",
+        scopes=("read:catalog", "read:vibes"),
     ),
 ]

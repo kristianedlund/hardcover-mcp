@@ -188,5 +188,6 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_publisher,
         toolset="catalog",
+        scopes=("read:catalog",),
     ),
 ]

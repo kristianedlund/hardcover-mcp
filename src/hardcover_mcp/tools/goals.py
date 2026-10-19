@@ -278,6 +278,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_reading_goal,
         toolset="library",
+        scopes=("read:goals", "read:me"),
     ),
     ToolSpec(
         Tool(
@@ -323,5 +324,6 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_set_reading_goal,
         toolset="library",
+        scopes=("read:goals", "read:me", "write:goals"),
     ),
 ]

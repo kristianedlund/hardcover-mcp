@@ -275,6 +275,47 @@ class TestHandleSetUserBookReview:
             {"type": "p", "children": [{"text": "Second one"}]},
         ]
 
+    async def test_status_only_update_sends_no_review_fields(self):
+        # Sending any review field needs the write:reviews scope, so a status/rating change
+        # must not echo the existing review back.
+        mock_existing = {
+            "data": {
+                "user_books": [
+                    {
+                        "id": 10,
+                        "status_id": 1,
+                        "rating": None,
+                        "review_slate": [{"type": "p", "children": [{"text": "Kept"}]}],
+                        "review_has_spoilers": False,
+                        "reviewed_at": "2025-06-01",
+                        "private_notes": "mine",
+                    }
+                ]
+            }
+        }
+        mock_mutation = {
+            "data": {"update_user_book": {"error": None, "id": 10, "user_book": {"id": 10}}}
+        }
+
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(side_effect=[mock_existing, mock_mutation]),
+            ) as mock_exec,
+        ):
+            await handle_set_user_book({"book_id": 42, "status": "Read", "rating": 4.0})
+
+        update_call_obj = mock_exec.call_args_list[1][0][1]["object"]
+        assert update_call_obj["status_id"] == 3
+        assert update_call_obj["rating"] == 4.0
+        assert update_call_obj["private_notes"] == "mine"
+        for field in ("review_slate", "review_has_spoilers", "reviewed_at"):
+            assert field not in update_call_obj
+
 
 class TestFormatUserBookDetailReview:
     """Verify that _format_user_book_detail surfaces review fields."""

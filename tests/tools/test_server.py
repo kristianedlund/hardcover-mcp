@@ -95,3 +95,42 @@ def test_collect_tools_rejects_unknown_toolset(monkeypatch):
     monkeypatch.setattr(server, "_MODULES", (SimpleNamespace(TOOLS=[bad]),))
     with pytest.raises(ValueError, match="unknown toolset"):
         server._collect_tools()
+
+
+async def test_call_tool_api_error_has_no_traceback(monkeypatch):
+    from hardcover_mcp.client import HardcoverAPIError
+
+    async def failing(arguments):
+        raise HardcoverAPIError("Token is missing scope write:lists")
+
+    monkeypatch.setitem(server._dispatch, "get_book", failing)
+    result = await server.call_tool(None, SimpleNamespace(name="get_book", arguments={}))
+
+    assert result.is_error
+    assert result.content[0].text == "Error in get_book: Token is missing scope write:lists"
+
+
+async def test_call_tool_unexpected_error_keeps_traceback(monkeypatch):
+    async def failing(arguments):
+        raise KeyError("boom")
+
+    monkeypatch.setitem(server._dispatch, "get_book", failing)
+    result = await server.call_tool(None, SimpleNamespace(name="get_book", arguments={}))
+
+    assert result.is_error
+    assert "Traceback" in result.content[0].text
+
+
+def test_collect_tools_rejects_missing_scopes(monkeypatch):
+    bad = dataclasses.replace(server.TOOL_REGISTRY[0], scopes=())
+    monkeypatch.setattr(server, "_MODULES", (SimpleNamespace(TOOLS=[bad]),))
+    with pytest.raises(ValueError, match="no API scopes"):
+        server._collect_tools()
+
+
+def test_collect_tools_rejects_write_scope_on_read_only_tool(monkeypatch):
+    read_tool = next(s for s in server.TOOL_REGISTRY if s.tool.annotations.read_only_hint)
+    bad = dataclasses.replace(read_tool, scopes=(*read_tool.scopes, "write:lists"))
+    monkeypatch.setattr(server, "_MODULES", (SimpleNamespace(TOOLS=[bad]),))
+    with pytest.raises(ValueError, match="disagree"):
+        server._collect_tools()

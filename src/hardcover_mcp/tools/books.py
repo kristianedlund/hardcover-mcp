@@ -397,6 +397,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_search_books,
         toolset="core",
+        scopes=("read:catalog",),
     ),
     ToolSpec(
         Tool(
@@ -432,5 +433,6 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_book,
         toolset="catalog",
+        scopes=("read:catalog",),
     ),
 ]

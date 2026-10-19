@@ -43,11 +43,14 @@ hardcover-mcp connects your [Hardcover](https://hardcover.app) library to AI ass
 - **You review prompts and outputs** in your client before anything is sent
 - **Read-only mode** — set `HARDCOVER_READ_ONLY=true` to hide every tool that can change your
   account (see [Configuration](#configuration))
+- **Least-privilege keys** — give the key only the scopes you need; a read-only key makes
+  Hardcover itself refuse writes (see [API key and scopes](#api-key-and-scopes))
 
 ## Quick Start
 
 1. Install [uv](https://docs.astral.sh/uv/) (a fast Python package runner — the setup takes seconds).
-2. Get an API token from [hardcover.app/account/api](https://hardcover.app/account/api).
+2. Create an API key at [hardcover.app/account/api](https://hardcover.app/account/api); see
+   [API key and scopes](#api-key-and-scopes) for links that pre-select the right scopes.
 3. Add the config below to your MCP client — no manual install needed, `uvx` handles it.
 
 ### VS Code
@@ -92,6 +95,36 @@ Add to `claude_desktop_config.json`:
 
 `HARDCOVER_TOOLSETS` and `HARDCOVER_READ_ONLY` are optional and shown with their defaults; see
 [Configuration](#configuration).
+
+## API key and scopes
+
+Hardcover API keys carry **scopes** that limit what the key can do. Create a key with only the
+scopes this server needs (the links open Hardcover's key form with them pre-selected):
+
+<!-- scopes:start -->
+- **Everything:** [create a key with all scopes](https://hardcover.app/account/api/keys/new?scope=read%3Acatalog%20read%3Agoals%20read%3Ajournal%20read%3Alibrary%20read%3Alists%20read%3Ame%20read%3Aprompts%20read%3Asocial%20read%3Ausers%20read%3Avibes%20write%3Agoals%20write%3Alibrary%20write%3Alists%20write%3Aprompts%20write%3Areviews%20write%3Asocial)
+- **Read-only:** [create a read-only key](https://hardcover.app/account/api/keys/new?scope=read%3Acatalog%20read%3Agoals%20read%3Ajournal%20read%3Alibrary%20read%3Alists%20read%3Ame%20read%3Aprompts%20read%3Asocial%20read%3Ausers%20read%3Avibes). Pair it with `HARDCOVER_READ_ONLY=true`; Hardcover then refuses writes even if a tool tried one.
+
+| Toolset | Scopes needed |
+|---------|---------------|
+| `core` | `read:catalog`, `read:library`, `read:me`, `read:users` |
+| `catalog` | `read:catalog`, `read:vibes` |
+| `library` | `read:catalog`, `read:goals`, `read:library`, `read:lists`, `read:me`, `write:goals`, `write:library`, `write:reviews` |
+| `lists` | `read:lists`, `read:me`, `write:lists` |
+| `journal` | `read:journal`, `read:me`, `write:library` |
+| `social` | `read:me`, `read:prompts`, `read:social`, `read:users`, `write:prompts`, `write:social` |
+<!-- scopes:end -->
+
+`read:me` is needed almost everywhere because tools look up who you are first. `write:reviews`
+is only needed to write or edit a review with `set_user_book`; without it, status, rating, and
+notes changes still work. If you only load
+some toolsets (see [Configuration](#configuration)), the key only needs those rows plus `core`.
+
+- Keys created before August 2026 have full access and keep working.
+- When you create a key, Hardcover asks for an expiry date. After it, every tool returns
+  "Hardcover rejected the API token … expired" with a link to create a new one.
+- If a tool needs a scope your key lacks, its error names the missing scopes and links to a key
+  form with them pre-selected.
 
 ## Configuration
 
@@ -245,13 +278,21 @@ Contributions are welcome! Please:
 
 ## Rate Limiting
 
-The Hardcover API allows 60 requests per minute. The server handles this automatically — it queues requests and retries if needed. You shouldn't hit this in normal use.
+The Hardcover API allows 60 requests per minute with a short burst allowance, and a daily
+limit (5,000 requests on the free plan). The server queues requests, follows the API's
+rate-limit headers, and retries when asked to wait. Once the daily limit is used up it stops
+immediately with a message saying so (it resets at midnight UTC). Your usage is shown at
+[hardcover.app/account/api](https://hardcover.app/account/api). Keys created after August
+2026 get twice the burst allowance of older keys.
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---------|-----|
 | "API token is not set" | Add your token to the config (see Quick Start above) |
+| "Hardcover rejected the API token" | The key is invalid or expired; create a new one with the link in the error |
+| "missing the scope(s) this tool needs" | Create a key that includes them; the error links to a pre-filled form |
+| "daily API limit … is used up" | Wait until midnight UTC, or load fewer tools to make fewer calls |
 | "Access is denied" on Windows | Add `"UV_LINK_MODE": "copy"` to the `env` block in your config |
 | Slow or repeated errors | The server retries automatically — wait a moment and try again |
 | Unexpected results | Check for a newer version: the Hardcover API may have changed |

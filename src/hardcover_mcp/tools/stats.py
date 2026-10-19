@@ -181,5 +181,6 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_reading_stats,
         toolset="library",
+        scopes=("read:library", "read:me"),
     ),
 ]
