@@ -6,7 +6,7 @@ from typing import Any
 
 from mcp.types import TextContent, Tool
 
-from hardcover_mcp.client import execute
+from hardcover_mcp.client import NEW_API_KEY_URL, HardcoverAPIError, execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 from hardcover_mcp.tools.books import resolve_id_by_name
@@ -41,7 +41,7 @@ async def get_current_user() -> dict[str, Any]:
 
     Raises
     ------
-    RuntimeError
+    HardcoverAPIError
         If the API returns no user (invalid or expired token).
     """
     global _cached_user, _cached_at
@@ -49,7 +49,10 @@ async def get_current_user() -> dict[str, Any]:
         result = await execute(ME_QUERY)
         users = result["data"]["me"]
         if not users:
-            raise RuntimeError("No user returned — is your token valid?")
+            raise HardcoverAPIError(
+                "Hardcover returned no user for this API token; it may be invalid or "
+                f"expired. Create a new key at {NEW_API_KEY_URL}"
+            )
         _cached_user = users[0]
         _cached_at = time.monotonic()
     return _cached_user
@@ -289,5 +292,6 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_user,
         toolset="core",
+        scopes=("read:catalog", "read:library", "read:me", "read:users"),
     ),
 ]

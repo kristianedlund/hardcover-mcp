@@ -15,11 +15,18 @@ TOOLSETS = (CORE, "catalog", "library", "lists", "journal", "social")
 
 @dataclass(frozen=True)
 class ToolSpec:
-    """A tool's MCP schema, its handler, and the toolset it belongs to."""
+    """A tool's MCP schema, its handler, its toolset, and the API token scopes it needs."""
 
     tool: Tool
     handler: Handler
     toolset: str
+    # Hardcover API scopes the tool's queries/mutations require (see the docs' Actions page).
+    scopes: tuple[str, ...] = ()
+
+
+def scopes_for(specs: list[ToolSpec]) -> list[str]:
+    """Sorted union of the scopes needed by ``specs``."""
+    return sorted({scope for spec in specs for scope in spec.scopes})
 
 
 # Behavior hints shared across tools. Every tool calls the external Hardcover API.

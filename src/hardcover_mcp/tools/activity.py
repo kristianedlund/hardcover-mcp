@@ -192,5 +192,6 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_activity_feed,
         toolset="social",
+        scopes=("read:me", "read:social", "read:users"),
     ),
 ]

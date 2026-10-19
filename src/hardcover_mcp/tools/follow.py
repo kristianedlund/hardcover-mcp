@@ -137,5 +137,6 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_set_following,
         toolset="social",
+        scopes=("read:me", "read:social", "read:users", "write:social"),
     ),
 ]

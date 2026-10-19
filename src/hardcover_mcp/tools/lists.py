@@ -490,6 +490,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_list,
         toolset="lists",
+        scopes=("read:lists", "read:me"),
     ),
     ToolSpec(
         Tool(
@@ -535,6 +536,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_set_list,
         toolset="lists",
+        scopes=("write:lists",),
     ),
     ToolSpec(
         Tool(
@@ -559,6 +561,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_delete_list,
         toolset="lists",
+        scopes=("write:lists",),
     ),
     ToolSpec(
         Tool(
@@ -597,5 +600,6 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_set_list_book,
         toolset="lists",
+        scopes=("read:lists", "write:lists"),
     ),
 ]

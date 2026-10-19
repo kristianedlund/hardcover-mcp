@@ -153,7 +153,7 @@ class TestUserBookLifecycle:
 
 
 class TestUserBookReviewLifecycle:
-    """Add a book with a review and private notes → verify → delete."""
+    """Add a book with a review and notes → verify → status-only update keeps them → delete."""
 
     async def test_review_and_notes(self):
         from hardcover_mcp.tools.library import (
@@ -189,9 +189,23 @@ class TestUserBookReviewLifecycle:
             assert detail["private_notes"] == "The quote in chapter 12 is memorable."
             # review_raw is the plain text stored by the API
             assert detail["review_raw"] is not None
+            original_review = detail["review_raw"]
+
+            # 3. A status/rating-only update omits review fields (so it needs no
+            #    write:reviews scope); the API must leave the review untouched.
+            result = await handle_set_user_book(
+                {"book_id": book_id, "status": "Currently Reading", "rating": 3.5}
+            )
+            assert json.loads(result[0].text)["status"] == "Currently Reading"
+            result = await handle_get_user_book({"book_id": book_id})
+            detail = json.loads(result[0].text)
+            assert detail["review_raw"] == original_review
+            assert detail["review_has_spoilers"] is False
+            assert detail["reviewed_at"].startswith("2025-06-01")
+            assert detail["private_notes"] == "The quote in chapter 12 is memorable."
 
         finally:
-            # 3. Delete (cleanup always runs)
+            # 4. Delete (cleanup always runs)
             result = await handle_delete_user_book({"user_book_id": user_book_id})
             deleted = json.loads(result[0].text)
             assert deleted["deleted"] is True

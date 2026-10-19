@@ -193,5 +193,6 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_author,
         toolset="catalog",
+        scopes=("read:catalog",),
     ),
 ]

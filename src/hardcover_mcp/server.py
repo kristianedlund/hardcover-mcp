@@ -11,6 +11,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import CallToolResult, ListToolsResult, TextContent
 
+from hardcover_mcp.client import HardcoverAPIError
 from hardcover_mcp.tools import (
     activity,
     authors,
@@ -72,6 +73,12 @@ def _collect_tools() -> list[ToolSpec]:
             raise ValueError(f"Tool {name} has no annotations")
         if spec.toolset not in TOOLSETS:
             raise ValueError(f"Tool {name} has unknown toolset '{spec.toolset}'")
+        if not spec.scopes:
+            raise ValueError(f"Tool {name} declares no API scopes")
+        # Read-only mode and read-only keys must agree: a write scope means the tool writes.
+        writes = any(scope.startswith("write:") for scope in spec.scopes)
+        if writes == bool(spec.tool.annotations.read_only_hint):
+            raise ValueError(f"Tool {name} scopes disagree with its read_only_hint")
     return specs
 
 
@@ -148,6 +155,12 @@ async def call_tool(ctx: Any, params: Any) -> CallToolResult:
     try:
         content = await handler(params.arguments or {})
         return CallToolResult(content=content)
+    except HardcoverAPIError as exc:
+        # Known API failures already carry a user-facing message; a traceback adds noise.
+        return CallToolResult(
+            content=[TextContent(type="text", text=f"Error in {params.name}: {exc}")],
+            is_error=True,
+        )
     except Exception as exc:
         return CallToolResult(
             content=[

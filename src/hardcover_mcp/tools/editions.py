@@ -219,5 +219,6 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_edition,
         toolset="catalog",
+        scopes=("read:catalog",),
     ),
 ]

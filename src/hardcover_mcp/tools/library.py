@@ -766,19 +766,15 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
         elif current.get("rating") is not None:
             obj["rating"] = current["rating"]
 
-        # Preserve review/notes fields unless caller explicitly provides new values
+        # Review fields are only sent when the caller changes them: sending any of them
+        # requires the write:reviews scope, and update_user_book leaves omitted fields as
+        # they are (verified by the integration review test).
         if review_slate is not None:
             obj["review_slate"] = review_slate
-        elif current.get("review_slate") is not None:
-            obj["review_slate"] = current["review_slate"]
         if review_has_spoilers is not None:
             obj["review_has_spoilers"] = review_has_spoilers
-        elif current.get("review_has_spoilers") is not None:
-            obj["review_has_spoilers"] = current["review_has_spoilers"]
         if reviewed_at is not None:
             obj["reviewed_at"] = reviewed_at
-        elif current.get("reviewed_at") is not None:
-            obj["reviewed_at"] = current["reviewed_at"]
         if private_notes is not None:
             obj["private_notes"] = private_notes
         elif current.get("private_notes") is not None:
@@ -1243,6 +1239,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_user_library,
         toolset="library",
+        scopes=("read:library", "read:me"),
     ),
     ToolSpec(
         Tool(
@@ -1271,6 +1268,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_user_book,
         toolset="library",
+        scopes=("read:catalog", "read:library", "read:me"),
     ),
     ToolSpec(
         Tool(
@@ -1299,6 +1297,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_owned_books,
         toolset="library",
+        scopes=("read:lists", "read:me"),
     ),
     ToolSpec(
         Tool(
@@ -1362,6 +1361,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_set_user_book,
         toolset="library",
+        scopes=("read:library", "read:me", "write:library", "write:reviews"),
     ),
     ToolSpec(
         Tool(
@@ -1391,6 +1391,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_set_edition_owned,
         toolset="library",
+        scopes=("read:lists", "read:me", "write:library"),
     ),
     ToolSpec(
         Tool(
@@ -1450,6 +1451,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_set_user_book_read,
         toolset="library",
+        scopes=("read:library", "read:me", "write:library"),
     ),
     ToolSpec(
         Tool(
@@ -1474,6 +1476,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_delete_user_book_read,
         toolset="library",
+        scopes=("write:library",),
     ),
     ToolSpec(
         Tool(
@@ -1501,5 +1504,6 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_delete_user_book,
         toolset="library",
+        scopes=("read:library", "read:me", "write:library"),
     ),
 ]

@@ -159,5 +159,6 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_series,
         toolset="catalog",
+        scopes=("read:catalog",),
     ),
 ]
