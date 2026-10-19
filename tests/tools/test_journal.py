@@ -1,4 +1,4 @@
-"""Tests for tools/journal.py — _format_journal_entry and handle_get_reading_journal."""
+"""Tests for tools/journal.py — formatting, reading, and writing journal entries."""
 
 import json
 from unittest.mock import AsyncMock, patch
@@ -7,9 +7,9 @@ import pytest
 
 from hardcover_mcp.tools.journal import (
     _format_journal_entry,
-    handle_add_journal_entry,
     handle_delete_journal_entry,
     handle_get_reading_journal,
+    handle_set_journal_entry,
 )
 
 # ── Fixture helpers ──
@@ -261,14 +261,14 @@ class TestHandleGetReadingJournal:
         assert call_vars["where"]["book_id"] == {"_eq": 42}
 
 
-class TestHandleAddJournalEntry:
+class TestHandleSetJournalEntryCreate:
     @patch("hardcover_mcp.tools.journal.get_current_user", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.journal.execute", new_callable=AsyncMock)
     async def test_returns_created_entry(self, mock_execute, mock_user):
         mock_user.return_value = {"id": 1}
         mock_execute.return_value = _INSERT_RESPONSE
 
-        result = await handle_add_journal_entry(
+        result = await handle_set_journal_entry(
             {
                 "book_id": "42",
                 "entry": "Important note",
@@ -299,16 +299,16 @@ class TestHandleAddJournalEntry:
     @patch("hardcover_mcp.tools.journal.get_current_user", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.journal.execute", new_callable=AsyncMock)
     async def test_missing_book_id_returns_error_before_api_calls(self, mock_execute, mock_user):
-        result = await handle_add_journal_entry({"entry": "x", "event": "note"})
+        result = await handle_set_journal_entry({"entry": "x", "event": "note"})
 
-        assert result[0].text == "Error: 'book_id' is required."
+        assert result[0].text == "Error: 'book_id' is required when creating."
         mock_user.assert_not_awaited()
         mock_execute.assert_not_awaited()
 
     @patch("hardcover_mcp.tools.journal.get_current_user", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.journal.execute", new_callable=AsyncMock)
     async def test_invalid_event_returns_error_before_api_calls(self, mock_execute, mock_user):
-        result = await handle_add_journal_entry({"book_id": 1, "entry": "x", "event": "rating"})
+        result = await handle_set_journal_entry({"book_id": 1, "entry": "x", "event": "rating"})
 
         assert result[0].text == "Error: 'event' must be one of: note, quote."
         mock_user.assert_not_awaited()
@@ -317,11 +317,89 @@ class TestHandleAddJournalEntry:
     @patch("hardcover_mcp.tools.journal.get_current_user", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.journal.execute", new_callable=AsyncMock)
     async def test_invalid_book_id_returns_error_before_api_calls(self, mock_execute, mock_user):
-        result = await handle_add_journal_entry({"book_id": "bad", "entry": "x", "event": "note"})
+        result = await handle_set_journal_entry({"book_id": "bad", "entry": "x", "event": "note"})
 
         assert "Error: 'book_id' must be an integer" in result[0].text
         mock_user.assert_not_awaited()
         mock_execute.assert_not_awaited()
+
+
+def _own_entry(event: str = "note") -> dict:
+    return {
+        "data": {
+            "reading_journals": [
+                {
+                    "id": 101,
+                    "book_id": 42,
+                    "edition_id": None,
+                    "event": event,
+                    "entry": "Old text",
+                    "privacy_setting_id": 3,
+                }
+            ]
+        }
+    }
+
+
+class TestHandleSetJournalEntryEdit:
+    async def _run(self, arguments: dict, *responses: dict) -> tuple[str, AsyncMock]:
+        mock_exec = AsyncMock(side_effect=list(responses))
+        with (
+            patch(
+                "hardcover_mcp.tools.journal.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch("hardcover_mcp.tools.journal.execute", new=mock_exec),
+        ):
+            result = await handle_set_journal_entry(arguments)
+        return result[0].text, mock_exec
+
+    async def test_edits_text_and_preserves_other_fields(self):
+        updated = {
+            "data": {
+                "update_reading_journal": {
+                    "errors": None,
+                    "reading_journal": {"id": 101, "entry": "New text", "event": "note"},
+                }
+            }
+        }
+        text, mock_exec = await self._run(
+            {"id": 101, "entry": " New text "}, _own_entry(), updated
+        )
+
+        assert json.loads(text)["entry"] == "New text"
+        assert mock_exec.call_args_list[0][0][1] == {"id": 101, "user_id": 1}
+        assert mock_exec.call_args_list[1][0][1] == {
+            "id": 101,
+            "object": {"entry": "New text", "event": "note", "privacy_setting_id": 3},
+        }
+
+    async def test_requires_a_field_to_change(self):
+        text, mock_exec = await self._run({"id": 101})
+
+        assert "at least one" in text
+        mock_exec.assert_not_awaited()
+
+    async def test_rejects_entries_that_are_not_yours(self):
+        text, _ = await self._run({"id": 101, "entry": "x"}, {"data": {"reading_journals": []}})
+
+        assert "no journal entry of yours" in text
+
+    async def test_rejects_non_note_events(self):
+        text, mock_exec = await self._run(
+            {"id": 101, "entry": "x"}, _own_entry(event="status_read")
+        )
+
+        assert "only note and quote" in text
+        assert mock_exec.call_count == 1
+
+    async def test_reports_api_errors(self):
+        failed = {
+            "data": {"update_reading_journal": {"errors": ["nope"], "reading_journal": None}}
+        }
+        text, _ = await self._run({"id": 101, "privacy_setting_id": 1}, _own_entry(), failed)
+
+        assert text == "Error: nope"
 
 
 class TestHandleDeleteJournalEntry:

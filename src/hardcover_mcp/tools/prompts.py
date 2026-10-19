@@ -1,4 +1,4 @@
-"""Tools: get_prompts and answer_prompt — community book prompt browsing and answering."""
+"""Tools: get_prompts and set_prompt_answer — browse community prompts and answer them."""
 
 import json
 from typing import Any
@@ -6,8 +6,9 @@ from typing import Any
 from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
-from hardcover_mcp.tools._registry import CREATE, READ, ToolSpec
+from hardcover_mcp.tools._registry import READ, UPDATE, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools.user import get_current_user
 
 GET_PROMPTS_QUERY = """
 query GetPrompts($limit: Int!, $offset: Int!, $where: prompts_bool_exp) {
@@ -37,6 +38,30 @@ mutation InsertPromptAnswer($object: PromptAnswerCreateInput!) {
             prompt_id
             book_id
         }
+    }
+}
+"""
+
+
+FIND_PROMPT_ANSWER_QUERY = """
+query FindPromptAnswer($user_id: Int!, $prompt_id: Int!, $book_id: Int!) {
+    prompt_answers(
+        where: {
+            user_id: {_eq: $user_id},
+            prompt_id: {_eq: $prompt_id},
+            book_id: {_eq: $book_id}
+        },
+        limit: 1
+    ) {
+        id
+    }
+}
+"""
+
+DELETE_PROMPT_ANSWER_MUTATION = """
+mutation DeletePromptAnswer($id: Int!) {
+    delete_prompt_answer(id: $id) {
+        id
     }
 }
 """
@@ -99,39 +124,74 @@ async def handle_get_prompts(arguments: dict[str, Any]) -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps(formatted, indent=2))]
 
 
-async def handle_answer_prompt(arguments: dict[str, Any]) -> list[TextContent]:
-    """Submit a book as an answer to a community prompt.
+async def handle_set_prompt_answer(arguments: dict[str, Any]) -> list[TextContent]:
+    """Answer a community prompt with a book, or withdraw that answer.
+
+    Checks for your existing answer first, so repeating a call is a no-op.
 
     Parameters
     ----------
     arguments : dict[str, Any]
-        Required: ``prompt_id`` (int), ``book_id`` (int).
+        Required: ``prompt_id`` (int), ``book_id`` (int), ``answered`` (bool).
+        Optional: ``description`` (str), why the book fits — used only when adding.
 
     Returns
     -------
     list[TextContent]
-        JSON confirmation with the created prompt_answer ``id``,
-        ``prompt_id``, and ``book_id``.
+        JSON with ``prompt_id``, ``book_id``, ``answered``, ``changed``, and
+        ``answer_id`` (null once withdrawn).
     """
-    prompt_id = arguments.get("prompt_id")
-    book_id = arguments.get("book_id")
-
-    if prompt_id is None or book_id is None:
+    answered = arguments.get("answered")
+    if not isinstance(answered, bool):
+        return [TextContent(type="text", text="Error: 'answered' (true/false) is required.")]
+    if arguments.get("prompt_id") is None or arguments.get("book_id") is None:
         return [TextContent(type="text", text="Error: 'prompt_id' and 'book_id' are required.")]
 
     try:
-        obj: dict[str, Any] = {
-            "prompt_id": _require_int(prompt_id, "prompt_id"),
-            "book_id": _require_int(book_id, "book_id"),
-        }
+        prompt_id = _require_int(arguments["prompt_id"], "prompt_id")
+        book_id = _require_int(arguments["book_id"], "book_id")
     except ValueError as e:
         return [TextContent(type="text", text=f"Error: {e}")]
 
-    result = await execute(ANSWER_PROMPT_MUTATION, {"object": obj})
-    mutation_result = result["data"]["insert_prompt_answer"]
+    user = await get_current_user()
+    found = await execute(
+        FIND_PROMPT_ANSWER_QUERY,
+        {"user_id": user["id"], "prompt_id": prompt_id, "book_id": book_id},
+    )
+    existing = found["data"]["prompt_answers"]
+    existing_id = existing[0]["id"] if existing else None
 
-    answer = mutation_result.get("prompt_answer", {})
-    return [TextContent(type="text", text=json.dumps(answer, indent=2))]
+    output: dict[str, Any] = {"prompt_id": prompt_id, "book_id": book_id, "answered": answered}
+
+    if answered and existing_id is None:
+        obj: dict[str, Any] = {"prompt_id": prompt_id, "book_id": book_id}
+        if arguments.get("description"):
+            obj["description"] = arguments["description"]
+        result = await execute(ANSWER_PROMPT_MUTATION, {"object": obj})
+        created = result["data"]["insert_prompt_answer"]
+        output.update(changed=True, answer_id=created.get("id"))
+    elif not answered and existing_id is not None:
+        try:
+            await execute(DELETE_PROMPT_ANSWER_MUTATION, {"id": existing_id})
+        except RuntimeError:
+            # Reads of prompt answers lag a few seconds behind writes, so the lookup can
+            # return an answer that was just withdrawn; deleting it again fails on
+            # Hardcover's side with an opaque webhook error.
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        "Error: Hardcover could not withdraw that answer. It may already have "
+                        "been withdrawn moments ago; changes to prompt answers can take a few "
+                        "seconds to show."
+                    ),
+                )
+            ]
+        output.update(changed=True, answer_id=None)
+    else:
+        output.update(changed=False, answer_id=existing_id)
+
+    return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
 # ── Tool definitions ──
@@ -144,7 +204,7 @@ TOOLS: list[ToolSpec] = [
                 "List community book prompts (questions like 'best sci-fi of 2025'), most "
                 "answered first, paginated with limit/offset. Read-only. Set featured=true for "
                 "featured prompts only. Returns id, question, description, answers_count, and "
-                "books_count. Pass a prompt id to answer_prompt to submit a book."
+                "books_count. Pass a prompt id to set_prompt_answer to submit a book."
             ),
             inputSchema={
                 "type": "object",
@@ -170,12 +230,15 @@ TOOLS: list[ToolSpec] = [
     ),
     ToolSpec(
         Tool(
-            name="answer_prompt",
+            name="set_prompt_answer",
             description=(
-                "Submit a book as your answer to a community prompt. Each call inserts a new "
-                "answer rather than replacing an earlier one. Returns the created answer (id, "
-                "prompt_id, book_id). Find prompt ids with get_prompts and book ids with "
-                "search_books."
+                "Answer a community prompt with a book (answered=true, optionally with a "
+                "description of why it fits) or withdraw that answer (answered=false). "
+                "Idempotent: if you already answered the prompt with that book, nothing "
+                "changes and the existing description is kept. Changes take a few seconds to "
+                "show, so don't repeat a call immediately. You can answer one prompt with "
+                "several different books. Returns prompt_id, book_id, answered, 'changed', and "
+                "answer_id. Find prompt ids with get_prompts and book ids with search_books."
             ),
             inputSchema={
                 "type": "object",
@@ -186,14 +249,22 @@ TOOLS: list[ToolSpec] = [
                     },
                     "book_id": {
                         "type": "integer",
-                        "description": "Hardcover book ID to submit as the answer.",
+                        "description": "Hardcover book ID.",
+                    },
+                    "answered": {
+                        "type": "boolean",
+                        "description": "true to submit the book, false to withdraw it.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Why this book fits the prompt (optional; when adding).",
                     },
                 },
-                "required": ["prompt_id", "book_id"],
+                "required": ["prompt_id", "book_id", "answered"],
             },
-            annotations=CREATE,
+            annotations=UPDATE,
         ),
-        handle_answer_prompt,
+        handle_set_prompt_answer,
         toolset="social",
     ),
 ]

@@ -3,10 +3,10 @@
 import json
 from typing import Any
 
-from mcp.types import TextContent, Tool
+from mcp.types import TextContent, Tool, ToolAnnotations
 
 from hardcover_mcp.client import execute
-from hardcover_mcp.tools._registry import CREATE, DELETE, READ, ToolSpec
+from hardcover_mcp.tools._registry import DELETE, READ, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 from hardcover_mcp.tools.books import author_names
 from hardcover_mcp.tools.user import get_current_user
@@ -50,6 +50,39 @@ query GetReadingJournal(
 INSERT_READING_JOURNAL_MUTATION = """
 mutation InsertReadingJournal($object: ReadingJournalCreateType!) {
     insert_reading_journal(object: $object) {
+        reading_journal {
+            id
+            book_id
+            edition_id
+            event
+            entry
+            action_at
+            metadata
+            privacy_setting_id
+        }
+    }
+}
+"""
+
+GET_OWN_JOURNAL_ENTRY_QUERY = """
+query GetOwnJournalEntry($id: Int!, $user_id: Int!) {
+    reading_journals(where: {id: {_eq: $id}, user_id: {_eq: $user_id}}, limit: 1) {
+        id
+        book_id
+        edition_id
+        event
+        entry
+        action_at
+        metadata
+        privacy_setting_id
+    }
+}
+"""
+
+UPDATE_READING_JOURNAL_MUTATION = """
+mutation UpdateReadingJournal($id: Int!, $object: ReadingJournalUpdateType!) {
+    update_reading_journal(id: $id, object: $object) {
+        errors
         reading_journal {
             id
             book_id
@@ -181,7 +214,37 @@ async def handle_get_reading_journal(arguments: dict[str, Any]) -> list[TextCont
     return [TextContent(type="text", text=json.dumps(formatted, indent=2))]
 
 
-async def handle_add_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
+_EDITABLE_EVENTS = {"note", "quote"}
+
+
+def _format_written_entry(raw: dict[str, Any]) -> dict[str, Any]:
+    """Format the reading_journal returned by an insert/update mutation."""
+    return {
+        "id": raw.get("id"),
+        "book_id": raw.get("book_id"),
+        "edition_id": raw.get("edition_id"),
+        "event": raw.get("event"),
+        "entry": raw.get("entry"),
+        "action_at": raw.get("action_at"),
+        "metadata": raw.get("metadata"),
+        "privacy_setting_id": raw.get("privacy_setting_id"),
+    }
+
+
+def _parse_event(value: Any) -> str:
+    """Validate a note/quote event value.
+
+    Raises
+    ------
+    ValueError
+        If the value is not ``"note"`` or ``"quote"``.
+    """
+    if not isinstance(value, str) or value.strip().lower() not in _EDITABLE_EVENTS:
+        raise ValueError("'event' must be one of: note, quote.")
+    return value.strip().lower()
+
+
+async def _create_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
     """Create a reading journal entry for a book.
 
     Parameters
@@ -197,24 +260,20 @@ async def handle_add_journal_entry(arguments: dict[str, Any]) -> list[TextConten
     """
     book_id = arguments.get("book_id")
     if book_id is None:
-        return [TextContent(type="text", text="Error: 'book_id' is required.")]
+        return [TextContent(type="text", text="Error: 'book_id' is required when creating.")]
 
     entry = arguments.get("entry")
     if not isinstance(entry, str) or not entry.strip():
         return [TextContent(type="text", text="Error: 'entry' must be a non-empty string.")]
 
-    event = arguments.get("event")
-    if not isinstance(event, str):
-        return [TextContent(type="text", text="Error: 'event' is required.")]
-    event_value = event.strip().lower()
-    if event_value not in {"note", "quote"}:
-        return [TextContent(type="text", text="Error: 'event' must be one of: note, quote.")]
+    if arguments.get("event") is None:
+        return [TextContent(type="text", text="Error: 'event' is required when creating.")]
 
     try:
         obj: dict[str, Any] = {
             "book_id": _require_int(book_id, "book_id"),
             "entry": entry.strip(),
-            "event": event_value,
+            "event": _parse_event(arguments["event"]),
         }
         if arguments.get("edition_id") is not None:
             obj["edition_id"] = _require_int(arguments["edition_id"], "edition_id")
@@ -240,17 +299,88 @@ async def handle_add_journal_entry(arguments: dict[str, Any]) -> list[TextConten
                 text="Error: journal entry not created (privacy_setting_id must be 1, 2, or 3).",
             )
         ]
-    output = {
-        "id": created.get("id"),
-        "book_id": created.get("book_id"),
-        "edition_id": created.get("edition_id"),
-        "event": created.get("event"),
-        "entry": created.get("entry"),
-        "action_at": created.get("action_at"),
-        "metadata": created.get("metadata"),
-        "privacy_setting_id": created.get("privacy_setting_id"),
+    return [TextContent(type="text", text=json.dumps(_format_written_entry(created), indent=2))]
+
+
+async def _update_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
+    """Edit one of your note/quote journal entries, preserving fields not passed.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Required: ``id`` (int). Optional: ``entry`` (str), ``event`` (note/quote),
+        ``edition_id`` (int), ``privacy_setting_id`` (int). ``book_id`` is ignored.
+
+    Returns
+    -------
+    list[TextContent]
+        Single-element list with JSON for the updated journal entry.
+    """
+    try:
+        entry_id = _require_int(arguments["id"], "id")
+        updates: dict[str, Any] = {}
+        if arguments.get("entry") is not None:
+            entry = arguments["entry"]
+            if not isinstance(entry, str) or not entry.strip():
+                raise ValueError("'entry' must be a non-empty string.")
+            updates["entry"] = entry.strip()
+        if arguments.get("event") is not None:
+            updates["event"] = _parse_event(arguments["event"])
+        for key in ("edition_id", "privacy_setting_id"):
+            if arguments.get(key) is not None:
+                updates[key] = _require_int(arguments[key], key)
+    except ValueError as exc:
+        return [TextContent(type="text", text=f"Error: {exc}")]
+    if not updates:
+        return [
+            TextContent(
+                type="text",
+                text=(
+                    "Error: provide at least one of 'entry', 'event', 'edition_id', "
+                    "'privacy_setting_id'."
+                ),
+            )
+        ]
+
+    # Only your own entries; scoping by user_id also gives a clear "not found".
+    user = await get_current_user()
+    found = await execute(GET_OWN_JOURNAL_ENTRY_QUERY, {"id": entry_id, "user_id": user["id"]})
+    rows = found["data"]["reading_journals"]
+    if not rows:
+        return [TextContent(type="text", text="Error: no journal entry of yours with that id.")]
+    current = rows[0]
+    if current.get("event") not in _EDITABLE_EVENTS:
+        return [
+            TextContent(
+                type="text",
+                text=(
+                    f"Error: only note and quote entries can be edited (this one is "
+                    f"'{current.get('event')}')."
+                ),
+            )
+        ]
+
+    # Send the full editable set so unspecified fields keep their current values.
+    obj = {
+        key: current.get(key)
+        for key in ("entry", "event", "edition_id", "privacy_setting_id")
+        if current.get(key) is not None
     }
-    return [TextContent(type="text", text=json.dumps(output, indent=2))]
+    obj.update(updates)
+
+    result = await execute(UPDATE_READING_JOURNAL_MUTATION, {"id": entry_id, "object": obj})
+    payload = result["data"]["update_reading_journal"]
+    if payload.get("errors"):
+        return [TextContent(type="text", text=f"Error: {'; '.join(payload['errors'])}")]
+    updated = payload.get("reading_journal") or {**current, **obj, "id": entry_id}
+    return [TextContent(type="text", text=json.dumps(_format_written_entry(updated), indent=2))]
+
+
+async def handle_set_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
+    """Create a note/quote journal entry (no ``id``) or edit an existing one (``id`` given)."""
+    if arguments.get("id") is not None:
+        return await _update_journal_entry(arguments)
+    return await _create_journal_entry(arguments)
 
 
 async def handle_delete_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
@@ -327,30 +457,35 @@ TOOLS: list[ToolSpec] = [
     ),
     ToolSpec(
         Tool(
-            name="add_journal_entry",
+            name="set_journal_entry",
             description=(
-                "Add a new note or quote to your reading journal for a book. Each call creates a "
-                "separate entry; there is no edit tool, so to change one delete it with "
-                "delete_journal_entry and add it again. Public by default (privacy_setting_id "
-                "1). Returns the created entry with its id. Only notes and quotes can be added "
-                "here; status, rating, and progress changes go through set_user_book and "
-                "set_user_book_read."
+                "Add a note or quote to your reading journal (omit id; book_id, entry, and "
+                "event required) or edit one of your existing notes/quotes (pass its id from "
+                "get_reading_journal; only the fields you pass change, the book can't). New "
+                "entries are public unless privacy_setting_id says otherwise. Each create makes "
+                "a separate entry. Status, rating, and progress entries can't be created or "
+                "edited here; they come from set_user_book and set_user_book_read. Returns the "
+                "entry with its id."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Journal entry ID to edit. Omit to create a new entry.",
+                    },
                     "book_id": {
                         "type": "integer",
-                        "description": "Hardcover book ID.",
+                        "description": "Hardcover book ID (required when creating).",
                     },
                     "entry": {
                         "type": "string",
-                        "description": "Journal entry text.",
+                        "description": "Journal entry text (required when creating).",
                     },
                     "event": {
                         "type": "string",
                         "enum": ["note", "quote"],
-                        "description": "Journal event type.",
+                        "description": "Entry type (required when creating).",
                     },
                     "edition_id": {
                         "type": "integer",
@@ -358,14 +493,21 @@ TOOLS: list[ToolSpec] = [
                     },
                     "privacy_setting_id": {
                         "type": "integer",
-                        "description": "Optional privacy setting ID (1 public, 2 followers, 3 private).",  # noqa: E501
+                        "description": (
+                            "1 public (default when creating), 2 followers, 3 private."
+                        ),
                     },
                 },
-                "required": ["book_id", "entry", "event"],
             },
-            annotations=CREATE,
+            # Edits overwrite text; creates are not idempotent.
+            annotations=ToolAnnotations(
+                read_only_hint=False,
+                destructive_hint=True,
+                idempotent_hint=False,
+                open_world_hint=True,
+            ),
         ),
-        handle_add_journal_entry,
+        handle_set_journal_entry,
         toolset="journal",
     ),
     ToolSpec(

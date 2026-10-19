@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Breaking: tools merged (39 → 31)
+### Breaking: tools merged and renamed (39 → 31)
 
 Related tools were merged so each tool covers one task and keeps a single, accurate behavior
 annotation. The old names are gone (no aliases). If you reference tools by name, for example in
@@ -23,12 +23,20 @@ Claude Code permission rules such as `mcp__hardcover__follow_user`, update them:
 | `add_user_book_read` / `update_user_book_read` | `set_user_book_read` without / with `id` |
 | `get_characters` | `get_book` with `include_characters: true` |
 | `get_user_reviews` | `get_user_library` with `has_review: true` (results under `books`) |
+| `add_journal_entry` | `set_journal_entry` without `id` |
+| `answer_prompt` | `set_prompt_answer` with `answered: true` |
 
 Behavior changes in the merged tools:
 
-- `set_following` and `set_list_book` check the current state first, so repeating a call is a
-  no-op and returns `changed: false`. Previously a repeated follow or add went straight to the
-  API.
+- `set_following`, `set_list_book`, and `set_prompt_answer` check the current state first, so
+  repeating a call is a no-op and returns `changed: false`. Previously a repeated follow, list
+  add, or prompt answer went straight to the API.
+- `set_journal_entry` with an `id` edits one of your existing notes or quotes, changing only
+  the fields you pass. Status, rating, and progress entries can't be edited.
+- `set_prompt_answer` with `answered: false` withdraws your answer, which wasn't possible
+  before. It also accepts an optional `description` of why the book fits. Hardcover takes a few
+  seconds to show prompt-answer changes, so a call repeated immediately may not see the previous
+  one.
 - `set_list_book` identifies the entry by `list_id` + `book_id`; the list-entry `id` parameter of
   `remove_book_from_list` is gone.
 - `get_user` with no arguments returns your full profile (bio, follower counts, privacy), not

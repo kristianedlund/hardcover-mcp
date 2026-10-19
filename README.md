@@ -176,7 +176,8 @@ account and are hidden in read-only mode.
 | What you can do | Tool |
 |-----------------|------|
 | Read your journal entries (notes, quotes, status events) | `get_reading_journal` |
-| ✏️ Add or delete a journal note/quote | `add_journal_entry` / `delete_journal_entry` |
+| ✏️ Add or edit a journal note/quote | `set_journal_entry` |
+| ✏️ Delete a journal entry | `delete_journal_entry` |
 
 ### social
 
@@ -185,7 +186,7 @@ account and are hidden in read-only mode.
 | See recent activity from people you follow (or one user) | `get_activity_feed` |
 | ✏️ Follow or unfollow a user | `set_following` |
 | Browse community book prompts | `get_prompts` |
-| ✏️ Answer a prompt with a book | `answer_prompt` |
+| ✏️ Answer a prompt with a book, or withdraw the answer | `set_prompt_answer` |
 
 ## Development
 
