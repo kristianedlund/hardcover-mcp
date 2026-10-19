@@ -4,9 +4,10 @@ import json
 from datetime import date
 from typing import Any
 
-from mcp.types import TextContent
+from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 from hardcover_mcp.tools.user import get_current_user
 
@@ -151,3 +152,34 @@ async def handle_get_reading_stats(arguments: dict[str, Any]) -> list[TextConten
     # --- 4. Format and return
     stats = _format_reading_stats(merged, year)
     return [TextContent(type="text", text=json.dumps(stats, indent=2))]
+
+
+# ── Tool definitions ──
+
+TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        Tool(
+            name="get_reading_stats",
+            description=(
+                "Get aggregate statistics for your own library: total books, count per status, "
+                "average rating, and books finished in a given year (default: current year). "
+                "Read-only. Use for summary numbers; to list the actual books use "
+                "get_user_library, and for goal progress use get_reading_goal."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "year": {
+                        "type": "integer",
+                        "description": (
+                            "Year for the 'books_read_this_year' count (default: current year)."
+                        ),
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_reading_stats,
+        toolset="library",
+    ),
+]

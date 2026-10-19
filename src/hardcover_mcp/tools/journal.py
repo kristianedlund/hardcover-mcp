@@ -3,9 +3,10 @@
 import json
 from typing import Any
 
-from mcp.types import TextContent
+from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._registry import CREATE, DELETE, READ, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 from hardcover_mcp.tools.books import author_names
 from hardcover_mcp.tools.user import get_current_user
@@ -278,3 +279,116 @@ async def handle_delete_journal_entry(arguments: dict[str, Any]) -> list[TextCon
     await get_current_user()
     await execute(DELETE_READING_JOURNAL_MUTATION, {"id": entry_id_int})
     return [TextContent(type="text", text=json.dumps({"deleted": True, "id": entry_id_int}))]
+
+
+# ── Tool definitions ──
+
+TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        Tool(
+            name="get_reading_journal",
+            description=(
+                "Get your own reading journal, newest first: notes, quotes, status changes, "
+                "ratings, reviews, and progress updates. Read-only. Filter by book_id and/or "
+                "event type; paginate with limit/offset. Returns each entry's id, event, text, "
+                "timestamp, and book. This is your personal log; for what people you follow are "
+                "doing use get_activity_feed; for review texts use "
+                "get_user_library(has_review=true)."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "type": "integer",
+                        "description": "Filter entries to a specific book by Hardcover book ID.",
+                    },
+                    "event": {
+                        "type": "string",
+                        "description": (
+                            "Filter by event type. Examples: 'note', 'quote', "
+                            "'status_currently_reading', 'status_read', 'rated', "
+                            "'reviewed', 'progress_updated'."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max entries to return (default 25, max 100).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Pagination offset (default 0).",
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_reading_journal,
+        toolset="journal",
+    ),
+    ToolSpec(
+        Tool(
+            name="add_journal_entry",
+            description=(
+                "Add a new note or quote to your reading journal for a book. Each call creates a "
+                "separate entry; there is no edit tool, so to change one delete it with "
+                "delete_journal_entry and add it again. Public by default (privacy_setting_id "
+                "1). Returns the created entry with its id. Only notes and quotes can be added "
+                "here; status, rating, and progress changes go through set_user_book and "
+                "set_user_book_read."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "type": "integer",
+                        "description": "Hardcover book ID.",
+                    },
+                    "entry": {
+                        "type": "string",
+                        "description": "Journal entry text.",
+                    },
+                    "event": {
+                        "type": "string",
+                        "enum": ["note", "quote"],
+                        "description": "Journal event type.",
+                    },
+                    "edition_id": {
+                        "type": "integer",
+                        "description": "Optional Hardcover edition ID.",
+                    },
+                    "privacy_setting_id": {
+                        "type": "integer",
+                        "description": "Optional privacy setting ID (1 public, 2 followers, 3 private).",  # noqa: E501
+                    },
+                },
+                "required": ["book_id", "entry", "event"],
+            },
+            annotations=CREATE,
+        ),
+        handle_add_journal_entry,
+        toolset="journal",
+    ),
+    ToolSpec(
+        Tool(
+            name="delete_journal_entry",
+            description=(
+                "Permanently delete one of your reading journal entries by id (from "
+                "get_reading_journal). Only that entry is removed; the book, its status, and "
+                "other entries are unaffected. Cannot be undone. Returns {deleted: true, id}."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Reading journal entry ID.",
+                    },
+                },
+                "required": ["id"],
+            },
+            annotations=DELETE,
+        ),
+        handle_delete_journal_entry,
+        toolset="journal",
+    ),
+]

@@ -17,9 +17,9 @@ from hardcover_mcp.tools.library import (
     _text_to_slate,
     handle_get_owned_books,
     handle_get_user_library,
-    handle_get_user_reviews,
     handle_set_edition_owned,
     handle_set_user_book,
+    handle_set_user_book_read,
 )
 
 
@@ -328,6 +328,7 @@ class TestFormatUserReview:
         base: dict = {
             "id": 5,
             "book_id": 99,
+            "status_id": 3,
             "rating": 4.0,
             "review_raw": "A great read.",
             "review_has_spoilers": False,
@@ -558,7 +559,7 @@ class TestHandleSetUserBookEdition:
         assert update_call_obj["edition_id"] == 888
 
 
-class TestHandleGetUserReviews:
+class TestHandleGetUserLibraryHasReview:
     def _mock_api_response(self, reviews: list[dict], total: int = 1) -> dict:
         return {
             "data": {
@@ -571,6 +572,7 @@ class TestHandleGetUserReviews:
         return {
             "id": 10,
             "book_id": book_id,
+            "status_id": 3,
             "rating": 5.0,
             "review_raw": "Fantastic.",
             "review_has_spoilers": False,
@@ -596,14 +598,14 @@ class TestHandleGetUserReviews:
                 new=AsyncMock(return_value=mock_result),
             ),
         ):
-            result = await handle_get_user_reviews({})
+            result = await handle_get_user_library({"has_review": True})
 
         data = json.loads(result[0].text)
         assert data["total"] == 1
         assert data["returned"] == 1
         assert data["offset"] == 0
-        assert len(data["reviews"]) == 1
-        review = data["reviews"][0]
+        assert len(data["books"]) == 1
+        review = data["books"][0]
         assert review["user_book_id"] == 10
         assert review["review_raw"] == "Fantastic."
         assert review["review_has_spoilers"] is False
@@ -625,7 +627,7 @@ class TestHandleGetUserReviews:
                 new=AsyncMock(return_value=mock_result),
             ) as mock_exec,
         ):
-            await handle_get_user_reviews({})
+            await handle_get_user_library({"has_review": True})
 
         call_vars = mock_exec.call_args[0][1]
         assert call_vars["limit"] == 25
@@ -645,7 +647,7 @@ class TestHandleGetUserReviews:
                 new=AsyncMock(return_value=mock_result),
             ) as mock_exec,
         ):
-            await handle_get_user_reviews({"limit": 10, "offset": 20})
+            await handle_get_user_library({"has_review": True, "limit": 10, "offset": 20})
 
         call_vars = mock_exec.call_args[0][1]
         assert call_vars["limit"] == 10
@@ -665,7 +667,7 @@ class TestHandleGetUserReviews:
                 new=AsyncMock(return_value=mock_result),
             ) as mock_exec,
         ):
-            await handle_get_user_reviews({"limit": 500})
+            await handle_get_user_library({"has_review": True, "limit": 500})
 
         call_vars = mock_exec.call_args[0][1]
         assert call_vars["limit"] == 100
@@ -684,12 +686,12 @@ class TestHandleGetUserReviews:
                 new=AsyncMock(return_value=mock_result),
             ),
         ):
-            result = await handle_get_user_reviews({})
+            result = await handle_get_user_library({"has_review": True})
 
         data = json.loads(result[0].text)
         assert data["total"] == 0
         assert data["returned"] == 0
-        assert data["reviews"] == []
+        assert data["books"] == []
 
 
 class TestResolvePrivacyId:
@@ -1405,3 +1407,73 @@ class TestGetUserLibraryDateRange:
         assert output["total"] == 1
         assert output["books"][0]["finished_at"] == "2025-05-15"
         assert output["books"][0]["started_at"] == "2025-05-01"
+
+
+class TestHandleGetUserLibraryHasReviewQuery:
+    async def _run(self, arguments: dict) -> tuple[list, AsyncMock]:
+        empty = {"data": {"user_books": [], "user_books_aggregate": {"aggregate": {"count": 0}}}}
+        mock_exec = AsyncMock(return_value=empty)
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch("hardcover_mcp.tools.library.execute", new=mock_exec),
+        ):
+            result = await handle_get_user_library(arguments)
+        return result, mock_exec
+
+    async def test_filters_and_sorts_by_review_date(self):
+        _, mock_exec = await self._run({"has_review": True})
+        query = mock_exec.call_args[0][0]
+        assert "has_review: {_eq: true}" in query
+        assert "order_by: {reviewed_at: desc}" in query
+        assert "review_raw" in query
+
+    async def test_explicit_sort_overrides_review_default(self):
+        _, mock_exec = await self._run({"has_review": True, "sort": "rating"})
+        assert "order_by: {rating: desc}" in mock_exec.call_args[0][0]
+
+    async def test_without_has_review_no_review_filter(self):
+        _, mock_exec = await self._run({})
+        query = mock_exec.call_args[0][0]
+        assert "has_review" not in query
+        assert "review_raw" not in query
+
+    async def test_rejects_date_range(self):
+        result, mock_exec = await self._run(
+            {"has_review": True, "start_date": "2025-01-01", "end_date": "2025-12-31"}
+        )
+        assert "can't be combined" in result[0].text
+        mock_exec.assert_not_called()
+
+
+class TestHandleSetUserBookRead:
+    async def test_with_id_edits_that_read(self):
+        current = {"data": {"user_book_reads": [{"id": 3, "started_at": "2025-01-01"}]}}
+        updated = {"data": {"update_user_book_read": {"user_book_read": {"id": 3}}}}
+        mock_exec = AsyncMock(side_effect=[current, updated])
+        with patch("hardcover_mcp.tools.library.execute", new=mock_exec):
+            result = await handle_set_user_book_read({"id": 3, "finished_at": "2025-02-01"})
+
+        assert json.loads(result[0].text) == {"id": 3}
+        assert mock_exec.call_args_list[1][0][1]["id"] == 3
+        merged = mock_exec.call_args_list[1][0][1]["object"]
+        assert merged["started_at"] == "2025-01-01"
+        assert merged["finished_at"] == "2025-02-01"
+
+    async def test_without_id_needs_a_book(self):
+        result = await handle_set_user_book_read({"finished_at": "2025-02-01"})
+        assert "provide 'book_id' or 'user_book_id'" in result[0].text
+
+    async def test_without_id_inserts_when_no_active_read(self):
+        no_active = {"data": {"user_book_reads": []}}
+        inserted = {"data": {"insert_user_book_read": {"user_book_read": {"id": 8}}}}
+        mock_exec = AsyncMock(side_effect=[no_active, inserted])
+        with patch("hardcover_mcp.tools.library.execute", new=mock_exec):
+            result = await handle_set_user_book_read(
+                {"user_book_id": 5, "started_at": "2025-03-01"}
+            )
+
+        assert json.loads(result[0].text) == {"id": 8}
+        assert mock_exec.call_args_list[1][0][1]["userBookId"] == 5

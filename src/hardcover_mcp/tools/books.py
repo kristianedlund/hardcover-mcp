@@ -3,9 +3,10 @@
 import json
 from typing import Any
 
-from mcp.types import TextContent
+from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 
 
@@ -72,12 +73,16 @@ GET_BOOK_BY_SLUG_QUERY = GET_BOOK_BY_ID_QUERY.replace(
 ).replace("{id: {_eq: $id}}", "{slug: {_eq: $slug}}")
 
 GET_CHARACTERS_QUERY = """
-query GetCharacters($book_id: Int!) {
-    characters(where: {book_characters: {book_id: {_eq: $book_id}}}) {
-        id
-        name
-        slug
-        description
+query GetCharacters($book_id: bigint!) {
+    book_characters(where: {book_id: {_eq: $book_id}}, order_by: {position: asc}) {
+        spoiler
+        only_mentioned
+        character {
+            id
+            name
+            slug
+            biography
+        }
     }
 }
 """
@@ -264,11 +269,13 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
     ----------
     arguments : dict[str, Any]
         Tool arguments. Provide ``id`` (int) or ``slug`` (str).
+        Optional: ``include_characters`` (bool, default false).
 
     Returns
     -------
     list[TextContent]
-        JSON with book details including title, authors, pages, and rating.
+        JSON with book details including title, authors, pages, and rating, plus a
+        ``characters`` array when requested.
     """
     book_id = arguments.get("id")
     slug = arguments.get("slug")
@@ -293,58 +300,137 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
     book["authors"] = author_names(book)
     del book["contributions"]
 
+    if arguments.get("include_characters"):
+        chars = await execute(GET_CHARACTERS_QUERY, {"book_id": book["id"]})
+        book["characters"] = [_format_character(bc) for bc in chars["data"]["book_characters"]]
+
     return [TextContent(type="text", text=json.dumps(book, indent=2))]
 
 
-def _format_character(character: dict[str, Any]) -> dict[str, Any]:
-    """Extract relevant fields from a character record.
+def _format_character(book_character: dict[str, Any]) -> dict[str, Any]:
+    """Flatten a book_characters row into a character dict.
 
     Parameters
     ----------
-    character : dict[str, Any]
-        Raw character object from the Hardcover API.
+    book_character : dict[str, Any]
+        Raw ``book_characters`` row from the Hardcover API, with a nested ``character``.
 
     Returns
     -------
     dict[str, Any]
-        Flat dict with ``id``, ``name``, ``slug``, and ``description``.
+        Flat dict with ``id``, ``name``, ``slug``, ``biography``, ``spoiler``,
+        and ``only_mentioned``.
     """
+    character = book_character.get("character") or {}
     return {
         "id": character.get("id"),
         "name": character.get("name"),
         "slug": character.get("slug"),
-        "description": character.get("description"),
+        "biography": character.get("biography"),
+        "spoiler": book_character.get("spoiler"),
+        "only_mentioned": book_character.get("only_mentioned"),
     }
 
 
-async def handle_get_characters(arguments: dict[str, Any]) -> list[TextContent]:
-    """Fetch characters associated with a book by its Hardcover ID.
+# ── Tool definitions ──
 
-    Parameters
-    ----------
-    arguments : dict[str, Any]
-        Tool arguments. Required key: ``book_id`` (int).
-
-    Returns
-    -------
-    list[TextContent]
-        JSON list of characters with ``id``, ``name``, ``slug``, and ``description``.
-    """
-    book_id = arguments.get("book_id")
-    if book_id is None:
-        return [TextContent(type="text", text="Error: 'book_id' is required.")]
-
-    try:
-        result = await execute(
-            GET_CHARACTERS_QUERY,
-            {"book_id": _require_int(book_id, "book_id")},
-        )
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
-
-    characters = result["data"]["characters"]
-    if not characters:
-        return [TextContent(type="text", text="No characters found for this book.")]
-
-    output = [_format_character(c) for c in characters]
-    return [TextContent(type="text", text=json.dumps(output, indent=2))]
+TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        Tool(
+            name="search_books",
+            description=(
+                "Full-text search across Hardcover's catalog by title, author, ISBN, or keyword; "
+                "set query_type to search authors, series, lists, users, publishers, characters, "
+                "or prompts instead of books. Read-only. Returns a total 'found' count, the page "
+                "number, and compact hits (id, slug, name/title, plus type-specific fields) "
+                "ranked by relevance unless 'sort' is given. Use it to discover ids, then call "
+                "get_book, get_author, get_series, etc. for full details. If you already have an "
+                "id, slug, or ISBN, call the matching get_* tool directly."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query (title, author name, ISBN, etc.).",
+                    },
+                    "query_type": {
+                        "type": "string",
+                        "description": "Entity type to search (default: 'Book').",
+                        "enum": [
+                            "Book",
+                            "Author",
+                            "Series",
+                            "List",
+                            "User",
+                            "Publisher",
+                            "Character",
+                            "Prompt",
+                        ],
+                    },
+                    "per_page": {
+                        "type": "integer",
+                        "description": "Results per page (default 10, max 25).",
+                    },
+                    "page": {
+                        "type": "integer",
+                        "description": "Page number (default 1).",
+                    },
+                    "sort": {
+                        "type": "string",
+                        "description": (
+                            "Typesense sort expression, e.g. 'rating:desc' or "
+                            "'users_count:desc' for most popular first."
+                        ),
+                    },
+                    "filter_by": {
+                        "type": "string",
+                        "description": (
+                            "Typesense filter expression, e.g. 'release_year:>2020' or "
+                            "'release_year:[2020..2024]'."
+                        ),
+                    },
+                },
+                "required": ["query"],
+            },
+            annotations=READ,
+        ),
+        handle_search_books,
+        toolset="core",
+    ),
+    ToolSpec(
+        Tool(
+            name="get_book",
+            description=(
+                "Get catalog details for one book (the work, across all editions) by Hardcover "
+                "id or slug, including title, authors, pages, and community rating. Read-only. "
+                "Set include_characters=true to add a 'characters' array in book order (id, "
+                "name, slug, biography, plus 'spoiler' and 'only_mentioned' flags; don't reveal "
+                "spoiler characters unless asked; empty if none are linked). Use search_books "
+                "first if you only "
+                "have a title. For a specific printing or ISBN use get_edition; for your own "
+                "status/rating of the book use get_user_book."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Hardcover book ID.",
+                    },
+                    "slug": {
+                        "type": "string",
+                        "description": "Hardcover book slug (e.g. 'project-hail-mary').",
+                    },
+                    "include_characters": {
+                        "type": "boolean",
+                        "description": "Also return the book's characters (default false).",
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_book,
+        toolset="catalog",
+    ),
+]

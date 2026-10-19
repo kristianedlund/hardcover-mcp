@@ -44,22 +44,21 @@ async def _find_book_not_in_library() -> int:
 
 
 class TestListLifecycle:
-    """Create a list → update → add book → remove book → delete list."""
+    """Create a list → update → add book (twice) → remove book (twice) → delete list."""
 
     async def test_full_lifecycle(self):
         from hardcover_mcp.tools.lists import (
-            handle_add_book_to_list,
-            handle_create_list,
             handle_delete_list,
-            handle_remove_book_from_list,
-            handle_update_list,
+            handle_get_list,
+            handle_set_list,
+            handle_set_list_book,
         )
 
         unique = uuid.uuid4().hex[:8]
         list_name = f"_test_integration_{unique}"
 
-        # 1. Create
-        result = await handle_create_list(
+        # 1. Create (no id)
+        result = await handle_set_list(
             {
                 "name": list_name,
                 "description": "Temporary test list",
@@ -72,41 +71,33 @@ class TestListLifecycle:
         assert created["privacy"] == "private"
 
         try:
-            # 2. Update
+            # 2. Update (with id)
             updated_name = f"_test_integration_{unique}_updated"
-            result = await handle_update_list(
-                {
-                    "id": list_id,
-                    "name": updated_name,
-                }
-            )
+            result = await handle_set_list({"id": list_id, "name": updated_name})
             updated = json.loads(result[0].text)
             assert updated["name"] == updated_name
 
-            # 3. Add book
+            # 3. Add book, then repeat: second call is a no-op
             book_id = await _find_book_not_in_library()
-            result = await handle_add_book_to_list(
-                {
-                    "list_id": list_id,
-                    "book_id": book_id,
-                }
-            )
-            list_book = json.loads(result[0].text)
-            list_book_id = list_book["id"]
-            assert list_book["book_id"] == book_id
-            assert list_book["list_id"] == list_id
+            entry = {"list_id": list_id, "book_id": book_id}
+            added = json.loads((await handle_set_list_book({**entry, "on_list": True}))[0].text)
+            assert added["changed"] is True
+            assert added["list_book_id"] is not None
+            again = json.loads((await handle_set_list_book({**entry, "on_list": True}))[0].text)
+            assert again["changed"] is False
+            assert again["list_book_id"] == added["list_book_id"]
 
-            # 4. Remove book
-            result = await handle_remove_book_from_list(
-                {
-                    "id": list_book_id,
-                }
-            )
-            removed = json.loads(result[0].text)
-            assert removed["deleted"] is True
+            listed = json.loads((await handle_get_list({"id": list_id}))[0].text)
+            assert [b["book_id"] for b in listed["books"]] == [book_id]
+
+            # 4. Remove book, then repeat: second call is a no-op
+            removed = json.loads((await handle_set_list_book({**entry, "on_list": False}))[0].text)
+            assert removed["changed"] is True
+            again = json.loads((await handle_set_list_book({**entry, "on_list": False}))[0].text)
+            assert again["changed"] is False
 
         finally:
-            # 6. Delete list (cleanup always runs)
+            # 5. Delete list (cleanup always runs)
             result = await handle_delete_list({"id": list_id})
             deleted = json.loads(result[0].text)
             assert deleted["deleted"] is True
@@ -274,11 +265,10 @@ class TestReadingProgress:
 
     async def test_progress_tracking(self):
         from hardcover_mcp.tools.library import (
-            handle_add_user_book_read,
             handle_delete_user_book,
             handle_delete_user_book_read,
             handle_set_user_book,
-            handle_update_user_book_read,
+            handle_set_user_book_read,
         )
 
         book_id = await _find_book_not_in_library()
@@ -296,7 +286,7 @@ class TestReadingProgress:
 
         try:
             # 2. Log initial progress (page count)
-            result = await handle_add_user_book_read(
+            result = await handle_set_user_book_read(
                 {
                     "user_book_id": user_book_id,
                     "started_at": "2025-01-01",
@@ -309,7 +299,7 @@ class TestReadingProgress:
             assert read_entry["started_at"] == "2025-01-01"
 
             # 3. Update progress further
-            result = await handle_update_user_book_read(
+            result = await handle_set_user_book_read(
                 {
                     "id": read_id,
                     "progress_pages": 150,
@@ -321,7 +311,7 @@ class TestReadingProgress:
             assert updated["started_at"] == "2025-01-01"
 
             # 4. Test audiobook progress_seconds (requires edition_id)
-            result = await handle_update_user_book_read(
+            result = await handle_set_user_book_read(
                 {
                     "id": read_id,
                     "progress_seconds": 3600,

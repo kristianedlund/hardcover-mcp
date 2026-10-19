@@ -7,7 +7,6 @@ from hardcover_mcp.tools.books import (
     _format_character,
     _format_search_hit,
     handle_get_book,
-    handle_get_characters,
     handle_search_books,
 )
 
@@ -230,81 +229,83 @@ class TestHandleGetBook:
 
 
 class TestFormatCharacter:
-    def test_extracts_fields(self):
-        character = {
+    def test_flattens_book_character_row(self):
+        row = {
+            "spoiler": True,
+            "only_mentioned": False,
+            "character": {
+                "id": 1,
+                "name": "Kvothe",
+                "slug": "kvothe",
+                "biography": "The main protagonist.",
+            },
+        }
+        result = _format_character(row)
+
+        assert result == {
             "id": 1,
             "name": "Kvothe",
             "slug": "kvothe",
-            "description": "The main protagonist.",
+            "biography": "The main protagonist.",
+            "spoiler": True,
+            "only_mentioned": False,
         }
-        result = _format_character(character)
-
-        assert result["id"] == 1
-        assert result["name"] == "Kvothe"
-        assert result["slug"] == "kvothe"
-        assert result["description"] == "The main protagonist."
 
     def test_handles_missing_fields_gracefully(self):
         result = _format_character({})
 
         assert result["id"] is None
         assert result["name"] is None
-        assert result["slug"] is None
-        assert result["description"] is None
+        assert result["biography"] is None
+        assert result["spoiler"] is None
 
 
-class TestHandleGetCharacters:
-    async def test_returns_error_on_missing_book_id(self):
-        result = await handle_get_characters({})
+def _book() -> dict:
+    return {"data": {"books": [{"id": 123, "title": "T", "contributions": []}]}}
 
-        assert "required" in result[0].text.lower()
 
-    async def test_returns_error_on_non_numeric_book_id(self):
-        result = await handle_get_characters({"book_id": "not-a-number"})
-
-        assert "must be an integer" in result[0].text
-
-    @patch("hardcover_mcp.tools.books.execute", new_callable=AsyncMock)
-    async def test_returns_no_characters_message_when_empty(self, mock_execute):
-        mock_execute.return_value = {"data": {"characters": []}}
-
-        result = await handle_get_characters({"book_id": 123})
-
-        assert "no characters" in result[0].text.lower()
-
-    @patch("hardcover_mcp.tools.books.execute", new_callable=AsyncMock)
-    async def test_returns_characters_list(self, mock_execute):
-        mock_execute.return_value = {
-            "data": {
-                "characters": [
-                    {
-                        "id": 1,
-                        "name": "Kvothe",
-                        "slug": "kvothe",
-                        "description": "The main protagonist.",
-                    },
-                    {
-                        "id": 2,
-                        "name": "Denna",
-                        "slug": "denna",
-                        "description": "A mysterious woman.",
-                    },
-                ]
-            }
+def _chars() -> dict:
+    return {
+        "data": {
+            "book_characters": [
+                {
+                    "spoiler": False,
+                    "only_mentioned": False,
+                    "character": {"id": 1, "name": "Kvothe", "slug": "kvothe", "biography": "x"},
+                },
+                {
+                    "spoiler": True,
+                    "only_mentioned": True,
+                    "character": {"id": 2, "name": "Denna", "slug": "denna", "biography": None},
+                },
+            ]
         }
+    }
 
-        result = await handle_get_characters({"book_id": 123})
-        data = json.loads(result[0].text)
 
-        assert len(data) == 2
-        assert data[0]["name"] == "Kvothe"
-        assert data[1]["name"] == "Denna"
+class TestHandleGetBookIncludeCharacters:
+    @patch("hardcover_mcp.tools.books.execute", new_callable=AsyncMock)
+    async def test_omits_characters_by_default(self, mock_execute):
+        mock_execute.return_value = _book()
+
+        data = json.loads((await handle_get_book({"id": 123}))[0].text)
+
+        assert "characters" not in data
+        assert mock_execute.call_count == 1
 
     @patch("hardcover_mcp.tools.books.execute", new_callable=AsyncMock)
-    async def test_passes_book_id_to_execute(self, mock_execute):
-        mock_execute.return_value = {"data": {"characters": []}}
+    async def test_includes_characters_when_requested(self, mock_execute):
+        mock_execute.side_effect = [_book(), _chars()]
 
-        await handle_get_characters({"book_id": 456})
+        data = json.loads((await handle_get_book({"id": 123, "include_characters": True}))[0].text)
 
-        call_vars = mock_execute.call_args[0][1]
-        assert call_vars["book_id"] == 456
+        assert [c["name"] for c in data["characters"]] == ["Kvothe", "Denna"]
+        assert mock_execute.call_args_list[1][0][1] == {"book_id": 123}
+
+    @patch("hardcover_mcp.tools.books.execute", new_callable=AsyncMock)
+    async def test_empty_characters_is_empty_list(self, mock_execute):
+        mock_execute.side_effect = [_book(), {"data": {"book_characters": []}}]
+
+        data = json.loads((await handle_get_book({"id": 123, "include_characters": True}))[0].text)
+
+        assert data["characters"] == []

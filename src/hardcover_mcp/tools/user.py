@@ -1,12 +1,13 @@
-"""Tools: me (authenticated user info) and get_user (public profile lookup)."""
+"""Tool: get_user (your profile or another user's), plus the cached current-user lookup."""
 
 import json
 import time
 from typing import Any
 
-from mcp.types import TextContent
+from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 from hardcover_mcp.tools.books import resolve_id_by_name
 
@@ -52,12 +53,6 @@ async def get_current_user() -> dict[str, Any]:
         _cached_user = users[0]
         _cached_at = time.monotonic()
     return _cached_user
-
-
-async def handle_me() -> list[TextContent]:
-    """Handle the 'me' tool call."""
-    user = await get_current_user()
-    return [TextContent(type="text", text=json.dumps(user, indent=2))]
 
 
 # ── Read: get_user (public profile by id, username, or name) ──
@@ -166,12 +161,13 @@ def _format_user(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 async def handle_get_user(arguments: dict[str, Any]) -> list[TextContent]:
-    """Look up a public Hardcover user profile by id, username, or name.
+    """Look up a Hardcover user profile by id, username, or name (default: you).
 
     Parameters
     ----------
     arguments : dict[str, Any]
-        Provide one of: ``id`` (int), ``username`` (str), or ``name`` (str).
+        Provide one of: ``id`` (int), ``username`` (str), or ``name`` (str);
+        with none of them, the authenticated user's profile is returned.
         Optional: ``include_library`` (bool, default false) to include recent
         library entries; ``library_status`` (str, e.g. 'Read') to filter them;
         ``library_limit`` (int, default 10, max 50).
@@ -188,7 +184,7 @@ async def handle_get_user(arguments: dict[str, Any]) -> list[TextContent]:
     name = arguments.get("name")
 
     if not user_id and not username and not name:
-        return [TextContent(type="text", text="Error: provide 'id', 'username', or 'name'.")]
+        user_id = (await get_current_user())["id"]
 
     from hardcover_mcp.tools.library import STATUS_MAP, _resolve_status_id
 
@@ -241,3 +237,57 @@ async def handle_get_user(arguments: dict[str, Any]) -> list[TextContent]:
 
     output = _format_user(users[0])
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+
+# ── Tool definitions ──
+
+TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        Tool(
+            name="get_user",
+            description=(
+                "Get a Hardcover user's profile. With no arguments, returns your own profile "
+                "(the owner of the API token) including your user id; otherwise look someone "
+                "up by id, username, or name (name resolves to the top search match). "
+                "Read-only. Returns bio, book/follower counts, and privacy. Set "
+                "include_library=true to also fetch recent library entries; a private user's "
+                "library comes back empty unless you follow them. For activity use "
+                "get_activity_feed. Fails if the token is missing or invalid."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Hardcover user ID.",
+                    },
+                    "username": {
+                        "type": "string",
+                        "description": "Hardcover username (e.g. 'adam').",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Display name to search for (resolves to the top match).",
+                    },
+                    "include_library": {
+                        "type": "boolean",
+                        "description": "If true, include recent library entries (default false).",
+                    },
+                    "library_status": {
+                        "type": "string",
+                        "description": (
+                            "Filter library entries by status (e.g. 'Read', 'Currently Reading')."
+                        ),
+                    },
+                    "library_limit": {
+                        "type": "integer",
+                        "description": "Max library entries to return (default 10, max 50).",
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_user,
+        toolset="core",
+    ),
+]

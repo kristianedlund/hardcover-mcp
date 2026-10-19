@@ -3,9 +3,10 @@
 import json
 from typing import Any
 
-from mcp.types import TextContent
+from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 
 _DEFAULT_LIMIT = 25
@@ -150,3 +151,46 @@ async def handle_get_activity_feed(arguments: dict[str, Any]) -> list[TextConten
 
     activities = [_format_activity(a) for a in result["data"]["activities"]]
     return [TextContent(type="text", text=json.dumps(activities, indent=2))]
+
+
+# ── Tool definitions ──
+
+TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        Tool(
+            name="get_activity_feed",
+            description=(
+                "Get recent social activity events (status changes, ratings, reviews, list "
+                "updates), newest first. Read-only. Defaults to the feed of users you follow "
+                "(empty if you follow nobody); pass user_id or username for one user's activity. "
+                "Returns event type, book, user, and timestamp per event. For your own detailed "
+                "notes, quotes, and progress log use get_reading_journal; for your review texts "
+                "use get_user_library(has_review=true)."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "integer",
+                        "description": "Fetch one user's activity by Hardcover user ID.",
+                    },
+                    "username": {
+                        "type": "string",
+                        "description": "Fetch one user's activity by username.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max events to return (default 25, max 100).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Pagination offset (default 0).",
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_activity_feed,
+        toolset="social",
+    ),
+]

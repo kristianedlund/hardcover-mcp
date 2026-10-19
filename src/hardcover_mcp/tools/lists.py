@@ -3,9 +3,10 @@
 import json
 from typing import Any
 
-from mcp.types import TextContent
+from mcp.types import TextContent, Tool, ToolAnnotations
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._registry import DELETE, READ, UPDATE, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 from hardcover_mcp.tools.books import author_names
 from hardcover_mcp.tools.user import get_current_user
@@ -89,7 +90,7 @@ def _format_list_book(lb: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def handle_get_my_lists(arguments: dict[str, Any]) -> list[TextContent]:
+async def _get_my_lists(arguments: dict[str, Any]) -> list[TextContent]:
     """Fetch the authenticated user's Hardcover lists.
 
     Parameters
@@ -118,23 +119,25 @@ async def handle_get_my_lists(arguments: dict[str, Any]) -> list[TextContent]:
 
 
 async def handle_get_list(arguments: dict[str, Any]) -> list[TextContent]:
-    """Fetch a single Hardcover list with its books.
+    """Fetch a single Hardcover list with its books, or your own lists when no id is given.
 
     Parameters
     ----------
     arguments : dict[str, Any]
-        Required: ``id`` (int).
-        Optional: ``book_limit`` (int, default 25, max 100),
+        Optional: ``id`` (int). Without it, delegates to ``_get_my_lists``
+        (``limit``, ``offset``).
+        With it: ``book_limit`` (int, default 25, max 100),
         ``book_offset`` (int, default 0).
 
     Returns
     -------
     list[TextContent]
-        JSON with list summary and nested ``books`` array.
+        JSON with list summary and nested ``books`` array, or an array of
+        list summaries when no id is given.
     """
     list_id = arguments.get("id")
-    if not list_id:
-        return [TextContent(type="text", text="Error: 'id' is required.")]
+    if list_id is None:
+        return await _get_my_lists(arguments)
 
     book_limit = min(arguments.get("book_limit", 25), 100)
     book_offset = arguments.get("book_offset", 0)
@@ -232,7 +235,7 @@ def _build_list_input(arguments: dict[str, Any]) -> dict[str, Any]:
     return obj
 
 
-async def handle_create_list(arguments: dict[str, Any]) -> list[TextContent]:
+async def _create_list(arguments: dict[str, Any]) -> list[TextContent]:
     """Create a new Hardcover list.
 
     Parameters
@@ -269,7 +272,7 @@ async def handle_create_list(arguments: dict[str, Any]) -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
-async def handle_update_list(arguments: dict[str, Any]) -> list[TextContent]:
+async def _update_list(arguments: dict[str, Any]) -> list[TextContent]:
     """Update an existing Hardcover list's name, description, or privacy.
 
     Parameters
@@ -316,6 +319,13 @@ async def handle_update_list(arguments: dict[str, Any]) -> list[TextContent]:
         "privacy": PRIVACY_MAP.get(lst.get("privacy_setting_id"), "unknown"),
     }
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+
+async def handle_set_list(arguments: dict[str, Any]) -> list[TextContent]:
+    """Create a list (no ``id``) or update an existing one (``id`` given)."""
+    if arguments.get("id") is None:
+        return await _create_list(arguments)
+    return await _update_list(arguments)
 
 
 async def handle_delete_list(arguments: dict[str, Any]) -> list[TextContent]:
@@ -381,89 +391,211 @@ query FindListBook($list_id: Int!, $book_id: Int!) {
 """
 
 
-async def handle_add_book_to_list(arguments: dict[str, Any]) -> list[TextContent]:
-    """Add a book to a Hardcover list.
+async def handle_set_list_book(arguments: dict[str, Any]) -> list[TextContent]:
+    """Put a book on a list or take it off, so membership matches ``on_list``.
+
+    Checks current membership first, so repeating a call is a no-op.
 
     Parameters
     ----------
     arguments : dict[str, Any]
-        Required: ``list_id`` (int), ``book_id`` (int).
-        Optional: ``position`` (int).
+        Required: ``list_id`` (int), ``book_id`` (int), ``on_list`` (bool).
+        Optional: ``position`` (int), used only when adding.
 
     Returns
     -------
     list[TextContent]
-        JSON with the created list_book entry.
+        JSON with ``list_id``, ``book_id``, ``on_list``, ``changed``, and
+        ``list_book_id`` (null once removed).
     """
-    list_id = arguments.get("list_id")
-    book_id = arguments.get("book_id")
-    if not list_id or not book_id:
+    on_list = arguments.get("on_list")
+    if not isinstance(on_list, bool):
+        return [TextContent(type="text", text="Error: 'on_list' (true/false) is required.")]
+    if not arguments.get("list_id") or not arguments.get("book_id"):
         return [TextContent(type="text", text="Error: 'list_id' and 'book_id' are required.")]
 
     try:
-        obj: dict[str, Any] = {
-            "list_id": _require_int(list_id, "list_id"),
-            "book_id": _require_int(book_id, "book_id"),
-        }
-        if arguments.get("position") is not None:
-            obj["position"] = _require_int(arguments["position"], "position")
+        list_id = _require_int(arguments["list_id"], "list_id")
+        book_id = _require_int(arguments["book_id"], "book_id")
+        position = (
+            _require_int(arguments["position"], "position")
+            if arguments.get("position") is not None
+            else None
+        )
     except ValueError as e:
         return [TextContent(type="text", text=f"Error: {e}")]
 
-    result = await execute(INSERT_LIST_BOOK_MUTATION, {"object": obj})
-    mutation_result = result["data"]["insert_list_book"]
+    found = await execute(FIND_LIST_BOOK_QUERY, {"list_id": list_id, "book_id": book_id})
+    existing = found["data"]["list_books"]
+    existing_id = existing[0]["id"] if existing else None
 
-    lb = mutation_result.get("list_book", {})
-    return [TextContent(type="text", text=json.dumps(lb, indent=2))]
+    output: dict[str, Any] = {"list_id": list_id, "book_id": book_id, "on_list": on_list}
+
+    if on_list and existing_id is None:
+        obj: dict[str, Any] = {"list_id": list_id, "book_id": book_id}
+        if position is not None:
+            obj["position"] = position
+        result = await execute(INSERT_LIST_BOOK_MUTATION, {"object": obj})
+        lb = result["data"]["insert_list_book"].get("list_book") or {}
+        output.update(changed=True, list_book_id=lb.get("id"), position=lb.get("position"))
+    elif not on_list and existing_id is not None:
+        await execute(DELETE_LIST_BOOK_MUTATION, {"id": existing_id})
+        output.update(changed=True, list_book_id=None)
+    else:
+        output.update(changed=False, list_book_id=existing_id)
+
+    return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
-async def handle_remove_book_from_list(arguments: dict[str, Any]) -> list[TextContent]:
-    """Remove a book from a list.
+# ── Tool definitions ──
 
-    Parameters
-    ----------
-    arguments : dict[str, Any]
-        Provide ``id`` (list_book ID) directly, or both ``list_id`` and
-        ``book_id`` for an automatic lookup.
-
-    Returns
-    -------
-    list[TextContent]
-        JSON confirmation with ``deleted: true`` and the list_book ID.
-    """
-    list_book_id = arguments.get("id")
-    list_id = arguments.get("list_id")
-    book_id = arguments.get("book_id")
-
-    # If no direct list_book id given, look it up by list_id + book_id
-    if not list_book_id:
-        if not list_id or not book_id:
-            return [
-                TextContent(
-                    type="text",
-                    text="Error: provide 'id' (list_book id) or both 'list_id' and 'book_id'.",
-                )
-            ]
-        try:
-            result = await execute(
-                FIND_LIST_BOOK_QUERY,
-                {
-                    "list_id": _require_int(list_id, "list_id"),
-                    "book_id": _require_int(book_id, "book_id"),
+TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        Tool(
+            name="get_list",
+            description=(
+                "Without id: list the lists you own, most recently updated first (id, name, "
+                "slug, description, books count, privacy; no books), paginated with "
+                "limit/offset. With id: get that list (yours or another user's) including a "
+                "'books' array in list order (position, book_id, title, slug, authors), "
+                "paginated with book_limit/book_offset. Read-only. Find other users' lists "
+                "with search_books(query_type='List')."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "List ID. Omit to list your own lists.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Without id: max lists to return (default 50, max 200).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Without id: offset for pagination (default 0).",
+                    },
+                    "book_limit": {
+                        "type": "integer",
+                        "description": "With id: max books to return (default 25, max 100).",
+                    },
+                    "book_offset": {
+                        "type": "integer",
+                        "description": "With id: offset for book pagination (default 0).",
+                    },
                 },
-            )
-        except ValueError as e:
-            return [TextContent(type="text", text=f"Error: {e}")]
-        lbs = result["data"]["list_books"]
-        if not lbs:
-            return [TextContent(type="text", text="Error: book not found in that list.")]
-        list_book_id = lbs[0]["id"]
-
-    try:
-        list_book_id_int = _require_int(list_book_id, "id")
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
-
-    result = await execute(DELETE_LIST_BOOK_MUTATION, {"id": list_book_id_int})
-
-    return [TextContent(type="text", text=json.dumps({"deleted": True, "id": list_book_id_int}))]
+            },
+            annotations=READ,
+        ),
+        handle_get_list,
+        toolset="lists",
+    ),
+    ToolSpec(
+        Tool(
+            name="set_list",
+            description=(
+                "Create a list (omit id; name required) or change the name, description, or "
+                "privacy of a list you own (pass id plus at least one field; only the fields "
+                "you pass are overwritten). Creating twice makes two lists, so check get_list "
+                "first. Returns the list's id, name, slug, description, and privacy. Does not "
+                "change which books are on it: use set_list_book for that."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "List ID to update. Omit to create a new list.",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "List name (required when creating).",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "List description.",
+                    },
+                    "privacy": {
+                        "type": "string",
+                        "description": (
+                            "'public', 'followers_only', or 'private'. Default when creating: "
+                            "public."
+                        ),
+                    },
+                },
+            },
+            # Updates overwrite fields; creates are not idempotent.
+            annotations=ToolAnnotations(
+                read_only_hint=False,
+                destructive_hint=True,
+                idempotent_hint=False,
+                open_world_hint=True,
+            ),
+        ),
+        handle_set_list,
+        toolset="lists",
+    ),
+    ToolSpec(
+        Tool(
+            name="delete_list",
+            description=(
+                "Permanently delete a list you own by id. The books themselves stay in your "
+                "library; only the list and its entries are removed. Cannot be undone. Returns "
+                "{deleted: true, id}. To take a single book off use set_list_book with "
+                "on_list=false."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Hardcover list ID to delete.",
+                    },
+                },
+                "required": ["id"],
+            },
+            annotations=DELETE,
+        ),
+        handle_delete_list,
+        toolset="lists",
+    ),
+    ToolSpec(
+        Tool(
+            name="set_list_book",
+            description=(
+                "Put a book on one of your lists (on_list=true, optionally at a position) or "
+                "take it off (on_list=false). Idempotent: if the book is already in the "
+                "requested state nothing changes, and an existing entry's position is not "
+                "moved. Does not touch your library or reading status (use set_user_book). "
+                "Returns list_id, book_id, on_list, 'changed', and list_book_id. Find list ids "
+                "with get_list and book ids with search_books."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "list_id": {
+                        "type": "integer",
+                        "description": "Hardcover list ID.",
+                    },
+                    "book_id": {
+                        "type": "integer",
+                        "description": "Hardcover book ID.",
+                    },
+                    "on_list": {
+                        "type": "boolean",
+                        "description": "true to add the book, false to remove it.",
+                    },
+                    "position": {
+                        "type": "integer",
+                        "description": "Position when adding (optional; ignored when removing).",
+                    },
+                },
+                "required": ["list_id", "book_id", "on_list"],
+            },
+            annotations=UPDATE,
+        ),
+        handle_set_list_book,
+        toolset="lists",
+    ),
+]

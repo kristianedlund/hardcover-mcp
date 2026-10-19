@@ -3,9 +3,10 @@
 import json
 from typing import Any
 
-from mcp.types import TextContent
+from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._registry import CREATE, READ, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 
 GET_PROMPTS_QUERY = """
@@ -131,3 +132,68 @@ async def handle_answer_prompt(arguments: dict[str, Any]) -> list[TextContent]:
 
     answer = mutation_result.get("prompt_answer", {})
     return [TextContent(type="text", text=json.dumps(answer, indent=2))]
+
+
+# ── Tool definitions ──
+
+TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        Tool(
+            name="get_prompts",
+            description=(
+                "List community book prompts (questions like 'best sci-fi of 2025'), most "
+                "answered first, paginated with limit/offset. Read-only. Set featured=true for "
+                "featured prompts only. Returns id, question, description, answers_count, and "
+                "books_count. Pass a prompt id to answer_prompt to submit a book."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "featured": {
+                        "type": "boolean",
+                        "description": "If true, return only featured prompts (default false).",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max prompts to return (default 25, max 100).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Pagination offset (default 0).",
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_prompts,
+        toolset="social",
+    ),
+    ToolSpec(
+        Tool(
+            name="answer_prompt",
+            description=(
+                "Submit a book as your answer to a community prompt. Each call inserts a new "
+                "answer rather than replacing an earlier one. Returns the created answer (id, "
+                "prompt_id, book_id). Find prompt ids with get_prompts and book ids with "
+                "search_books."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "prompt_id": {
+                        "type": "integer",
+                        "description": "Hardcover prompt ID (use get_prompts to find IDs).",
+                    },
+                    "book_id": {
+                        "type": "integer",
+                        "description": "Hardcover book ID to submit as the answer.",
+                    },
+                },
+                "required": ["prompt_id", "book_id"],
+            },
+            annotations=CREATE,
+        ),
+        handle_answer_prompt,
+        toolset="social",
+    ),
+]
