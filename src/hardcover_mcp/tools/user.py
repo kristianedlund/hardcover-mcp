@@ -4,9 +4,10 @@ import json
 import time
 from typing import Any
 
-from mcp.types import TextContent
+from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 from hardcover_mcp.tools.books import resolve_id_by_name
 
@@ -241,3 +242,70 @@ async def handle_get_user(arguments: dict[str, Any]) -> list[TextContent]:
 
     output = _format_user(users[0])
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+
+# ── Tool definitions ──
+
+TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        Tool(
+            name="me",
+            description=(
+                "Get the profile of the user who owns the configured API token: id, username, "
+                "name, and books count. Read-only. Use this to find your own user id; to look "
+                "up someone else use get_user. Fails if the token is missing or invalid."
+            ),
+            inputSchema={"type": "object", "properties": {}},
+            annotations=READ,
+        ),
+        lambda args: handle_me(),
+        toolset="core",
+    ),
+    ToolSpec(
+        Tool(
+            name="get_user",
+            description=(
+                "Look up another Hardcover user's public profile by id, username, or name "
+                "(provide one; name resolves to the top search match). Read-only. Returns bio, "
+                "book/follower counts, and privacy. Set include_library=true to also fetch their "
+                "recent library entries; a private user's library comes back empty unless you "
+                "follow them. For your own profile use me; for their activity use "
+                "get_activity_feed."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Hardcover user ID.",
+                    },
+                    "username": {
+                        "type": "string",
+                        "description": "Hardcover username (e.g. 'adam').",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Display name to search for (resolves to the top match).",
+                    },
+                    "include_library": {
+                        "type": "boolean",
+                        "description": "If true, include recent library entries (default false).",
+                    },
+                    "library_status": {
+                        "type": "string",
+                        "description": (
+                            "Filter library entries by status (e.g. 'Read', 'Currently Reading')."
+                        ),
+                    },
+                    "library_limit": {
+                        "type": "integer",
+                        "description": "Max library entries to return (default 10, max 50).",
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_user,
+        toolset="core",
+    ),
+]

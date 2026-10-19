@@ -3,9 +3,10 @@
 import json
 from typing import Any
 
-from mcp.types import TextContent
+from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._registry import READ, UPDATE, ToolSpec
 from hardcover_mcp.tools._validation import _require_int, _require_iso_date
 from hardcover_mcp.tools.user import get_current_user
 
@@ -250,3 +251,77 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
 
     # --- 4. Format and return
     return [TextContent(type="text", text=json.dumps(_format_reading_goal(raw_goal), indent=2))]
+
+
+# ── Tool definitions ──
+
+TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        Tool(
+            name="get_reading_goal",
+            description=(
+                "Get your active (non-archived) reading goals, soonest end date first. "
+                "Read-only. Returns each goal's id, target, metric (book/page), progress, date "
+                "range, and state; 'goals' is an empty array if you have none. To create or "
+                "change a goal use set_reading_goal."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max goals to return (default 10, max 100).",
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_reading_goal,
+        toolset="library",
+    ),
+    ToolSpec(
+        Tool(
+            name="set_reading_goal",
+            description=(
+                "Create or update a reading goal. Upsert: if an active goal with the same metric, "
+                "start_date, and end_date exists, its target, description, and privacy are "
+                "overwritten; otherwise a new goal is created. Returns the goal with id, target, "
+                "progress, and state. Use get_reading_goal to see existing goals first."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "goal": {
+                        "type": "integer",
+                        "description": "Target count to reach by end_date.",
+                    },
+                    "metric": {
+                        "type": "string",
+                        "description": "Goal metric: 'book' or 'page'.",
+                        "enum": ["book", "page"],
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "description": "Start date (ISO 8601, e.g. '2026-01-01').",
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "End date (ISO 8601, e.g. '2026-12-31').",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional goal description.",
+                    },
+                    "privacy_setting_id": {
+                        "type": "integer",
+                        "description": "Optional privacy setting ID.",
+                    },
+                },
+                "required": ["goal", "metric", "start_date", "end_date"],
+            },
+            annotations=UPDATE,
+        ),
+        handle_set_reading_goal,
+        toolset="library",
+    ),
+]

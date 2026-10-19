@@ -41,6 +41,8 @@ hardcover-mcp connects your [Hardcover](https://hardcover.app) library to AI ass
 - **Runs locally** through your MCP client — no external server involved
 - **Actions only happen when explicitly requested** — nothing runs in the background
 - **You review prompts and outputs** in your client before anything is sent
+- **Read-only mode** — set `HARDCOVER_READ_ONLY=true` to hide every tool that can change your
+  account (see [Configuration](#configuration))
 
 ## Quick Start
 
@@ -59,7 +61,9 @@ Add to `.vscode/mcp.json`:
       "command": "uvx",
       "args": ["hardcover-mcp"],
       "env": {
-        "HARDCOVER_API_TOKEN": "<your token>"
+        "HARDCOVER_API_TOKEN": "<your token>",
+        "HARDCOVER_TOOLSETS": "all",
+        "HARDCOVER_READ_ONLY": "false"
       }
     }
   }
@@ -77,12 +81,47 @@ Add to `claude_desktop_config.json`:
       "command": "uvx",
       "args": ["hardcover-mcp"],
       "env": {
-        "HARDCOVER_API_TOKEN": "<your token>"
+        "HARDCOVER_API_TOKEN": "<your token>",
+        "HARDCOVER_TOOLSETS": "all",
+        "HARDCOVER_READ_ONLY": "false"
       }
     }
   }
 }
 ```
+
+`HARDCOVER_TOOLSETS` and `HARDCOVER_READ_ONLY` are optional and shown with their defaults; see
+[Configuration](#configuration).
+
+## Configuration
+
+Optional environment variables, set in the same `env` block as your token:
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `HARDCOVER_TOOLSETS` | `all` | Comma-separated toolsets to load. Fewer tools means less context used and fewer wrong tool picks. |
+| `HARDCOVER_READ_ONLY` | `false` | `true` hides every tool that creates, changes, or deletes anything. |
+
+| Toolset | What it covers |
+|---------|----------------|
+| `core` | Always loaded: `search_books`, `me`, `get_user` |
+| `catalog` | Books, editions, authors, series, publishers, characters, trending, vibes |
+| `library` | Your library, reading dates and progress, ownership, reviews, stats, goals |
+| `lists` | Viewing and managing your lists |
+| `journal` | Reading journal notes and quotes |
+| `social` | Activity feed, following users, community prompts |
+
+For example, a read-only assistant for browsing books and your own library:
+
+```json
+"env": {
+  "HARDCOVER_API_TOKEN": "<your token>",
+  "HARDCOVER_TOOLSETS": "catalog,library",
+  "HARDCOVER_READ_ONLY": "true"
+}
+```
+
+An unknown toolset name stops the server at startup with a message listing the valid names.
 
 ## Tools
 

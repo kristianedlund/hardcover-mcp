@@ -3,9 +3,10 @@
 import json
 from typing import Any
 
-from mcp.types import TextContent
+from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 from hardcover_mcp.tools.books import resolve_id_by_name
 
@@ -122,3 +123,41 @@ async def handle_get_series(arguments: dict[str, Any]) -> list[TextContent]:
     # Name lookups return multiple candidates; take the top-ranked one.
     output = _format_series(series_list[0])
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+
+# ── Tool definitions ──
+
+TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        Tool(
+            name="get_series",
+            description=(
+                "Get a book series by id, slug, or name (provide one; a name resolves to the "
+                "top search match). Read-only. Returns series info (author, books count, "
+                "completed flag) and all its books in reading order with position, title, "
+                "release year, and rating. Use search_books(query_type='Series') if a name "
+                "might be ambiguous."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Hardcover series ID.",
+                    },
+                    "slug": {
+                        "type": "string",
+                        "description": "Series slug (e.g. 'the-stormlight-archive').",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Exact series name (e.g. 'The Stormlight Archive').",
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_series,
+        toolset="catalog",
+    ),
+]

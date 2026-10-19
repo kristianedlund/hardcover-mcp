@@ -3,9 +3,10 @@
 import json
 from typing import Any
 
-from mcp.types import TextContent
+from mcp.types import TextContent, Tool, ToolAnnotations
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._registry import DELETE, READ, UPDATE, ToolSpec
 from hardcover_mcp.tools._validation import _require_float, _require_int
 from hardcover_mcp.tools.books import author_names
 from hardcover_mcp.tools.user import get_current_user
@@ -1213,3 +1214,392 @@ async def handle_delete_user_book(arguments: dict[str, Any]) -> list[TextContent
 
     await execute(DELETE_USER_BOOK_MUTATION, {"id": resolved})
     return [TextContent(type="text", text=json.dumps({"deleted": True, "user_book_id": resolved}))]
+
+
+# ── Tool definitions ──
+
+TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        Tool(
+            name="get_user_library",
+            description=(
+                "List books in your own library (any status), paginated with limit/offset. "
+                "Read-only. Filter by status or by finished-date range (start_date + end_date); "
+                "sort by updated, rating, or date_added. Returns user_book_id, book_id, title, "
+                "authors, status, rating, and read dates per book. E.g. sort='rating', "
+                "order='desc' for top-rated; a date range answers 'what did I read in May?'. "
+                "For one book's full entry use get_user_book; for owned copies use "
+                "get_owned_books."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "description": "Status filter (e.g. 'Read', 'Currently Reading').",
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "description": (
+                            "Earliest finished_at date (ISO 8601, e.g. '2025-01-01'). "
+                            "Must be paired with end_date."
+                        ),
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": (
+                            "Latest finished_at date (ISO 8601, e.g. '2025-12-31'). "
+                            "Must be paired with start_date."
+                        ),
+                    },
+                    "sort": {
+                        "type": "string",
+                        "description": "Sort field: 'updated' (default), 'rating', or 'date_added'.",  # noqa: E501
+                        "enum": ["updated", "rating", "date_added"],
+                    },
+                    "order": {
+                        "type": "string",
+                        "description": "Sort direction: 'desc' (default) or 'asc'.",
+                        "enum": ["desc", "asc"],
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max books to return (default 25, max 100).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Offset for pagination (default 0).",
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_user_library,
+        toolset="library",
+    ),
+    ToolSpec(
+        Tool(
+            name="get_user_book",
+            description=(
+                "Get your own library entry for one book (by book_id or slug). Read-only. "
+                "Returns user_book_id, status, rating, privacy, review, private notes, chosen "
+                "edition, and every read entry (with their ids, needed by "
+                "update_user_book_read/delete_user_book_read). Returns 'Book not in your "
+                "library' if you haven't added it. To browse many books use get_user_library."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "type": "integer",
+                        "description": "Hardcover book ID.",
+                    },
+                    "slug": {
+                        "type": "string",
+                        "description": "Hardcover book slug (e.g. 'project-hail-mary').",
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_user_book,
+        toolset="library",
+    ),
+    ToolSpec(
+        Tool(
+            name="get_user_reviews",
+            description=(
+                "List the reviews you have written, newest first, paginated with limit/offset. "
+                "Read-only. Returns review text, spoiler flag, rating, review date, and book "
+                "info. Only covers your own reviews; for other users' activity use "
+                "get_activity_feed. To write or edit a review use set_user_book."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max reviews to return (default 25, max 100).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Pagination offset (default 0).",
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_user_reviews,
+        toolset="library",
+    ),
+    ToolSpec(
+        Tool(
+            name="get_owned_books",
+            description=(
+                "List the editions you have marked as owned (your physical/digital copies), "
+                "newest first, paginated with page/per_page. Read-only. Returns total count and, "
+                "per book, title, authors, and edition details. Ownership is separate from "
+                "reading status: use get_user_library for your reading shelves, and "
+                "set_edition_owned to change ownership."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "page": {
+                        "type": "integer",
+                        "description": "Page number (default 1).",
+                    },
+                    "per_page": {
+                        "type": "integer",
+                        "description": "Results per page (default 20, max 100).",
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_owned_books,
+        toolset="library",
+    ),
+    ToolSpec(
+        Tool(
+            name="set_user_book",
+            description=(
+                "Add a book to your library or update your existing entry for it: status, "
+                "rating, review, privacy, private notes, and edition. Upsert: creates the entry "
+                "if the book isn't in your library yet, otherwise overwrites only the fields you "
+                "pass and preserves the rest. Returns user_book_id, status, privacy, rating, and "
+                "edition_id. Use add_user_book_read for start/finish dates and progress; use "
+                "add_book_to_list for custom lists; use delete_user_book to remove the book."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "type": "integer",
+                        "description": "Hardcover book ID.",
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "Status name (e.g. 'Read') or numeric ID (1-5).",
+                    },
+                    "rating": {
+                        "type": "number",
+                        "description": "Rating (e.g. 4.0, 3.5). Omit to leave unchanged.",
+                    },
+                    "review_raw": {
+                        "type": "string",
+                        "description": "Plain-text review content (converted to Slate format).",
+                    },
+                    "review_has_spoilers": {
+                        "type": "boolean",
+                        "description": "Whether the review contains spoilers.",
+                    },
+                    "reviewed_at": {
+                        "type": "string",
+                        "description": "ISO date of the review (e.g. '2025-06-01').",
+                    },
+                    "private_notes": {
+                        "type": "string",
+                        "description": "Private notes visible only to you.",
+                    },
+                    "privacy": {
+                        "type": "string",
+                        "description": (
+                            "Privacy setting: 'Public', 'Followers', or 'Private'"
+                            " (or numeric ID 1/2/3)."
+                        ),
+                    },
+                    "edition_id": {
+                        "type": "integer",
+                        "description": (
+                            "Edition ID (from get_edition). Sets which edition you're reading."
+                        ),
+                    },
+                },
+                "required": ["book_id"],
+            },
+            annotations=UPDATE,
+        ),
+        handle_set_user_book,
+        toolset="library",
+    ),
+    ToolSpec(
+        Tool(
+            name="set_edition_owned",
+            description=(
+                "Mark a specific edition as owned (true) or not owned (false). Idempotent: if "
+                "the edition is already in the requested state nothing changes. Returns "
+                "edition_id, owned, and 'toggled' (whether a change was made). Ownership is "
+                "independent of reading status (set_user_book). Get the edition_id from "
+                "get_edition (by ISBN-13 or ASIN) first."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "edition_id": {
+                        "type": "integer",
+                        "description": "Edition ID (from get_edition).",
+                    },
+                    "owned": {
+                        "type": "boolean",
+                        "description": "true to mark as owned, false to un-own.",
+                    },
+                },
+                "required": ["edition_id", "owned"],
+            },
+            annotations=UPDATE,
+        ),
+        handle_set_edition_owned,
+        toolset="library",
+    ),
+    ToolSpec(
+        Tool(
+            name="add_user_book_read",
+            description=(
+                "Log reading dates or progress for a book already in your library (by book_id or "
+                "user_book_id). If the book has an unfinished read, that read is updated with the "
+                "fields you pass; otherwise a new read (e.g. a re-read) is created. Supports "
+                "page progress and audiobook seconds. Returns the read entry with its id. Use "
+                "update_user_book_read to edit a specific past read by id. Add the book with "
+                "set_user_book first if it isn't in your library."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "type": "integer",
+                        "description": "Book ID (auto-resolves your user_book).",
+                    },
+                    "user_book_id": {
+                        "type": "integer",
+                        "description": "user_book ID if known (skips lookup).",
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "description": "Date started reading (ISO 8601, e.g. '2025-01-15').",
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "description": "Date finished reading (ISO 8601, e.g. '2025-02-20').",
+                    },
+                    "progress_pages": {
+                        "type": "integer",
+                        "description": "Pages read so far.",
+                    },
+                    "progress_seconds": {
+                        "type": "integer",
+                        "description": "Seconds of audiobook listened to so far.",
+                    },
+                    "edition_id": {
+                        "type": "integer",
+                        "description": "Edition ID (required for audiobook progress tracking).",
+                    },
+                },
+            },
+            annotations=ToolAnnotations(
+                read_only_hint=False,
+                destructive_hint=True,
+                idempotent_hint=False,
+                open_world_hint=True,
+            ),
+        ),
+        handle_add_user_book_read,
+        toolset="library",
+    ),
+    ToolSpec(
+        Tool(
+            name="update_user_book_read",
+            description=(
+                "Edit one existing read entry by its user_book_read id (from get_user_book), "
+                "e.g. to fix a start/finish date on a past read. Overwrites only the fields you "
+                "pass and preserves the rest. Supports page progress and audiobook seconds. "
+                "Returns the updated read entry. To log new progress without knowing the id, use "
+                "add_user_book_read."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "The user_book_read ID to update.",
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "description": "Date started reading (ISO 8601).",
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "description": "Date finished reading (ISO 8601).",
+                    },
+                    "progress_pages": {
+                        "type": "integer",
+                        "description": "Pages read so far.",
+                    },
+                    "progress_seconds": {
+                        "type": "integer",
+                        "description": "Seconds of audiobook listened to so far.",
+                    },
+                    "edition_id": {
+                        "type": "integer",
+                        "description": "Edition ID (required for audiobook progress tracking).",
+                    },
+                },
+                "required": ["id"],
+            },
+            annotations=UPDATE,
+        ),
+        handle_update_user_book_read,
+        toolset="library",
+    ),
+    ToolSpec(
+        Tool(
+            name="delete_user_book_read",
+            description=(
+                "Permanently delete one read entry (a single start/finish/progress record) by "
+                "its user_book_read id from get_user_book. The book stays in your library with "
+                "its status, rating, and review; only that read is removed. Cannot be undone. "
+                "Returns {deleted: true, id}. To remove the whole book use delete_user_book."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "The user_book_read ID to delete.",
+                    },
+                },
+                "required": ["id"],
+            },
+            annotations=DELETE,
+        ),
+        handle_delete_user_book_read,
+        toolset="library",
+    ),
+    ToolSpec(
+        Tool(
+            name="delete_user_book",
+            description=(
+                "Permanently remove a book from your library (by book_id or user_book_id), "
+                "including its status, rating, review, and private notes. Cannot be "
+                "undone. Returns {deleted: true, user_book_id}. To change status instead use "
+                "set_user_book; to remove it only from a custom list use remove_book_from_list."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "type": "integer",
+                        "description": "Hardcover book ID (will look up your library entry).",
+                    },
+                    "user_book_id": {
+                        "type": "integer",
+                        "description": "Directly specify user_book ID if known.",
+                    },
+                },
+            },
+            annotations=DELETE,
+        ),
+        handle_delete_user_book,
+        toolset="library",
+    ),
+]

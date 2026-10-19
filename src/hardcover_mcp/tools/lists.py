@@ -3,9 +3,10 @@
 import json
 from typing import Any
 
-from mcp.types import TextContent
+from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._registry import CREATE, DELETE, READ, UPDATE, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 from hardcover_mcp.tools.books import author_names
 from hardcover_mcp.tools.user import get_current_user
@@ -467,3 +468,224 @@ async def handle_remove_book_from_list(arguments: dict[str, Any]) -> list[TextCo
     result = await execute(DELETE_LIST_BOOK_MUTATION, {"id": list_book_id_int})
 
     return [TextContent(type="text", text=json.dumps({"deleted": True, "id": list_book_id_int}))]
+
+
+# ── Tool definitions ──
+
+TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        Tool(
+            name="get_my_lists",
+            description=(
+                "List the lists you own, most recently updated first, paginated with "
+                "limit/offset. Read-only. Returns id, name, slug, description, books count, and "
+                "privacy, but not the books themselves; use get_list with an id for those. "
+                "Returns an empty array if you have no lists."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max lists to return (default 50, max 200).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Offset for pagination (default 0).",
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_my_lists,
+        toolset="lists",
+    ),
+    ToolSpec(
+        Tool(
+            name="get_list",
+            description=(
+                "Get one list (yours or another user's) by id, with its books in list order. "
+                "Read-only. Returns the list's name, description, privacy, and books count, plus "
+                "a 'books' array (position, book_id, title, slug, authors) paginated with "
+                "book_limit/book_offset. Find ids with get_my_lists or "
+                "search_books(query_type='List')."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Hardcover list ID (use get_my_lists to find IDs).",
+                    },
+                    "book_limit": {
+                        "type": "integer",
+                        "description": "Max books to return (default 25, max 100).",
+                    },
+                    "book_offset": {
+                        "type": "integer",
+                        "description": "Offset for book pagination (default 0).",
+                    },
+                },
+                "required": ["id"],
+            },
+            annotations=READ,
+        ),
+        handle_get_list,
+        toolset="lists",
+    ),
+    ToolSpec(
+        Tool(
+            name="create_list",
+            description=(
+                "Create a new, empty custom list owned by you. Each call creates a separate "
+                "list, so check get_my_lists first to avoid duplicates. Returns the new list's "
+                "id, name, slug, description, and privacy. To rename or change an existing list "
+                "use update_list; to add books use add_book_to_list with the returned id."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Name for the new list.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional description.",
+                    },
+                    "privacy": {
+                        "type": "string",
+                        "description": "public/followers_only/private. Default: public.",
+                    },
+                },
+                "required": ["name"],
+            },
+            annotations=CREATE,
+        ),
+        handle_create_list,
+        toolset="lists",
+    ),
+    ToolSpec(
+        Tool(
+            name="update_list",
+            description=(
+                "Change the name, description, or privacy of a list you own (pass at least one). "
+                "Only the fields you pass are overwritten. Returns the updated list. Does not "
+                "change the list's books: use add_book_to_list/remove_book_from_list for that, "
+                "and create_list to make a new list."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Hardcover list ID.",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "New name.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "New description.",
+                    },
+                    "privacy": {
+                        "type": "string",
+                        "description": "Privacy: 'public', 'followers_only', 'private'.",
+                    },
+                },
+                "required": ["id"],
+            },
+            annotations=UPDATE,
+        ),
+        handle_update_list,
+        toolset="lists",
+    ),
+    ToolSpec(
+        Tool(
+            name="delete_list",
+            description=(
+                "Permanently delete a list you own by id. The books themselves stay in your "
+                "library; only the list and its entries are removed. Cannot be undone. Returns "
+                "{deleted: true, id}. To remove a single book use remove_book_from_list."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Hardcover list ID to delete.",
+                    },
+                },
+                "required": ["id"],
+            },
+            annotations=DELETE,
+        ),
+        handle_delete_list,
+        toolset="lists",
+    ),
+    ToolSpec(
+        Tool(
+            name="add_book_to_list",
+            description=(
+                "Add a book to one of your custom lists, optionally at a given position. Does "
+                "not add the book to your library or change its reading status (use "
+                "set_user_book for that). Not idempotent: check get_list first if the book may "
+                "already be on the list. Returns the new list entry (id, list_id, book_id, "
+                "position). Find list ids with get_my_lists and book ids with search_books."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "list_id": {
+                        "type": "integer",
+                        "description": "Hardcover list ID.",
+                    },
+                    "book_id": {
+                        "type": "integer",
+                        "description": "Hardcover book ID to add.",
+                    },
+                    "position": {
+                        "type": "integer",
+                        "description": "Position in the list (optional).",
+                    },
+                },
+                "required": ["list_id", "book_id"],
+            },
+            annotations=CREATE,
+        ),
+        handle_add_book_to_list,
+        toolset="lists",
+    ),
+    ToolSpec(
+        Tool(
+            name="remove_book_from_list",
+            description=(
+                "Remove a book from one of your custom lists, identified by the list entry id "
+                "or by list_id + book_id. The book stays in your library with its status and "
+                "rating. Errors if the book isn't on that list. Returns {deleted: true, id}. To "
+                "remove the book from your library entirely use delete_user_book."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "list_book ID. If unknown, use list_id + book_id.",
+                    },
+                    "list_id": {
+                        "type": "integer",
+                        "description": "List ID (use with book_id to find list_book).",
+                    },
+                    "book_id": {
+                        "type": "integer",
+                        "description": "Book ID (use with list_id to find list_book).",
+                    },
+                },
+            },
+            annotations=DELETE,
+        ),
+        handle_remove_book_from_list,
+        toolset="lists",
+    ),
+]

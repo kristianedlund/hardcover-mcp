@@ -3,9 +3,10 @@
 import json
 from typing import Any
 
-from mcp.types import TextContent
+from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 
 
@@ -348,3 +349,124 @@ async def handle_get_characters(arguments: dict[str, Any]) -> list[TextContent]:
 
     output = [_format_character(c) for c in characters]
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+
+# ── Tool definitions ──
+
+TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        Tool(
+            name="search_books",
+            description=(
+                "Full-text search across Hardcover's catalog by title, author, ISBN, or keyword; "
+                "set query_type to search authors, series, lists, users, publishers, characters, "
+                "or prompts instead of books. Read-only. Returns a total 'found' count, the page "
+                "number, and compact hits (id, slug, name/title, plus type-specific fields) "
+                "ranked by relevance unless 'sort' is given. Use it to discover ids, then call "
+                "get_book, get_author, get_series, etc. for full details. If you already have an "
+                "id, slug, or ISBN, call the matching get_* tool directly."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query (title, author name, ISBN, etc.).",
+                    },
+                    "query_type": {
+                        "type": "string",
+                        "description": "Entity type to search (default: 'Book').",
+                        "enum": [
+                            "Book",
+                            "Author",
+                            "Series",
+                            "List",
+                            "User",
+                            "Publisher",
+                            "Character",
+                            "Prompt",
+                        ],
+                    },
+                    "per_page": {
+                        "type": "integer",
+                        "description": "Results per page (default 10, max 25).",
+                    },
+                    "page": {
+                        "type": "integer",
+                        "description": "Page number (default 1).",
+                    },
+                    "sort": {
+                        "type": "string",
+                        "description": (
+                            "Typesense sort expression, e.g. 'rating:desc' or "
+                            "'users_count:desc' for most popular first."
+                        ),
+                    },
+                    "filter_by": {
+                        "type": "string",
+                        "description": (
+                            "Typesense filter expression, e.g. 'release_year:>2020' or "
+                            "'release_year:[2020..2024]'."
+                        ),
+                    },
+                },
+                "required": ["query"],
+            },
+            annotations=READ,
+        ),
+        handle_search_books,
+        toolset="core",
+    ),
+    ToolSpec(
+        Tool(
+            name="get_book",
+            description=(
+                "Get catalog details for one book (the work, across all editions) by Hardcover "
+                "id or slug, including title, authors, pages, and community rating. Read-only. "
+                "Use search_books first if you only have a title. For a specific printing or "
+                "ISBN use get_edition; for your own status/rating of the book use get_user_book."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Hardcover book ID.",
+                    },
+                    "slug": {
+                        "type": "string",
+                        "description": "Hardcover book slug (e.g. 'project-hail-mary').",
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_book,
+        toolset="catalog",
+    ),
+    ToolSpec(
+        Tool(
+            name="get_characters",
+            description=(
+                "List the characters linked to a book by its Hardcover book id. Read-only. "
+                "Returns each character's id, name, slug, and description (not paginated). "
+                "Returns a 'No characters found' message when the book has none. To find a "
+                "character by name across all books, use search_books with "
+                "query_type='Character'."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "type": "integer",
+                        "description": "Hardcover book ID.",
+                    },
+                },
+                "required": ["book_id"],
+            },
+            annotations=READ,
+        ),
+        handle_get_characters,
+        toolset="catalog",
+    ),
+]

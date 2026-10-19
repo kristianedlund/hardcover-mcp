@@ -3,9 +3,10 @@
 import json
 from typing import Any
 
-from mcp.types import TextContent
+from mcp.types import TextContent, Tool, ToolAnnotations
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._registry import UPDATE, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 from hardcover_mcp.tools.activity import GET_USER_ID_BY_USERNAME_QUERY
 
@@ -85,3 +86,68 @@ async def handle_unfollow_user(arguments: dict[str, Any]) -> list[TextContent]:
             text=json.dumps({"unfollowed": deleted.get("followed_user_id") is not None}),
         )
     ]
+
+
+# ── Tool definitions ──
+
+TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        Tool(
+            name="follow_user",
+            description=(
+                "Follow another Hardcover user, identified by user_id or username (provide one; "
+                "user_id wins if both are given). Their activity then appears in "
+                "get_activity_feed. Returns {followed: true} on success, or an error message if "
+                "the user isn't found or the API rejects it. Reverse with unfollow_user."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "integer",
+                        "description": "Hardcover user ID to follow.",
+                    },
+                    "username": {
+                        "type": "string",
+                        "description": "Username to follow (resolved to an ID).",
+                    },
+                },
+            },
+            annotations=ToolAnnotations(
+                read_only_hint=False,
+                destructive_hint=False,
+                idempotent_hint=True,
+                open_world_hint=True,
+            ),
+        ),
+        handle_follow_user,
+        toolset="social",
+    ),
+    ToolSpec(
+        Tool(
+            name="unfollow_user",
+            description=(
+                "Stop following a Hardcover user, identified by user_id or username (provide "
+                "one; user_id wins if both are given). Their activity no longer appears in "
+                "get_activity_feed. Returns {unfollowed: true} on success, or an error message "
+                "if the user isn't found or the API rejects it. Inverse of follow_user."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "integer",
+                        "description": "Hardcover user ID to unfollow.",
+                    },
+                    "username": {
+                        "type": "string",
+                        "description": "Username to unfollow (resolved to an ID).",
+                    },
+                },
+            },
+            annotations=UPDATE,
+        ),
+        handle_unfollow_user,
+        toolset="social",
+    ),
+]

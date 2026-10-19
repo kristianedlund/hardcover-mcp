@@ -3,9 +3,10 @@
 import json
 from typing import Any
 
-from mcp.types import TextContent
+from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 from hardcover_mcp.tools.books import fetch_books_by_ids
 
@@ -150,3 +151,78 @@ async def handle_get_vibes(arguments: dict[str, Any]) -> list[TextContent]:
         for v, ids in zip(vibes, per_vibe_ids, strict=True)
     ]
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+
+# ── Tool definitions ──
+
+TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        Tool(
+            name="get_trending_books",
+            description=(
+                "Get the books trending on Hardcover in a time window ('duration', default "
+                "'week'), ranked most popular first and paginated with limit/offset. Read-only. "
+                "Returns book_id, slug, title, authors, rating, and release year. For curated "
+                "themed collections use get_vibes; for a custom query use search_books with "
+                "sort='users_count:desc'."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "duration": {
+                        "type": "string",
+                        "description": "Time window (default 'week').",
+                        "enum": ["all", "week", "month", "three_month", "one_year"],
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max books to return (default 25, max 100).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Pagination offset (default 0).",
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_trending_books,
+        toolset="catalog",
+    ),
+    ToolSpec(
+        Tool(
+            name="get_vibes",
+            description=(
+                "List Hardcover 'vibes': curated, themed book recommendation collections "
+                "(e.g. 'Hidden Gem Fantasy'). Read-only. Only featured vibes are returned unless "
+                "featured=false. Each vibe includes title, description, likes, and up to "
+                "books_per_vibe books. For popularity rankings use get_trending_books; for "
+                "user-made lists use get_list."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "featured": {
+                        "type": "boolean",
+                        "description": "If true (default), return only featured vibes.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max vibes to return (default 10, max 50).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Pagination offset (default 0).",
+                    },
+                    "books_per_vibe": {
+                        "type": "integer",
+                        "description": "Books to include per vibe (default 10, max 50).",
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_vibes,
+        toolset="catalog",
+    ),
+]

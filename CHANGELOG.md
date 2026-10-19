@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `HARDCOVER_TOOLSETS` environment variable to load only some toolsets (`core`, `catalog`,
+  `library`, `lists`, `journal`, `social`; default all). `core` is always loaded.
+- `HARDCOVER_READ_ONLY` environment variable to hide every tool that can modify your account.
+
+### Changed
+
+- Tool definitions now live next to their handlers in each `tools/` module instead of one large
+  registry in `server.py`. The server checks at startup that every tool has a unique name,
+  annotations, and a known toolset.
+
 ### Changed
 
 - Every tool now declares MCP tool annotations (`readOnlyHint`, `destructiveHint`,

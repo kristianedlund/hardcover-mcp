@@ -3,9 +3,10 @@
 import json
 from typing import Any
 
-from mcp.types import TextContent
+from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 from hardcover_mcp.tools.books import resolve_id_by_name
 
@@ -144,3 +145,48 @@ async def handle_get_publisher(arguments: dict[str, Any]) -> list[TextContent]:
 
     output = _format_publisher(publishers[0])
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+
+# ── Tool definitions ──
+
+TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        Tool(
+            name="get_publisher",
+            description=(
+                "Look up a publisher by Hardcover id, slug, or name (provide one; a name "
+                "resolves to the top search match). Read-only. Returns name, editions count, "
+                "parent publisher, and a page of its editions (edition_id, title, format, book "
+                "id/title, rating, release year) via editions_limit/editions_offset."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Hardcover publisher ID.",
+                    },
+                    "slug": {
+                        "type": "string",
+                        "description": "Publisher slug (e.g. 'tor-books').",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Publisher name (e.g. 'Tor Books').",
+                    },
+                    "editions_limit": {
+                        "type": "integer",
+                        "description": "Max editions to return (default 20, max 100).",
+                    },
+                    "editions_offset": {
+                        "type": "integer",
+                        "description": "Offset for editions pagination (default 0).",
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_publisher,
+        toolset="catalog",
+    ),
+]

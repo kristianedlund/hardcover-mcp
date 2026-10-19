@@ -3,9 +3,10 @@
 import json
 from typing import Any
 
-from mcp.types import TextContent
+from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
+from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 from hardcover_mcp.tools.books import resolve_id_by_name
 
@@ -153,3 +154,44 @@ async def handle_get_author(arguments: dict[str, Any]) -> list[TextContent]:
     # Name lookups return multiple ranked candidates; take the top result.
     output = _format_author(authors[0])
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+
+# ── Tool definitions ──
+
+TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        Tool(
+            name="get_author",
+            description=(
+                "Get an author by Hardcover id, slug, or name (provide at least one; a name "
+                "resolves to the top search match). Read-only. Returns bio, birth/death year, "
+                "book and reader counts, and up to books_limit of their books (title, year, "
+                "rating). Use search_books(query_type='Author') to compare several candidates."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Hardcover author ID.",
+                    },
+                    "slug": {
+                        "type": "string",
+                        "description": "Author slug (e.g. 'brandon-sanderson').",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Author name (e.g. 'Brandon Sanderson').",
+                    },
+                    "books_limit": {
+                        "type": "integer",
+                        "description": "Max books to return (default 20, max 100).",
+                    },
+                },
+            },
+            annotations=READ,
+        ),
+        handle_get_author,
+        toolset="catalog",
+    ),
+]
