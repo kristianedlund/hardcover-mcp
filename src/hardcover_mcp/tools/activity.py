@@ -165,7 +165,7 @@ TOOLS: list[ToolSpec] = [
                 "(empty if you follow nobody); pass user_id or username for one user's activity. "
                 "Returns event type, book, user, and timestamp per event. For your own detailed "
                 "notes, quotes, and progress log use get_reading_journal; for your review texts "
-                "use get_user_reviews."
+                "use get_user_library(has_review=true)."
             ),
             inputSchema={
                 "type": "object",

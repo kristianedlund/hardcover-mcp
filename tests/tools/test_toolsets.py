@@ -35,7 +35,7 @@ def test_multiple_toolsets_tolerate_spacing_and_case():
     names = _names({"HARDCOVER_TOOLSETS": " Catalog , journal "})
     assert "get_book" in names
     assert "add_journal_entry" in names
-    assert "create_list" not in names
+    assert "set_list" not in names
 
 
 def test_unknown_toolset_raises_with_valid_names():
@@ -63,7 +63,7 @@ def test_read_only_off_values(value):
 def test_read_only_combines_with_toolsets():
     names = _names({"HARDCOVER_TOOLSETS": "lists", "HARDCOVER_READ_ONLY": "true"})
     assert "get_list" in names
-    assert "create_list" not in names
+    assert "set_list" not in names
 
 
 async def test_configure_hides_disabled_tools(monkeypatch):

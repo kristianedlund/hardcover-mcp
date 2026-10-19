@@ -95,22 +95,33 @@ _USER_BOOK_DETAIL_FIELDS = """
 
 # ── Read: get_user_library (single query, optional status filter) ──
 
+_REVIEW_FIELDS = """
+    review_raw
+    review_has_spoilers
+    reviewed_at
+"""
+
 LIBRARY_SORT_FIELDS: dict[str, str] = {
     "updated": "updated_at",
     "rating": "rating",
     "date_added": "date_added",
+    "reviewed": "reviewed_at",
 }
 
 
-def _render_library_query(with_status: bool, order_field: str, order_dir: str) -> str:
-    """Render a GetUserLibrary query with an optional status filter and sort.
+def _render_library_query(
+    with_status: bool, order_field: str, order_dir: str, with_review: bool = False
+) -> str:
+    """Render a GetUserLibrary query with optional status/review filters and sort.
 
     ``order_field``/``order_dir`` come from validated maps (never raw user
     input), so they are interpolated directly — Hasura order_by keys are
     enums and can't be GraphQL variables.
     """
     status_filter = ", status_id: {_eq: $status_id}" if with_status else ""
+    status_filter += ", has_review: {_eq: true}" if with_review else ""
     status_var = ", $status_id: Int!" if with_status else ""
+    fields = _USER_BOOK_FIELDS + (_REVIEW_FIELDS if with_review else "")
     return f"""
 query GetUserLibrary($user_id: Int!, $limit: Int!, $offset: Int!{status_var}) {{
     user_books(
@@ -119,7 +130,7 @@ query GetUserLibrary($user_id: Int!, $limit: Int!, $offset: Int!{status_var}) {{
         offset: $offset,
         order_by: {{{order_field}: {order_dir}}}
     ) {{
-        {_USER_BOOK_FIELDS}
+        {fields}
     }}
     user_books_aggregate(
         where: {{user_id: {{_eq: $user_id}}{status_filter}}}
@@ -253,7 +264,9 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
         Optional: ``status`` (str), ``start_date`` (str, ISO 8601 date),
         ``end_date`` (str, ISO 8601 date), ``sort`` (str, default ``'updated'``),
         ``order`` (str, ``'asc'`` or ``'desc'``, default ``'desc'``),
-        ``limit`` (int, default 25, max 100), ``offset`` (int, default 0).
+        ``limit`` (int, default 25, max 100), ``offset`` (int, default 0),
+        ``has_review`` (bool) — only reviewed books, with review fields, sorted by
+        review date unless ``sort`` is given. Not combinable with a date range.
 
     Returns
     -------
@@ -265,7 +278,8 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
     status = arguments.get("status")
     start_date = arguments.get("start_date")
     end_date = arguments.get("end_date")
-    sort = arguments.get("sort", "updated")
+    has_review = bool(arguments.get("has_review", False))
+    sort = arguments.get("sort", "reviewed" if has_review else "updated")
     order = arguments.get("order", "desc")
 
     if sort not in LIBRARY_SORT_FIELDS:
@@ -273,6 +287,13 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
         return [TextContent(type="text", text=f"Error: unknown sort '{sort}'. Valid: {valid}")]
     if order not in ("asc", "desc"):
         return [TextContent(type="text", text="Error: order must be 'asc' or 'desc'.")]
+    if has_review and start_date is not None:
+        return [
+            TextContent(
+                type="text",
+                text="Error: has_review can't be combined with start_date/end_date.",
+            )
+        ]
     if (start_date is None) != (end_date is None):
         return [
             TextContent(
@@ -308,6 +329,7 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
 
         query = _render_library_query(
             with_status=status_id is not None,
+            with_review=has_review,
             order_field=order_field,
             order_dir=order_dir,
         )
@@ -318,7 +340,8 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
 
     total = result["data"]["user_books_aggregate"]["aggregate"]["count"]
     user_books = result["data"]["user_books"]
-    formatted = [_format_user_book(ub) for ub in user_books]
+    formatter = _format_user_review if has_review else _format_user_book
+    formatted = [formatter(ub) for ub in user_books]
 
     output = {"total": total, "returned": len(formatted), "offset": offset, "books": formatted}
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
@@ -370,89 +393,14 @@ async def handle_get_user_book(arguments: dict[str, Any]) -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
-# ── Read: get_user_reviews ──
-
-GET_USER_REVIEWS_QUERY = """
-query GetUserReviews($user_id: Int!, $limit: Int!, $offset: Int!) {
-    user_books(
-        where: {user_id: {_eq: $user_id}, has_review: {_eq: true}},
-        order_by: {reviewed_at: desc},
-        limit: $limit,
-        offset: $offset
-    ) {
-        id
-        book_id
-        rating
-        review_raw
-        review_has_spoilers
-        reviewed_at
-        book {
-            title
-            slug
-            contributions {
-                author {
-                    name
-                }
-            }
-        }
-    }
-    user_books_aggregate(
-        where: {user_id: {_eq: $user_id}, has_review: {_eq: true}}
-    ) {
-        aggregate { count }
-    }
-}
-"""
-
-
 def _format_user_review(ub: dict[str, Any]) -> dict[str, Any]:
-    """Format a user_book review record into a flat review summary dict."""
-    book = ub.get("book", {})
-    authors = author_names(book)
+    """Format a reviewed user_book: the library summary plus review fields."""
     return {
-        "user_book_id": ub["id"],
-        "book_id": ub["book_id"],
-        "title": book.get("title"),
-        "slug": book.get("slug"),
-        "authors": authors,
-        "rating": ub.get("rating"),
+        **_format_user_book(ub),
         "review_raw": ub.get("review_raw"),
         "review_has_spoilers": ub.get("review_has_spoilers"),
         "reviewed_at": ub.get("reviewed_at"),
     }
-
-
-async def handle_get_user_reviews(arguments: dict[str, Any]) -> list[TextContent]:
-    """List the authenticated user's reviews, newest first.
-
-    Parameters
-    ----------
-    arguments : dict[str, Any]
-        Optional: ``limit`` (int, default 25, max 100),
-        ``offset`` (int, default 0).
-
-    Returns
-    -------
-    list[TextContent]
-        JSON with ``total`` count, ``returned``, ``offset``, and ``reviews`` list.
-    """
-    user = await get_current_user()
-    user_id = user["id"]
-
-    limit = min(arguments.get("limit", 25), 100)
-    offset = arguments.get("offset", 0)
-
-    result = await execute(
-        GET_USER_REVIEWS_QUERY,
-        {"user_id": user_id, "limit": limit, "offset": offset},
-    )
-
-    total = result["data"]["user_books_aggregate"]["aggregate"]["count"]
-    user_books = result["data"]["user_books"]
-    formatted = [_format_user_review(ub) for ub in user_books]
-
-    output = {"total": total, "returned": len(formatted), "offset": offset, "reviews": formatted}
-    return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
 # ── Read: get_owned_books ──
@@ -1011,7 +959,7 @@ async def _resolve_user_book_id(arguments: dict[str, Any]) -> int | str:
     return ubs[0]["id"]
 
 
-async def handle_add_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
+async def _add_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
     """Add or update a reading date entry for a book.
 
     If an active (unfinished) read exists, it is updated rather than
@@ -1084,7 +1032,7 @@ async def handle_add_user_book_read(arguments: dict[str, Any]) -> list[TextConte
     ]
 
 
-async def handle_update_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
+async def _update_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
     """Update an existing reading date entry.
 
     Parameters
@@ -1148,6 +1096,14 @@ async def handle_update_user_book_read(arguments: dict[str, Any]) -> list[TextCo
             type="text", text=json.dumps(mutation_result.get("user_book_read", {}), indent=2)
         )
     ]
+
+
+async def handle_set_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
+    """Edit a read entry by ``id``, or log dates/progress for a book (see
+    ``_add_user_book_read``) when no ``id`` is given."""
+    if arguments.get("id") is not None:
+        return await _update_user_book_read(arguments)
+    return await _add_user_book_read(arguments)
 
 
 # ── Write: delete ──
@@ -1224,12 +1180,13 @@ TOOLS: list[ToolSpec] = [
             name="get_user_library",
             description=(
                 "List books in your own library (any status), paginated with limit/offset. "
-                "Read-only. Filter by status or by finished-date range (start_date + end_date); "
-                "sort by updated, rating, or date_added. Returns user_book_id, book_id, title, "
-                "authors, status, rating, and read dates per book. E.g. sort='rating', "
-                "order='desc' for top-rated; a date range answers 'what did I read in May?'. "
-                "For one book's full entry use get_user_book; for owned copies use "
-                "get_owned_books."
+                "Read-only. Filter by status, by finished-date range (start_date + end_date), "
+                "or has_review=true for books you have reviewed (adds review text, spoiler "
+                "flag, and review date; newest review first). Sort by updated, rating, "
+                "date_added, or reviewed. Returns user_book_id, book_id, title, authors, "
+                "status, rating, and read dates per book. E.g. sort='rating' for top-rated; "
+                "a date range answers 'what did I read in May?'. For one book's full entry "
+                "use get_user_book; for owned copies use get_owned_books."
             ),
             inputSchema={
                 "type": "object",
@@ -1254,13 +1211,23 @@ TOOLS: list[ToolSpec] = [
                     },
                     "sort": {
                         "type": "string",
-                        "description": "Sort field: 'updated' (default), 'rating', or 'date_added'.",  # noqa: E501
-                        "enum": ["updated", "rating", "date_added"],
+                        "description": (
+                            "Sort field: 'updated' (default), 'rating', 'date_added', or "
+                            "'reviewed' (default when has_review=true)."
+                        ),
+                        "enum": ["updated", "rating", "date_added", "reviewed"],
                     },
                     "order": {
                         "type": "string",
                         "description": "Sort direction: 'desc' (default) or 'asc'.",
                         "enum": ["desc", "asc"],
+                    },
+                    "has_review": {
+                        "type": "boolean",
+                        "description": (
+                            "Only books you have reviewed, with review fields included. "
+                            "Can't be combined with start_date/end_date."
+                        ),
                     },
                     "limit": {
                         "type": "integer",
@@ -1284,7 +1251,7 @@ TOOLS: list[ToolSpec] = [
                 "Get your own library entry for one book (by book_id or slug). Read-only. "
                 "Returns user_book_id, status, rating, privacy, review, private notes, chosen "
                 "edition, and every read entry (with their ids, needed by "
-                "update_user_book_read/delete_user_book_read). Returns 'Book not in your "
+                "set_user_book_read/delete_user_book_read). Returns 'Book not in your "
                 "library' if you haven't added it. To browse many books use get_user_library."
             ),
             inputSchema={
@@ -1303,33 +1270,6 @@ TOOLS: list[ToolSpec] = [
             annotations=READ,
         ),
         handle_get_user_book,
-        toolset="library",
-    ),
-    ToolSpec(
-        Tool(
-            name="get_user_reviews",
-            description=(
-                "List the reviews you have written, newest first, paginated with limit/offset. "
-                "Read-only. Returns review text, spoiler flag, rating, review date, and book "
-                "info. Only covers your own reviews; for other users' activity use "
-                "get_activity_feed. To write or edit a review use set_user_book."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "limit": {
-                        "type": "integer",
-                        "description": "Max reviews to return (default 25, max 100).",
-                    },
-                    "offset": {
-                        "type": "integer",
-                        "description": "Pagination offset (default 0).",
-                    },
-                },
-            },
-            annotations=READ,
-        ),
-        handle_get_user_reviews,
         toolset="library",
     ),
     ToolSpec(
@@ -1368,8 +1308,8 @@ TOOLS: list[ToolSpec] = [
                 "rating, review, privacy, private notes, and edition. Upsert: creates the entry "
                 "if the book isn't in your library yet, otherwise overwrites only the fields you "
                 "pass and preserves the rest. Returns user_book_id, status, privacy, rating, and "
-                "edition_id. Use add_user_book_read for start/finish dates and progress; use "
-                "add_book_to_list for custom lists; use delete_user_book to remove the book."
+                "edition_id. Use set_user_book_read for start/finish dates and progress; use "
+                "set_list_book for custom lists; use delete_user_book to remove the book."
             ),
             inputSchema={
                 "type": "object",
@@ -1454,25 +1394,29 @@ TOOLS: list[ToolSpec] = [
     ),
     ToolSpec(
         Tool(
-            name="add_user_book_read",
+            name="set_user_book_read",
             description=(
-                "Log reading dates or progress for a book already in your library (by book_id or "
-                "user_book_id). If the book has an unfinished read, that read is updated with the "
-                "fields you pass; otherwise a new read (e.g. a re-read) is created. Supports "
-                "page progress and audiobook seconds. Returns the read entry with its id. Use "
-                "update_user_book_read to edit a specific past read by id. Add the book with "
-                "set_user_book first if it isn't in your library."
+                "Log or edit reading dates and progress (pages or audiobook seconds). With id "
+                "(a user_book_read id from get_user_book): edit that read, overwriting only the "
+                "fields you pass, e.g. to fix a past finish date. Without id: pass book_id or "
+                "user_book_id; if the book has an unfinished read it is updated, otherwise a "
+                "new read (e.g. a re-read) is created. The book must already be in your library "
+                "(add it with set_user_book). Returns the read entry with its id."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "user_book_read ID to edit. Omit to log on a book.",
+                    },
                     "book_id": {
                         "type": "integer",
-                        "description": "Book ID (auto-resolves your user_book).",
+                        "description": "Without id: book ID (auto-resolves your user_book).",
                     },
                     "user_book_id": {
                         "type": "integer",
-                        "description": "user_book ID if known (skips lookup).",
+                        "description": "Without id: user_book ID if known (skips lookup).",
                     },
                     "started_at": {
                         "type": "string",
@@ -1496,6 +1440,7 @@ TOOLS: list[ToolSpec] = [
                     },
                 },
             },
+            # May overwrite an existing read; without id, repeating can create another read.
             annotations=ToolAnnotations(
                 read_only_hint=False,
                 destructive_hint=True,
@@ -1503,52 +1448,7 @@ TOOLS: list[ToolSpec] = [
                 open_world_hint=True,
             ),
         ),
-        handle_add_user_book_read,
-        toolset="library",
-    ),
-    ToolSpec(
-        Tool(
-            name="update_user_book_read",
-            description=(
-                "Edit one existing read entry by its user_book_read id (from get_user_book), "
-                "e.g. to fix a start/finish date on a past read. Overwrites only the fields you "
-                "pass and preserves the rest. Supports page progress and audiobook seconds. "
-                "Returns the updated read entry. To log new progress without knowing the id, use "
-                "add_user_book_read."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "id": {
-                        "type": "integer",
-                        "description": "The user_book_read ID to update.",
-                    },
-                    "started_at": {
-                        "type": "string",
-                        "description": "Date started reading (ISO 8601).",
-                    },
-                    "finished_at": {
-                        "type": "string",
-                        "description": "Date finished reading (ISO 8601).",
-                    },
-                    "progress_pages": {
-                        "type": "integer",
-                        "description": "Pages read so far.",
-                    },
-                    "progress_seconds": {
-                        "type": "integer",
-                        "description": "Seconds of audiobook listened to so far.",
-                    },
-                    "edition_id": {
-                        "type": "integer",
-                        "description": "Edition ID (required for audiobook progress tracking).",
-                    },
-                },
-                "required": ["id"],
-            },
-            annotations=UPDATE,
-        ),
-        handle_update_user_book_read,
+        handle_set_user_book_read,
         toolset="library",
     ),
     ToolSpec(
@@ -1582,7 +1482,7 @@ TOOLS: list[ToolSpec] = [
                 "Permanently remove a book from your library (by book_id or user_book_id), "
                 "including its status, rating, review, and private notes. Cannot be "
                 "undone. Returns {deleted: true, user_book_id}. To change status instead use "
-                "set_user_book; to remove it only from a custom list use remove_book_from_list."
+                "set_user_book; to take it off a custom list use set_list_book(on_list=false)."
             ),
             inputSchema={
                 "type": "object",

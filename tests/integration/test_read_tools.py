@@ -17,11 +17,11 @@ pytestmark = pytest.mark.integration
 # ── Read tools ──
 
 
-class TestMe:
-    async def test_returns_authenticated_user(self):
-        from hardcover_mcp.tools.user import handle_me
+class TestGetUserSelf:
+    async def test_no_args_returns_authenticated_user(self):
+        from hardcover_mcp.tools.user import handle_get_user
 
-        result = await handle_me()
+        result = await handle_get_user({})
 
         data = json.loads(result[0].text)
         assert "id" in data
@@ -68,6 +68,17 @@ class TestGetBook:
         result = await handle_get_book({"id": book_id})
         data = json.loads(result[0].text)
         assert data["title"] == "Project Hail Mary"
+
+    async def test_include_characters(self):
+        from hardcover_mcp.tools.books import handle_get_book
+
+        result = await handle_get_book({"slug": "project-hail-mary", "include_characters": True})
+
+        data = json.loads(result[0].text)
+        assert isinstance(data["characters"], list)
+        for character in data["characters"]:
+            expected = {"id", "name", "slug", "biography", "spoiler", "only_mentioned"}
+            assert expected <= character.keys()
 
 
 class TestGetUserLibrary:
@@ -136,19 +147,19 @@ class TestGetAuthor:
         assert "No author found" in result[0].text
 
 
-class TestGetMyLists:
+class TestGetListOwn:
     async def test_returns_lists(self):
-        from hardcover_mcp.tools.lists import handle_get_my_lists
+        from hardcover_mcp.tools.lists import handle_get_list
 
-        result = await handle_get_my_lists({})
+        result = await handle_get_list({})
 
         data = json.loads(result[0].text)
         assert isinstance(data, list)
 
     async def test_list_has_expected_fields(self):
-        from hardcover_mcp.tools.lists import handle_get_my_lists
+        from hardcover_mcp.tools.lists import handle_get_list
 
-        result = await handle_get_my_lists({"limit": 1})
+        result = await handle_get_list({"limit": 1})
 
         data = json.loads(result[0].text)
         if data:
@@ -361,27 +372,27 @@ class TestGetReadingStats:
         assert data["year"] == 1900
 
 
-class TestGetUserReviews:
+class TestGetUserLibraryHasReview:
     async def test_returns_reviews_structure(self):
-        from hardcover_mcp.tools.library import handle_get_user_reviews
+        from hardcover_mcp.tools.library import handle_get_user_library
 
-        result = await handle_get_user_reviews({})
+        result = await handle_get_user_library({"has_review": True})
 
         data = json.loads(result[0].text)
         assert "total" in data
         assert "returned" in data
         assert "offset" in data
-        assert "reviews" in data
-        assert isinstance(data["reviews"], list)
+        assert "books" in data
+        assert isinstance(data["books"], list)
         assert data["offset"] == 0
 
     async def test_each_review_has_expected_fields(self):
-        from hardcover_mcp.tools.library import handle_get_user_reviews
+        from hardcover_mcp.tools.library import handle_get_user_library
 
-        result = await handle_get_user_reviews({})
+        result = await handle_get_user_library({"has_review": True})
 
         data = json.loads(result[0].text)
-        for review in data["reviews"]:
+        for review in data["books"]:
             assert "user_book_id" in review
             assert "book_id" in review
             assert "title" in review
@@ -393,9 +404,9 @@ class TestGetUserReviews:
             assert "reviewed_at" in review
 
     async def test_pagination(self):
-        from hardcover_mcp.tools.library import handle_get_user_reviews
+        from hardcover_mcp.tools.library import handle_get_user_library
 
-        result = await handle_get_user_reviews({"limit": 1, "offset": 0})
+        result = await handle_get_user_library({"has_review": True, "limit": 1, "offset": 0})
 
         data = json.loads(result[0].text)
         assert data["returned"] <= 1

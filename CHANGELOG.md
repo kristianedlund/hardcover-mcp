@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking: tools merged (39 → 31)
+
+Related tools were merged so each tool covers one task and keeps a single, accurate behavior
+annotation. The old names are gone (no aliases). If you reference tools by name, for example in
+Claude Code permission rules such as `mcp__hardcover__follow_user`, update them:
+
+| Removed | Use instead |
+|---------|-------------|
+| `me` | `get_user` with no arguments |
+| `follow_user` / `unfollow_user` | `set_following` with `following: true` / `false` |
+| `get_my_lists` | `get_list` without `id` |
+| `create_list` / `update_list` | `set_list` without / with `id` |
+| `add_book_to_list` / `remove_book_from_list` | `set_list_book` with `on_list: true` / `false` |
+| `add_user_book_read` / `update_user_book_read` | `set_user_book_read` without / with `id` |
+| `get_characters` | `get_book` with `include_characters: true` |
+| `get_user_reviews` | `get_user_library` with `has_review: true` (results under `books`) |
+
+Behavior changes in the merged tools:
+
+- `set_following` and `set_list_book` check the current state first, so repeating a call is a
+  no-op and returns `changed: false`. Previously a repeated follow or add went straight to the
+  API.
+- `set_list_book` identifies the entry by `list_id` + `book_id`; the list-entry `id` parameter of
+  `remove_book_from_list` is gone.
+- `get_user` with no arguments returns your full profile (bio, follower counts, privacy), not
+  just the id/username/name/books_count that `me` returned.
+- `get_book(include_characters=true)` returns an empty `characters` array when a book has none,
+  instead of `get_characters`' "No characters found" message. Characters come back in book
+  order with `biography` (previously requested as `description`, which doesn't exist) plus
+  `spoiler` and `only_mentioned` flags.
+- `get_user_library(has_review=true)` rows include `status` and `updated_at` in addition to the
+  review fields, and can be combined with `status` and `sort` (default: newest review first),
+  but not with `start_date`/`end_date`.
+
+### Fixed
+
+- Character lookup (formerly `get_characters`) always failed against the live API: it declared
+  the book id as `Int!` where the API expects `bigint`, and asked for a `description` field that
+  characters don't have.
+
 ### Added
 
 - `HARDCOVER_TOOLSETS` environment variable to load only some toolsets (`core`, `catalog`,
@@ -18,9 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tool definitions now live next to their handlers in each `tools/` module instead of one large
   registry in `server.py`. The server checks at startup that every tool has a unique name,
   annotations, and a known toolset.
-
-### Changed
-
 - Every tool now declares MCP tool annotations (`readOnlyHint`, `destructiveHint`,
   `idempotentHint`, `openWorldHint`), so clients can tell read-only lookups from writes and
   deletes without parsing descriptions.

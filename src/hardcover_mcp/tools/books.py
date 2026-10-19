@@ -73,12 +73,16 @@ GET_BOOK_BY_SLUG_QUERY = GET_BOOK_BY_ID_QUERY.replace(
 ).replace("{id: {_eq: $id}}", "{slug: {_eq: $slug}}")
 
 GET_CHARACTERS_QUERY = """
-query GetCharacters($book_id: Int!) {
-    characters(where: {book_characters: {book_id: {_eq: $book_id}}}) {
-        id
-        name
-        slug
-        description
+query GetCharacters($book_id: bigint!) {
+    book_characters(where: {book_id: {_eq: $book_id}}, order_by: {position: asc}) {
+        spoiler
+        only_mentioned
+        character {
+            id
+            name
+            slug
+            biography
+        }
     }
 }
 """
@@ -265,11 +269,13 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
     ----------
     arguments : dict[str, Any]
         Tool arguments. Provide ``id`` (int) or ``slug`` (str).
+        Optional: ``include_characters`` (bool, default false).
 
     Returns
     -------
     list[TextContent]
-        JSON with book details including title, authors, pages, and rating.
+        JSON with book details including title, authors, pages, and rating, plus a
+        ``characters`` array when requested.
     """
     book_id = arguments.get("id")
     slug = arguments.get("slug")
@@ -294,61 +300,36 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
     book["authors"] = author_names(book)
     del book["contributions"]
 
+    if arguments.get("include_characters"):
+        chars = await execute(GET_CHARACTERS_QUERY, {"book_id": book["id"]})
+        book["characters"] = [_format_character(bc) for bc in chars["data"]["book_characters"]]
+
     return [TextContent(type="text", text=json.dumps(book, indent=2))]
 
 
-def _format_character(character: dict[str, Any]) -> dict[str, Any]:
-    """Extract relevant fields from a character record.
+def _format_character(book_character: dict[str, Any]) -> dict[str, Any]:
+    """Flatten a book_characters row into a character dict.
 
     Parameters
     ----------
-    character : dict[str, Any]
-        Raw character object from the Hardcover API.
+    book_character : dict[str, Any]
+        Raw ``book_characters`` row from the Hardcover API, with a nested ``character``.
 
     Returns
     -------
     dict[str, Any]
-        Flat dict with ``id``, ``name``, ``slug``, and ``description``.
+        Flat dict with ``id``, ``name``, ``slug``, ``biography``, ``spoiler``,
+        and ``only_mentioned``.
     """
+    character = book_character.get("character") or {}
     return {
         "id": character.get("id"),
         "name": character.get("name"),
         "slug": character.get("slug"),
-        "description": character.get("description"),
+        "biography": character.get("biography"),
+        "spoiler": book_character.get("spoiler"),
+        "only_mentioned": book_character.get("only_mentioned"),
     }
-
-
-async def handle_get_characters(arguments: dict[str, Any]) -> list[TextContent]:
-    """Fetch characters associated with a book by its Hardcover ID.
-
-    Parameters
-    ----------
-    arguments : dict[str, Any]
-        Tool arguments. Required key: ``book_id`` (int).
-
-    Returns
-    -------
-    list[TextContent]
-        JSON list of characters with ``id``, ``name``, ``slug``, and ``description``.
-    """
-    book_id = arguments.get("book_id")
-    if book_id is None:
-        return [TextContent(type="text", text="Error: 'book_id' is required.")]
-
-    try:
-        result = await execute(
-            GET_CHARACTERS_QUERY,
-            {"book_id": _require_int(book_id, "book_id")},
-        )
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
-
-    characters = result["data"]["characters"]
-    if not characters:
-        return [TextContent(type="text", text="No characters found for this book.")]
-
-    output = [_format_character(c) for c in characters]
-    return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
 # ── Tool definitions ──
@@ -423,8 +404,12 @@ TOOLS: list[ToolSpec] = [
             description=(
                 "Get catalog details for one book (the work, across all editions) by Hardcover "
                 "id or slug, including title, authors, pages, and community rating. Read-only. "
-                "Use search_books first if you only have a title. For a specific printing or "
-                "ISBN use get_edition; for your own status/rating of the book use get_user_book."
+                "Set include_characters=true to add a 'characters' array in book order (id, "
+                "name, slug, biography, plus 'spoiler' and 'only_mentioned' flags; don't reveal "
+                "spoiler characters unless asked; empty if none are linked). Use search_books "
+                "first if you only "
+                "have a title. For a specific printing or ISBN use get_edition; for your own "
+                "status/rating of the book use get_user_book."
             ),
             inputSchema={
                 "type": "object",
@@ -437,36 +422,15 @@ TOOLS: list[ToolSpec] = [
                         "type": "string",
                         "description": "Hardcover book slug (e.g. 'project-hail-mary').",
                     },
+                    "include_characters": {
+                        "type": "boolean",
+                        "description": "Also return the book's characters (default false).",
+                    },
                 },
             },
             annotations=READ,
         ),
         handle_get_book,
-        toolset="catalog",
-    ),
-    ToolSpec(
-        Tool(
-            name="get_characters",
-            description=(
-                "List the characters linked to a book by its Hardcover book id. Read-only. "
-                "Returns each character's id, name, slug, and description (not paginated). "
-                "Returns a 'No characters found' message when the book has none. To find a "
-                "character by name across all books, use search_books with "
-                "query_type='Character'."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "book_id": {
-                        "type": "integer",
-                        "description": "Hardcover book ID.",
-                    },
-                },
-                "required": ["book_id"],
-            },
-            annotations=READ,
-        ),
-        handle_get_characters,
         toolset="catalog",
     ),
 ]

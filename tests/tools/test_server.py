@@ -27,9 +27,47 @@ async def test_list_tools_returns_registry():
 
 
 def test_expected_tools_registered():
+    # Exact list so an accidental addition, removal, or rename is caught.
     names = {spec.tool.name for spec in server.TOOL_REGISTRY}
-    # Spot-check across feature areas so a dropped registration is caught.
-    assert {"me", "search_books", "get_trending_books", "follow_user"} <= names
+    assert names == {
+        # core
+        "search_books",
+        "get_user",
+        # catalog
+        "get_book",
+        "get_edition",
+        "get_author",
+        "get_series",
+        "get_publisher",
+        "get_trending_books",
+        "get_vibes",
+        # library
+        "get_user_library",
+        "get_user_book",
+        "get_owned_books",
+        "get_reading_stats",
+        "set_user_book",
+        "set_edition_owned",
+        "set_user_book_read",
+        "delete_user_book_read",
+        "delete_user_book",
+        "get_reading_goal",
+        "set_reading_goal",
+        # lists
+        "get_list",
+        "set_list",
+        "delete_list",
+        "set_list_book",
+        # journal
+        "get_reading_journal",
+        "add_journal_entry",
+        "delete_journal_entry",
+        # social
+        "get_activity_feed",
+        "set_following",
+        "get_prompts",
+        "answer_prompt",
+    }
 
 
 async def test_call_tool_unknown_is_error():

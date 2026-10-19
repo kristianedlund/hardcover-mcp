@@ -292,7 +292,8 @@ TOOLS: list[ToolSpec] = [
                 "ratings, reviews, and progress updates. Read-only. Filter by book_id and/or "
                 "event type; paginate with limit/offset. Returns each entry's id, event, text, "
                 "timestamp, and book. This is your personal log; for what people you follow are "
-                "doing use get_activity_feed, and for review texts only use get_user_reviews."
+                "doing use get_activity_feed; for review texts use "
+                "get_user_library(has_review=true)."
             ),
             inputSchema={
                 "type": "object",
@@ -333,7 +334,7 @@ TOOLS: list[ToolSpec] = [
                 "delete_journal_entry and add it again. Public by default (privacy_setting_id "
                 "1). Returns the created entry with its id. Only notes and quotes can be added "
                 "here; status, rating, and progress changes go through set_user_book and "
-                "add_user_book_read."
+                "set_user_book_read."
             ),
             inputSchema={
                 "type": "object",
