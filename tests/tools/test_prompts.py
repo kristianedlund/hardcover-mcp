@@ -7,8 +7,8 @@ import pytest
 
 from hardcover_mcp.tools.prompts import (
     _format_prompt,
-    handle_answer_prompt,
     handle_get_prompts,
+    handle_set_prompt_answer,
 )
 
 
@@ -144,48 +144,102 @@ class TestHandleGetPrompts:
         assert kwargs_vars["limit"] == 100
 
 
-class TestHandleAnswerPrompt:
-    @pytest.mark.asyncio
+def _existing(*ids: int) -> dict:
+    return {"data": {"prompt_answers": [{"id": i} for i in ids]}}
+
+
+class TestHandleSetPromptAnswer:
+    async def test_returns_error_when_answered_missing(self):
+        result = await handle_set_prompt_answer({"prompt_id": 7, "book_id": 42})
+
+        assert "'answered'" in result[0].text
+
     async def test_returns_error_when_prompt_id_missing(self):
-        result = await handle_answer_prompt({"book_id": 42})
+        result = await handle_set_prompt_answer({"book_id": 42, "answered": True})
 
         assert "Error" in result[0].text
         assert "prompt_id" in result[0].text
 
-    @pytest.mark.asyncio
-    async def test_returns_error_when_book_id_missing(self):
-        result = await handle_answer_prompt({"prompt_id": 7})
-
-        assert "Error" in result[0].text
-        assert "book_id" in result[0].text
-
-    @pytest.mark.asyncio
     async def test_returns_error_for_non_integer_ids(self):
-        result = await handle_answer_prompt({"prompt_id": "abc", "book_id": 42})
+        result = await handle_set_prompt_answer(
+            {"prompt_id": "abc", "book_id": 42, "answered": True}
+        )
 
         assert "Error" in result[0].text
 
-    @pytest.mark.asyncio
-    async def test_returns_error_for_non_integer_book_id(self):
-        result = await handle_answer_prompt({"prompt_id": 7, "book_id": "xyz"})
+    async def _run(self, arguments: dict, *responses: dict) -> tuple[dict, AsyncMock]:
+        mock_exec = AsyncMock(side_effect=list(responses))
+        with (
+            patch(
+                "hardcover_mcp.tools.prompts.get_current_user",
+                new=AsyncMock(return_value={"id": 5}),
+            ),
+            patch("hardcover_mcp.tools.prompts.execute", new=mock_exec),
+        ):
+            result = await handle_set_prompt_answer(arguments)
+        return json.loads(result[0].text), mock_exec
 
-        assert "Error" in result[0].text
+    async def test_adds_answer_with_description(self):
+        data, mock_exec = await self._run(
+            {"prompt_id": 7, "book_id": 42, "answered": True, "description": "Fits."},
+            _existing(),
+            {"data": {"insert_prompt_answer": {"id": 99, "prompt_id": 7, "book_id": 42}}},
+        )
 
-    @pytest.mark.asyncio
-    async def test_submits_answer_and_returns_prompt_answer(self):
-        mock_answer = {"id": 99, "prompt_id": 7, "book_id": 42}
-        mock_result = {"data": {"insert_prompt_answer": {"id": 1, "prompt_answer": mock_answer}}}
+        assert data == {
+            "prompt_id": 7,
+            "book_id": 42,
+            "answered": True,
+            "changed": True,
+            "answer_id": 99,
+        }
+        assert mock_exec.call_args_list[0][0][1] == {"user_id": 5, "prompt_id": 7, "book_id": 42}
+        assert mock_exec.call_args_list[1][0][1] == {
+            "object": {"prompt_id": 7, "book_id": 42, "description": "Fits."}
+        }
 
-        with patch(
-            "hardcover_mcp.tools.prompts.execute",
-            new=AsyncMock(return_value=mock_result),
-        ) as mock_exec:
-            result = await handle_answer_prompt({"prompt_id": 7, "book_id": 42})
+    async def test_add_when_already_answered_is_noop(self):
+        data, mock_exec = await self._run(
+            {"prompt_id": 7, "book_id": 42, "answered": True}, _existing(99)
+        )
 
-        data = json.loads(result[0].text)
-        assert data["prompt_id"] == 7
-        assert data["book_id"] == 42
+        assert data["changed"] is False
+        assert data["answer_id"] == 99
+        assert mock_exec.call_count == 1
 
-        _, called_vars = mock_exec.call_args[0]
-        assert called_vars["object"]["prompt_id"] == 7
-        assert called_vars["object"]["book_id"] == 42
+    async def test_withdraws_existing_answer(self):
+        data, mock_exec = await self._run(
+            {"prompt_id": 7, "book_id": 42, "answered": False},
+            _existing(99),
+            {"data": {"delete_prompt_answer": {"id": 99}}},
+        )
+
+        assert data["changed"] is True
+        assert data["answer_id"] is None
+        assert mock_exec.call_args_list[1][0][1] == {"id": 99}
+
+    async def test_withdraw_when_not_answered_is_noop(self):
+        data, mock_exec = await self._run(
+            {"prompt_id": 7, "book_id": 42, "answered": False}, _existing()
+        )
+
+        assert data["changed"] is False
+        assert mock_exec.call_count == 1
+
+    async def test_failed_withdraw_returns_clear_error(self):
+        mock_exec = AsyncMock(
+            side_effect=[_existing(99), RuntimeError("GraphQL error: not a valid json response")]
+        )
+        with (
+            patch(
+                "hardcover_mcp.tools.prompts.get_current_user",
+                new=AsyncMock(return_value={"id": 5}),
+            ),
+            patch("hardcover_mcp.tools.prompts.execute", new=mock_exec),
+        ):
+            result = await handle_set_prompt_answer(
+                {"prompt_id": 7, "book_id": 42, "answered": False}
+            )
+
+        assert "could not withdraw" in result[0].text
+        assert "few seconds" in result[0].text

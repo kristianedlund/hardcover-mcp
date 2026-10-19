@@ -17,13 +17,13 @@ async def _get_book_id(slug: str) -> int:
 
 
 class TestJournalEntryLifecycle:
-    """Create a journal entry → verify in list → delete → verify removed."""
+    """Create a journal entry → verify in list → edit → delete → verify removed."""
 
-    async def test_add_verify_delete_journal_entry(self):
+    async def test_create_edit_delete_journal_entry(self):
         from hardcover_mcp.tools.journal import (
-            handle_add_journal_entry,
             handle_delete_journal_entry,
             handle_get_reading_journal,
+            handle_set_journal_entry,
         )
 
         book_id = await _get_book_id("project-hail-mary")
@@ -31,7 +31,7 @@ class TestJournalEntryLifecycle:
         entry_id: int | None = None
 
         try:
-            add_result = await handle_add_journal_entry(
+            add_result = await handle_set_journal_entry(
                 {
                     "book_id": book_id,
                     "entry": unique_note,
@@ -54,6 +54,17 @@ class TestJournalEntryLifecycle:
             matching = [e for e in entries if e["id"] == entry_id]
             assert len(matching) == 1
             assert matching[0]["entry"] == unique_note
+
+            # Edit: change the text and privacy; the event must be preserved.
+            edited_note = f"{unique_note}_edited"
+            edit_result = await handle_set_journal_entry(
+                {"id": entry_id, "entry": edited_note, "privacy_setting_id": 3}
+            )
+            edited = json.loads(edit_result[0].text)
+            assert edited["id"] == entry_id
+            assert edited["entry"] == edited_note
+            assert edited["event"] == "note"
+            assert edited["privacy_setting_id"] == 3
 
             # Delete and verify removal in the same block so cleanup is
             # guaranteed by the finally even if verification fails.

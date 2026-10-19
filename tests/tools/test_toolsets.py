@@ -34,7 +34,7 @@ def test_single_toolset_includes_core():
 def test_multiple_toolsets_tolerate_spacing_and_case():
     names = _names({"HARDCOVER_TOOLSETS": " Catalog , journal "})
     assert "get_book" in names
-    assert "add_journal_entry" in names
+    assert "set_journal_entry" in names
     assert "set_list" not in names
 
 

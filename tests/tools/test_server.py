@@ -60,13 +60,13 @@ def test_expected_tools_registered():
         "set_list_book",
         # journal
         "get_reading_journal",
-        "add_journal_entry",
+        "set_journal_entry",
         "delete_journal_entry",
         # social
         "get_activity_feed",
         "set_following",
         "get_prompts",
-        "answer_prompt",
+        "set_prompt_answer",
     }
 
 
