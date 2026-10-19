@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Every tool now declares MCP tool annotations (`readOnlyHint`, `destructiveHint`,
+  `idempotentHint`, `openWorldHint`), so clients can tell read-only lookups from writes and
+  deletes without parsing descriptions.
+- Rewrote all tool descriptions to state what each tool returns, its side effects
+  (upsert/overwrite/permanent delete), prerequisites, and which sibling tool to use instead for
+  related tasks.
+
 ## [0.7.2] - 2026-09-22
 
 ### Fixed
