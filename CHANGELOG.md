@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Breaking: more tools merged
+## [0.9.0] - 2026-10-20
+
+### Breaking: more tools merged (31 → 28)
 
 | Removed | Use instead |
 |---------|-------------|
@@ -356,7 +358,8 @@ Initial release.
 - `add_book_to_list` / `remove_book_from_list` — manage books within a list.
 - Ruff linter configuration, `.env.example`, and initial README.
 
-[Unreleased]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.7.0...v0.7.1
