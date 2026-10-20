@@ -407,14 +407,13 @@ class TestPrivacyControls:
 
 
 class TestOwnedBooksLifecycle:
-    """Mark edition as owned → verify get_owned_books → un-own → verify removed."""
+    """set_user_book(owned=true) → verify get_user_library(owned=true) → no-op repeat → restore."""
 
     async def test_full_lifecycle(self):
         from hardcover_mcp.tools.library import (
-            handle_get_owned_books,
             handle_get_user_book,
             handle_get_user_library,
-            handle_set_edition_owned,
+            handle_set_user_book,
         )
 
         lib_result = await handle_get_user_library({"status": "Read", "limit": 1})
@@ -432,29 +431,32 @@ class TestOwnedBooksLifecycle:
         edition_id = edition["id"]
 
         # Remember initial owned state so we can restore it
-        initial_owned_result = await handle_get_owned_books({"per_page": 100})
-        initial_data = json.loads(initial_owned_result[0].text)
-        initially_owned = any(b["book_id"] == book_id for b in initial_data["books"])
+        async def owned_book_ids() -> set[int]:
+            result = await handle_get_user_library({"owned": True, "limit": 100})
+            return {b["book_id"] for b in json.loads(result[0].text)["books"]}
+
+        initially_owned = book_id in await owned_book_ids()
 
         try:
             # 1. Mark as owned (idempotent — won't double-toggle)
-            result = await handle_set_edition_owned({"edition_id": edition_id, "owned": True})
+            result = await handle_set_user_book(
+                {"book_id": book_id, "edition_id": edition_id, "owned": True}
+            )
             output = json.loads(result[0].text)
             assert output["edition_id"] == edition_id
             assert output["owned"] is True
 
-            # 2. Verify get_owned_books returns it
-            owned_result = await handle_get_owned_books({"per_page": 100})
-            owned_data = json.loads(owned_result[0].text)
-            owned_book_ids = [b["book_id"] for b in owned_data["books"]]
-            assert book_id in owned_book_ids
+            # 2. Verify get_user_library(owned=true) returns it
+            assert book_id in await owned_book_ids()
 
             # 3. Calling again with owned=True should be a no-op
-            result2 = await handle_set_edition_owned({"edition_id": edition_id, "owned": True})
+            result2 = await handle_set_user_book({"book_id": book_id, "owned": True})
             output2 = json.loads(result2[0].text)
-            assert output2["toggled"] is False
+            assert output2["owned_changed"] is False
 
         finally:
             # Restore original state
             if not initially_owned:
-                await handle_set_edition_owned({"edition_id": edition_id, "owned": False})
+                await handle_set_user_book(
+                    {"book_id": book_id, "edition_id": edition_id, "owned": False}
+                )

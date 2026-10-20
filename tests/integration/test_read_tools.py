@@ -69,6 +69,21 @@ class TestGetBook:
         data = json.loads(result[0].text)
         assert data["title"] == "Project Hail Mary"
 
+    async def test_edition_key_returns_that_edition(self):
+        from hardcover_mcp.tools.books import handle_get_book
+
+        book = json.loads((await handle_get_book({"slug": "project-hail-mary"}))[0].text)
+        editions = json.loads(
+            (await handle_get_book({"id": book["id"], "include_editions": True}))[0].text
+        )["editions"]
+        with_isbn = next(e for e in editions if e["isbn_13"])
+
+        by_id = json.loads((await handle_get_book({"edition_id": with_isbn["id"]}))[0].text)
+        by_isbn = json.loads((await handle_get_book({"isbn_13": with_isbn["isbn_13"]}))[0].text)
+
+        assert by_id["id"] == by_isbn["id"] == with_isbn["id"]
+        assert by_id["book"]["id"] == book["id"]
+
     async def test_include_characters(self):
         from hardcover_mcp.tools.books import handle_get_book
 
@@ -82,6 +97,20 @@ class TestGetBook:
 
 
 class TestGetUserLibrary:
+    async def test_date_range_and_owned_filters_run(self):
+        # Both build their own queries; the date range was broken against the live API
+        # (unsortable finished_at) without any test noticing.
+        from hardcover_mcp.tools.library import handle_get_user_library
+
+        for args in (
+            {"start_date": "2000-01-01", "end_date": "2100-12-31", "limit": 5},
+            {"owned": True, "limit": 5},
+            {"owned": True, "start_date": "2000-01-01", "end_date": "2100-12-31", "limit": 5},
+        ):
+            data = json.loads((await handle_get_user_library(args))[0].text)
+            assert isinstance(data["books"], list), args
+            assert data["total"] >= data["returned"], args
+
     async def test_returns_library_entries(self):
         from hardcover_mcp.tools.library import handle_get_user_library
 
@@ -325,13 +354,13 @@ class TestGetPublisher:
         assert "No publisher found" in result[0].text
 
 
-class TestGetReadingStats:
+class TestGetUserIncludeStats:
     async def test_returns_required_fields(self):
-        from hardcover_mcp.tools.stats import handle_get_reading_stats
+        from hardcover_mcp.tools.user import handle_get_user
 
-        result = await handle_get_reading_stats({})
+        result = await handle_get_user({"include_stats": True})
 
-        data = json.loads(result[0].text)
+        data = json.loads(result[0].text)["stats"]
         assert "total_books" in data
         assert "by_status" in data
         assert "average_rating" in data
@@ -339,11 +368,11 @@ class TestGetReadingStats:
         assert "year" in data
 
     async def test_by_status_has_all_statuses(self):
-        from hardcover_mcp.tools.stats import handle_get_reading_stats
+        from hardcover_mcp.tools.user import handle_get_user
 
-        result = await handle_get_reading_stats({})
+        result = await handle_get_user({"include_stats": True})
 
-        data = json.loads(result[0].text)
+        data = json.loads(result[0].text)["stats"]
         by_status = data["by_status"]
         assert "want_to_read" in by_status
         assert "currently_reading" in by_status
@@ -353,23 +382,39 @@ class TestGetReadingStats:
         assert "ignored" in by_status
 
     async def test_total_books_is_non_negative(self):
-        from hardcover_mcp.tools.stats import handle_get_reading_stats
+        from hardcover_mcp.tools.user import handle_get_user
 
-        result = await handle_get_reading_stats({})
+        result = await handle_get_user({"include_stats": True})
 
-        data = json.loads(result[0].text)
+        data = json.loads(result[0].text)["stats"]
         assert isinstance(data["total_books"], int)
         assert data["total_books"] >= 0
 
     async def test_year_filter_changes_books_read_count(self):
-        from hardcover_mcp.tools.stats import handle_get_reading_stats
+        from hardcover_mcp.tools.user import handle_get_user
 
-        result_past = await handle_get_reading_stats({"year": 1900})
+        result_past = await handle_get_user({"include_stats": True, "stats_year": 1900})
 
-        data = json.loads(result_past[0].text)
+        data = json.loads(result_past[0].text)["stats"]
         # No books were read in 1900 — count should be 0
         assert data["books_read_this_year"] == 0
         assert data["year"] == 1900
+
+
+class TestGetUserFollowLists:
+    async def test_following_and_followers_have_people(self):
+        from hardcover_mcp.tools.user import handle_get_user
+
+        result = await handle_get_user(
+            {"include_following": True, "include_followers": True, "follow_limit": 5}
+        )
+
+        data = json.loads(result[0].text)
+        for key in ("following", "followers"):
+            assert isinstance(data[key], list)
+            assert len(data[key]) <= 5
+            for person in data[key]:
+                assert {"id", "username", "name", "since"} <= person.keys()
 
 
 class TestGetUserLibraryHasReview:

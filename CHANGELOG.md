@@ -7,8 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking: more tools merged
+
+| Removed | Use instead |
+|---------|-------------|
+| `get_edition` | `get_book` with `isbn_13`, `asin`, or `edition_id` (returns that edition, as before) |
+| `get_owned_books` | `get_user_library` with `owned: true` |
+| `set_edition_owned` | `set_user_book` with `owned: true` / `false` (and `edition_id`) |
+| `get_reading_stats` | `get_user` with `include_stats: true` (results under `stats`; `year` is now `stats_year`) |
+
+`get_book` now takes either a book key (`id` or `slug`, returning the book) or exactly one
+edition key (returning that specific edition with a summary of its book, the same output as
+`get_edition`). `include_characters` and `include_editions` only apply to book keys. Update
+permission rules that name `get_edition`.
+
+`get_user_library(owned=true)` lists library books with an edition in your Owned list, and
+combines with the other filters (e.g. owned books you haven't read). Unlike
+`get_owned_books`, it doesn't list owned books that aren't in your library, and rows show
+your library entry rather than the owned edition's details. Update permission rules that
+name `get_owned_books`.
+
+`set_user_book(owned=...)` marks ownership of `edition_id`, or of the entry's current edition
+if `edition_id` is omitted (it errors before writing if there is none). Marking a book owned
+that isn't in your library adds it, and passing `edition_id` also makes it the edition you're
+reading. Update permission rules that name `set_edition_owned`.
+
 ### Fixed
 
+- `get_user_library` with `start_date`/`end_date` always failed against the live API
+  ("field 'finished_at' not found in type: 'user_books_order_by'"). Results are now sorted
+  by the entry's latest finish date (`last_read_date`), newest first.
 - Editing a journal entry with `set_journal_entry(id=...)` failed with the newer, scoped API keys
   ("variable 'id' is declared as 'Int!', but used where 'bigint' is expected"). The lookup now
   uses the `bigint` type the API schema specifies; legacy keys had tolerated the mismatch.
@@ -19,6 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_user(include_following=true / include_followers=true)` lists who a user follows and who
+  follows them, newest first (up to `follow_limit`, default 25, max 100).
+- `set_reading_goal(id=..., archived=true/false)` archives or restores a goal; `id` also lets
+  you edit any field of an existing goal, changing only what you pass.
+- `delete_reading_goal` permanently deletes one of your reading goals.
 - `get_book(include_editions=true)` lists the book's editions, most-read first (format, pages,
   audio length, release date, ISBN-13/ASIN, language, publisher), up to `editions_limit`
   (default 10, max 50). Use an edition id with `get_edition`, `set_edition_owned`, or

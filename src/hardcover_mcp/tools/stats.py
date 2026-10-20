@@ -1,15 +1,9 @@
-"""Tools: get_reading_stats — library statistics via user_books_aggregate."""
+"""Library statistics via user_books_aggregate, used by get_user(include_stats=true)."""
 
-import json
 from datetime import date
 from typing import Any
 
-from mcp.types import TextContent, Tool
-
 from hardcover_mcp.client import execute
-from hardcover_mcp.tools._registry import READ, ToolSpec
-from hardcover_mcp.tools._validation import _require_int
-from hardcover_mcp.tools.user import get_current_user
 
 # Aliased user_books_aggregate calls, each a distinct where-filter. The API
 # caps a request at 5 top-level fields (burst capacity), so the 9 aggregates
@@ -114,73 +108,27 @@ def _format_reading_stats(data: dict[str, Any], year: int) -> dict[str, Any]:
     }
 
 
-async def handle_get_reading_stats(arguments: dict[str, Any]) -> list[TextContent]:
-    """Return library statistics for the authenticated user.
+async def fetch_reading_stats(user_id: int, year: int | None = None) -> dict[str, Any]:
+    """Library statistics for ``user_id`` (used by ``get_user(include_stats=true)``).
 
     Parameters
     ----------
-    arguments : dict[str, Any]
-        Optional: ``year`` (int) — calendar year for the ``books_read_this_year``
-        count. Defaults to the current year.
+    user_id : int
+        The user whose library to summarise.
+    year : int | None
+        Calendar year for the ``books_read_this_year`` count; defaults to the current year.
 
     Returns
     -------
-    list[TextContent]
-        Single-element list with JSON-formatted reading statistics containing
-        ``total_books``, ``by_status``, ``average_rating``,
-        ``books_read_this_year``, and ``year``.
+    dict[str, Any]
+        ``total_books``, ``by_status``, ``average_rating``, ``books_read_this_year``,
+        and ``year``.
     """
-    # --- 1. Resolve year parameter (defaults to current year)
-    year_raw = arguments.get("year")
-    year = _require_int(year_raw, "year") if year_raw is not None else date.today().year
-
-    year_start = f"{year}-01-01"
-    year_end = f"{year}-12-31"
-
-    # --- 2. Fetch authenticated user
-    user = await get_current_user()
-    user_id = user["id"]
-
-    # --- 3. Execute aggregates across two requests (5-field burst cap) and merge
+    year = year if year is not None else date.today().year
+    # Two requests: the aggregates don't fit one request's burst cap (see above).
     result_a = await execute(GET_READING_STATS_QUERY_A, {"user_id": user_id})
     result_b = await execute(
         GET_READING_STATS_QUERY_B,
-        {"user_id": user_id, "year_start": year_start, "year_end": year_end},
+        {"user_id": user_id, "year_start": f"{year}-01-01", "year_end": f"{year}-12-31"},
     )
-    merged = {**result_a["data"], **result_b["data"]}
-
-    # --- 4. Format and return
-    stats = _format_reading_stats(merged, year)
-    return [TextContent(type="text", text=json.dumps(stats, indent=2))]
-
-
-# ── Tool definitions ──
-
-TOOLS: list[ToolSpec] = [
-    ToolSpec(
-        Tool(
-            name="get_reading_stats",
-            description=(
-                "Get aggregate statistics for your own library: total books, count per status, "
-                "average rating, and books finished in a given year (default: current year). "
-                "Read-only. Use for summary numbers; to list the actual books use "
-                "get_user_library, and for goal progress use get_reading_goal."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "year": {
-                        "type": "integer",
-                        "description": (
-                            "Year for the 'books_read_this_year' count (default: current year)."
-                        ),
-                    },
-                },
-            },
-            annotations=READ,
-        ),
-        handle_get_reading_stats,
-        toolset="library",
-        scopes=("read:library", "read:me"),
-    ),
-]
+    return _format_reading_stats({**result_a["data"], **result_b["data"]}, year)

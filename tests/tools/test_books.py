@@ -390,3 +390,46 @@ class TestHandleGetBookIncludeEditions:
         result = await handle_get_book({"id": 123, "editions_limit": "lots"})
 
         assert "must be an integer" in result[0].text
+
+
+class TestHandleGetBookEditionKeys:
+    @patch("hardcover_mcp.tools.books.handle_get_edition", new_callable=AsyncMock)
+    async def test_isbn_returns_the_edition(self, mock_edition):
+        mock_edition.return_value = ["edition result"]
+
+        result = await handle_get_book({"isbn_13": "9780593135204"})
+
+        assert result == ["edition result"]
+        mock_edition.assert_awaited_once_with({"isbn_13": "9780593135204"})
+
+    @patch("hardcover_mcp.tools.books.handle_get_edition", new_callable=AsyncMock)
+    async def test_edition_id_maps_to_edition_lookup_id(self, mock_edition):
+        await handle_get_book({"edition_id": 30405492})
+
+        mock_edition.assert_awaited_once_with({"id": 30405492})
+
+    @patch("hardcover_mcp.tools.books.handle_get_edition", new_callable=AsyncMock)
+    async def test_asin_returns_the_edition(self, mock_edition):
+        await handle_get_book({"asin": "B08FHBV4ZX"})
+
+        mock_edition.assert_awaited_once_with({"asin": "B08FHBV4ZX"})
+
+    async def test_rejects_book_and_edition_keys_together(self):
+        result = await handle_get_book({"id": 1, "isbn_13": "9780593135204"})
+
+        assert "provide one of 'id' or 'slug'" in result[0].text
+
+    async def test_rejects_two_edition_keys(self):
+        result = await handle_get_book({"isbn_13": "9780593135204", "asin": "B08FHBV4ZX"})
+
+        assert "exactly one of 'isbn_13'" in result[0].text
+
+    async def test_rejects_include_flags_with_edition_key(self):
+        result = await handle_get_book({"isbn_13": "9780593135204", "include_editions": True})
+
+        assert "need a book key" in result[0].text
+
+    async def test_requires_some_key(self):
+        result = await handle_get_book({})
+
+        assert "provide one of 'id' or 'slug'" in result[0].text

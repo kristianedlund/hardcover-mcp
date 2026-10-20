@@ -1,11 +1,8 @@
-"""Tests for tools/stats.py — _format_reading_stats and handle_get_reading_stats."""
+"""Tests for tools/stats.py — _format_reading_stats and fetch_reading_stats."""
 
-import json
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
-from hardcover_mcp.tools.stats import _format_reading_stats, handle_get_reading_stats
+from hardcover_mcp.tools.stats import _format_reading_stats, fetch_reading_stats
 
 # ── Fixture helpers ──
 
@@ -74,59 +71,36 @@ class TestFormatReadingStats:
         assert result_2024["year"] == 2024
 
 
-class TestHandleGetReadingStats:
-    @patch("hardcover_mcp.tools.stats.get_current_user", new_callable=AsyncMock)
+class TestFetchReadingStats:
     @patch("hardcover_mcp.tools.stats.execute", new_callable=AsyncMock)
-    async def test_returns_formatted_stats(self, mock_execute, mock_user):
-        mock_user.return_value = {"id": 1}
+    async def test_returns_formatted_stats(self, mock_execute):
         mock_execute.return_value = {"data": _AGGREGATE_RESPONSE}
 
-        result = await handle_get_reading_stats({})
-        data = json.loads(result[0].text)
+        data = await fetch_reading_stats(1)
 
         assert data["total_books"] == 142
         assert data["by_status"]["read"] == 98
         assert data["average_rating"] == 3.83
         assert data["books_read_this_year"] == 12
 
-    @patch("hardcover_mcp.tools.stats.get_current_user", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.stats.execute", new_callable=AsyncMock)
-    async def test_passes_year_variables_to_execute(self, mock_execute, mock_user):
-        mock_user.return_value = {"id": 1}
+    async def test_passes_user_and_year_variables(self, mock_execute):
         mock_execute.return_value = {"data": _AGGREGATE_RESPONSE}
 
-        await handle_get_reading_stats({"year": 2023})
+        await fetch_reading_stats(7, 2023)
 
+        assert mock_execute.call_args_list[0][0][1] == {"user_id": 7}
         call_vars = mock_execute.call_args[0][1]
         assert call_vars["year_start"] == "2023-01-01"
         assert call_vars["year_end"] == "2023-12-31"
 
-    @patch("hardcover_mcp.tools.stats.get_current_user", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.stats.execute", new_callable=AsyncMock)
-    async def test_defaults_to_current_year(self, mock_execute, mock_user):
+    async def test_defaults_to_current_year(self, mock_execute):
         from datetime import date
 
-        mock_user.return_value = {"id": 1}
         mock_execute.return_value = {"data": _AGGREGATE_RESPONSE}
 
-        await handle_get_reading_stats({})
+        await fetch_reading_stats(1)
 
-        call_vars = mock_execute.call_args[0][1]
         current_year = date.today().year
-        assert call_vars["year_start"] == f"{current_year}-01-01"
-        assert call_vars["year_end"] == f"{current_year}-12-31"
-
-    @patch("hardcover_mcp.tools.stats.get_current_user", new_callable=AsyncMock)
-    @patch("hardcover_mcp.tools.stats.execute", new_callable=AsyncMock)
-    async def test_year_as_string_is_coerced_to_int(self, mock_execute, mock_user):
-        mock_user.return_value = {"id": 1}
-        mock_execute.return_value = {"data": _AGGREGATE_RESPONSE}
-
-        await handle_get_reading_stats({"year": "2022"})
-
-        call_vars = mock_execute.call_args[0][1]
-        assert call_vars["year_start"] == "2022-01-01"
-
-    async def test_non_numeric_year_raises_value_error(self):
-        with pytest.raises(ValueError, match="'year' must be an integer"):
-            await handle_get_reading_stats({"year": "not-a-year"})
+        assert mock_execute.call_args[0][1]["year_start"] == f"{current_year}-01-01"

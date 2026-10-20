@@ -10,6 +10,7 @@ from hardcover_mcp.client import NEW_API_KEY_URL, HardcoverAPIError, execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 from hardcover_mcp.tools.books import resolve_id_by_name
+from hardcover_mcp.tools.stats import fetch_reading_stats
 
 # Cached after first call — used by other tools that need user_id.
 # TTL ensures long-running processes eventually refresh.
@@ -77,10 +78,18 @@ _USER_FIELDS = """
 
 _DEFAULT_LIBRARY_LIMIT = 10
 _MAX_LIBRARY_LIMIT = 50
+_DEFAULT_FOLLOW_LIMIT = 25
+_MAX_FOLLOW_LIMIT = 100
 
 
-def _render_user_query(by: str, with_library: bool, with_status: bool) -> str:
-    """Render a users query keyed on ``id`` or ``username``, with optional library.
+def _render_user_query(
+    by: str,
+    with_library: bool,
+    with_status: bool,
+    with_following: bool = False,
+    with_followers: bool = False,
+) -> str:
+    """Render a users query keyed on ``id`` or ``username``, with optional sections.
 
     Parameters
     ----------
@@ -90,6 +99,8 @@ def _render_user_query(by: str, with_library: bool, with_status: bool) -> str:
         Include a ``user_books`` block (recent entries, newest first).
     with_status : bool
         Filter the library block to a single ``status_id``.
+    with_following, with_followers : bool
+        Include who the user follows / who follows them (newest first).
     """
     key_type = "Int!" if by == "id" else "citext!"
     status_var = ", $status_id: Int!" if with_status else ""
@@ -109,9 +120,23 @@ def _render_user_query(by: str, with_library: bool, with_status: bool) -> str:
         else ""
     )
     library_var = ", $library_limit: Int!" if with_library else ""
+    follow_block = ""
+    if with_following:
+        follow_block += """
+        followed_users(order_by: {created_at: desc}, limit: $follow_limit) {
+            created_at
+            followed_user { id username name }
+        }"""
+    if with_followers:
+        follow_block += """
+        followed_by_users(order_by: {created_at: desc}, limit: $follow_limit) {
+            created_at
+            user { id username name }
+        }"""
+    follow_var = ", $follow_limit: Int!" if (with_following or with_followers) else ""
     return f"""
-query GetUser(${by}: {key_type}{library_var}{status_var}) {{
-    users(where: {{{by}: {{_eq: ${by}}}}}, limit: 1) {{{_USER_FIELDS}{library_block}
+query GetUser(${by}: {key_type}{library_var}{status_var}{follow_var}) {{
+    users(where: {{{by}: {{_eq: ${by}}}}}, limit: 1) {{{_USER_FIELDS}{library_block}{follow_block}
     }}
 }}
 """
@@ -160,6 +185,20 @@ def _format_user(raw: dict[str, Any]) -> dict[str, Any]:
             for ub in raw["user_books"]
             if ub.get("book")
         ]
+    for key, rel, person in (
+        ("following", "followed_users", "followed_user"),
+        ("followers", "followed_by_users", "user"),
+    ):
+        if rel in raw:
+            profile[key] = [
+                {
+                    "id": (row.get(person) or {}).get("id"),
+                    "username": (row.get(person) or {}).get("username"),
+                    "name": (row.get(person) or {}).get("name"),
+                    "since": row.get("created_at"),
+                }
+                for row in raw[rel]
+            ]
     return profile
 
 
@@ -173,12 +212,15 @@ async def handle_get_user(arguments: dict[str, Any]) -> list[TextContent]:
         with none of them, the authenticated user's profile is returned.
         Optional: ``include_library`` (bool, default false) to include recent
         library entries; ``library_status`` (str, e.g. 'Read') to filter them;
-        ``library_limit`` (int, default 10, max 50).
+        ``library_limit`` (int, default 10, max 50); ``include_following`` /
+        ``include_followers`` (bool) with ``follow_limit`` (int, default 25, max 100);
+        ``include_stats`` (bool, your own profile only) with ``stats_year`` (int).
 
     Returns
     -------
     list[TextContent]
-        JSON with profile metadata and, if requested, a ``library`` array.
+        JSON with profile metadata and, if requested, ``library``, ``following``,
+        ``followers``, and ``stats``.
         Library visibility is enforced by the Hardcover API based on the
         target user's privacy setting.
     """
@@ -203,7 +245,25 @@ async def handle_get_user(arguments: dict[str, Any]) -> list[TextContent]:
             )
         ]
 
+    include_following = bool(arguments.get("include_following"))
+    include_followers = bool(arguments.get("include_followers"))
+    include_stats = bool(arguments.get("include_stats"))
+
     variables: dict[str, Any] = {}
+    try:
+        if include_following or include_followers:
+            requested = arguments.get("follow_limit", _DEFAULT_FOLLOW_LIMIT)
+            variables["follow_limit"] = min(
+                _require_int(requested, "follow_limit"), _MAX_FOLLOW_LIMIT
+            )
+        stats_year = (
+            _require_int(arguments["stats_year"], "stats_year")
+            if arguments.get("stats_year") is not None
+            else None
+        )
+    except ValueError as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
+
     if include_library:
         try:
             requested = arguments.get("library_limit", _DEFAULT_LIBRARY_LIMIT)
@@ -232,13 +292,29 @@ async def handle_get_user(arguments: dict[str, Any]) -> list[TextContent]:
         variables["username"] = username
         by = "username"
 
-    query = _render_user_query(by, include_library, include_library and status_id is not None)
+    query = _render_user_query(
+        by,
+        include_library,
+        include_library and status_id is not None,
+        include_following,
+        include_followers,
+    )
     result = await execute(query, variables)
     users = result["data"]["users"]
     if not users:
         return [TextContent(type="text", text="No user found.")]
 
     output = _format_user(users[0])
+    if include_stats:
+        # Stats aggregate a library; Hardcover only lets you aggregate your own.
+        if output["id"] != (await get_current_user())["id"]:
+            return [
+                TextContent(
+                    type="text",
+                    text="Error: include_stats is only available for your own profile.",
+                )
+            ]
+        output["stats"] = await fetch_reading_stats(output["id"], stats_year)
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
@@ -252,10 +328,13 @@ TOOLS: list[ToolSpec] = [
                 "Get a Hardcover user's profile. With no arguments, returns your own profile "
                 "(the owner of the API token) including your user id; otherwise look someone "
                 "up by id, username, or name (name resolves to the top search match). "
-                "Read-only. Returns bio, book/follower counts, and privacy. Set "
-                "include_library=true to also fetch recent library entries; a private user's "
-                "library comes back empty unless you follow them. For activity use "
-                "get_activity_feed. Fails if the token is missing or invalid."
+                "Read-only. Returns bio, book/follower counts, and privacy. Optional sections: "
+                "include_library (recent library entries; a private user's comes back empty "
+                "unless you follow them), include_following / include_followers (who they "
+                "follow / who follows them, newest first), and include_stats (your own profile "
+                "only: totals per status, average rating, books read in stats_year, default "
+                "this year). For activity use get_activity_feed; to follow someone use "
+                "set_following. Fails if the token is missing or invalid."
             ),
             inputSchema={
                 "type": "object",
@@ -286,12 +365,34 @@ TOOLS: list[ToolSpec] = [
                         "type": "integer",
                         "description": "Max library entries to return (default 10, max 50).",
                     },
+                    "include_following": {
+                        "type": "boolean",
+                        "description": "Include who the user follows (default false).",
+                    },
+                    "include_followers": {
+                        "type": "boolean",
+                        "description": "Include who follows the user (default false).",
+                    },
+                    "follow_limit": {
+                        "type": "integer",
+                        "description": "Max people per follow list (default 25, max 100).",
+                    },
+                    "include_stats": {
+                        "type": "boolean",
+                        "description": (
+                            "Your own profile only: include reading statistics (default false)."
+                        ),
+                    },
+                    "stats_year": {
+                        "type": "integer",
+                        "description": "Year for books_read_this_year (default: current year).",
+                    },
                 },
             },
             annotations=READ,
         ),
         handle_get_user,
         toolset="core",
-        scopes=("read:catalog", "read:library", "read:me", "read:users"),
+        scopes=("read:catalog", "read:library", "read:me", "read:social", "read:users"),
     ),
 ]

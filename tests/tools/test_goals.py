@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 from hardcover_mcp.tools.goals import (
     _format_reading_goal,
+    handle_delete_reading_goal,
     handle_get_reading_goal,
     handle_set_reading_goal,
 )
@@ -34,6 +35,7 @@ class TestFormatReadingGoal:
             "end_date": "2026-12-31",
             "state": "active",
             "privacy_setting_id": 1,
+            "archived": False,
         }
 
 
@@ -208,3 +210,105 @@ class TestHandleSetReadingGoal:
         update_vars = mock_execute.call_args_list[1][0][1]
         assert update_vars["id"] == 12
         assert update_vars["object"]["goal"] == 60
+
+
+def _own_goal(**overrides) -> dict:
+    goal = {
+        "id": 7,
+        "goal": 52,
+        "metric": "book",
+        "progress": 12,
+        "start_date": "2026-01-01",
+        "end_date": "2026-12-31",
+        "description": "52 books",
+        "state": "active",
+        "privacy_setting_id": 1,
+        "archived": False,
+    }
+    return {"data": {"goals": [{**goal, **overrides}]}}
+
+
+class TestGoalEditAndDelete:
+    async def _run(self, handler, arguments: dict, *responses: dict) -> tuple[str, AsyncMock]:
+        mock_exec = AsyncMock(side_effect=list(responses))
+        with (
+            patch(
+                "hardcover_mcp.tools.goals.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch("hardcover_mcp.tools.goals.execute", new=mock_exec),
+        ):
+            result = await handler(arguments)
+        return result[0].text, mock_exec
+
+    async def test_archive_by_id_keeps_other_fields(self):
+        updated = {"data": {"update_goal": {"errors": None, "goal": None}}}
+        text, mock_exec = await self._run(
+            handle_set_reading_goal, {"id": 7, "archived": True}, _own_goal(), updated
+        )
+
+        assert json.loads(text)["archived"] is True
+        assert mock_exec.call_args_list[0][0][1] == {"id": 7, "user_id": 1}
+        sent = mock_exec.call_args_list[1][0][1]
+        assert sent["id"] == 7
+        assert sent["object"]["archived"] is True
+        assert sent["object"]["goal"] == 52
+        assert sent["object"]["description"] == "52 books"
+
+    async def test_edit_by_id_changes_only_passed_fields(self):
+        updated = {"data": {"update_goal": {"errors": None, "goal": None}}}
+        _, mock_exec = await self._run(
+            handle_set_reading_goal, {"id": 7, "goal": 60}, _own_goal(), updated
+        )
+
+        sent = mock_exec.call_args_list[1][0][1]["object"]
+        assert sent["goal"] == 60
+        assert sent["metric"] == "book"
+        assert sent["archived"] is False
+
+    async def test_edit_requires_a_field(self):
+        text, mock_exec = await self._run(handle_set_reading_goal, {"id": 7})
+
+        assert "at least one of" in text
+        mock_exec.assert_not_awaited()
+
+    async def test_edit_someone_elses_goal_is_not_found(self):
+        text, _ = await self._run(
+            handle_set_reading_goal, {"id": 7, "archived": True}, {"data": {"goals": []}}
+        )
+
+        assert "no reading goal of yours" in text
+
+    async def test_archived_without_id_is_an_error(self):
+        text, mock_exec = await self._run(
+            handle_set_reading_goal,
+            {
+                "goal": 5,
+                "metric": "book",
+                "start_date": "2026-01-01",
+                "end_date": "2026-12-31",
+                "archived": True,
+            },
+        )
+
+        assert "'archived' needs the goal's id" in text
+        mock_exec.assert_not_awaited()
+
+    async def test_delete_own_goal(self):
+        text, mock_exec = await self._run(
+            handle_delete_reading_goal,
+            {"id": 7},
+            _own_goal(),
+            {"data": {"delete_goal": {"id": 7, "errors": None}}},
+        )
+
+        assert json.loads(text) == {"deleted": True, "id": 7}
+        assert mock_exec.call_args_list[1][0][1] == {"id": 7}
+
+    async def test_delete_someone_elses_goal_is_not_found(self):
+        text, mock_exec = await self._run(
+            handle_delete_reading_goal, {"id": 7}, {"data": {"goals": []}}
+        )
+
+        assert "no reading goal of yours" in text
+        assert mock_exec.call_count == 1
