@@ -107,7 +107,7 @@ scopes this server needs (the links open Hardcover's key form with them pre-sele
 
 | Toolset | Scopes needed |
 |---------|---------------|
-| `core` | `read:catalog`, `read:library`, `read:me`, `read:users` |
+| `core` | `read:catalog`, `read:library`, `read:me`, `read:social`, `read:users` |
 | `catalog` | `read:catalog`, `read:vibes` |
 | `library` | `read:catalog`, `read:goals`, `read:library`, `read:lists`, `read:me`, `write:goals`, `write:library`, `write:reviews` |
 | `lists` | `read:lists`, `read:me`, `write:lists` |
@@ -166,7 +166,7 @@ account and are hidden in read-only mode.
 | What you can do | Tool |
 |-----------------|------|
 | Search for books, authors, series, lists, users, and more (with sort/filter) | `search_books` |
-| See your own profile, or look up another user (optionally with their library) | `get_user` |
+| See your profile and reading stats, or look up another user; optionally with library, followers, and following | `get_user` |
 
 ### catalog
 
@@ -185,12 +185,11 @@ account and are hidden in read-only mode.
 |-----------------|------|
 | Browse your library: filter by status, date range, reviewed or owned books; sort by rating/date | `get_user_library` |
 | Check your status, rating, review, and reads for one book | `get_user_book` |
-| Get reading statistics (totals, ratings, books read per year) | `get_reading_stats` |
 | Get your active reading goals and progress | `get_reading_goal` |
-| ✏️ Add a book or update its status, rating, review, notes, privacy, and edition | `set_user_book` |
-| ✏️ Mark an edition as owned or not owned | `set_edition_owned` |
+| ✏️ Add a book or update its status, rating, review, notes, privacy, edition, and ownership | `set_user_book` |
 | ✏️ Log or edit reading dates and progress (pages, audiobook time) | `set_user_book_read` |
-| ✏️ Create or update a reading goal (books/pages, date range) | `set_reading_goal` |
+| ✏️ Create, update, or archive a reading goal (books/pages, date range) | `set_reading_goal` |
+| ✏️ Delete a reading goal | `delete_reading_goal` |
 | ✏️ Remove a reading entry or a whole book | `delete_user_book_read` / `delete_user_book` |
 
 ### lists

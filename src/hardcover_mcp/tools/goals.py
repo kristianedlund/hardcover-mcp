@@ -1,4 +1,4 @@
-"""Tools: get_reading_goal and set_reading_goal."""
+"""Tools: get_reading_goal, set_reading_goal, and delete_reading_goal."""
 
 import json
 from typing import Any
@@ -6,7 +6,7 @@ from typing import Any
 from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
-from hardcover_mcp.tools._registry import READ, UPDATE, ToolSpec
+from hardcover_mcp.tools._registry import DELETE, READ, UPDATE, ToolSpec
 from hardcover_mcp.tools._validation import _require_int, _require_iso_date
 from hardcover_mcp.tools.user import get_current_user
 
@@ -68,7 +68,34 @@ mutation InsertReadingGoal($object: GoalInput!) {
             end_date
             state
             privacy_setting_id
+            archived
         }
+    }
+}
+"""
+
+GET_OWN_GOAL_QUERY = """
+query GetOwnGoal($id: Int!, $user_id: Int!) {
+    goals(where: {id: {_eq: $id}, user_id: {_eq: $user_id}}, limit: 1) {
+        id
+        goal
+        metric
+        progress
+        start_date
+        end_date
+        description
+        state
+        privacy_setting_id
+        archived
+    }
+}
+"""
+
+DELETE_READING_GOAL_MUTATION = """
+mutation DeleteReadingGoal($id: Int!) {
+    delete_goal(id: $id) {
+        id
+        errors
     }
 }
 """
@@ -87,6 +114,7 @@ mutation UpdateReadingGoal($id: Int!, $object: GoalInput!) {
             end_date
             state
             privacy_setting_id
+            archived
         }
     }
 }
@@ -104,6 +132,7 @@ def _format_reading_goal(goal: dict[str, Any]) -> dict[str, Any]:
         "end_date": goal.get("end_date"),
         "state": goal.get("state"),
         "privacy_setting_id": goal.get("privacy_setting_id"),
+        "archived": goal.get("archived", False),
     }
 
 
@@ -161,12 +190,23 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
         Required: ``goal`` (int), ``metric`` (str: books/pages), ``start_date`` (str),
         and ``end_date`` (str), both as ISO 8601 dates.
         Optional: ``description`` (str), ``privacy_setting_id`` (int).
+        With ``id`` (int), edits that goal instead — see ``_edit_reading_goal``.
 
     Returns
     -------
     list[TextContent]
         JSON object for the created or updated reading goal.
     """
+    if arguments.get("id") is not None:
+        return await _edit_reading_goal(arguments)
+    if arguments.get("archived") is not None:
+        return [
+            TextContent(
+                type="text",
+                text="Error: 'archived' needs the goal's id (from get_reading_goal).",
+            )
+        ]
+
     # --- 1. Validate required arguments
     for required in ("goal", "metric", "start_date", "end_date"):
         if required not in arguments:
@@ -253,6 +293,129 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
     return [TextContent(type="text", text=json.dumps(_format_reading_goal(raw_goal), indent=2))]
 
 
+async def _find_own_goal(goal_id: Any) -> dict[str, Any] | str:
+    """Your goal with ``goal_id`` (any archived state), or an error message."""
+    try:
+        goal_id = _require_int(goal_id, "id")
+    except ValueError as exc:
+        return f"Error: {exc}"
+    user = await get_current_user()
+    found = await execute(GET_OWN_GOAL_QUERY, {"id": goal_id, "user_id": user["id"]})
+    goals = found["data"]["goals"]
+    if not goals:
+        return "Error: no reading goal of yours with that id."
+    return goals[0]
+
+
+async def _edit_reading_goal(arguments: dict[str, Any]) -> list[TextContent]:
+    """Edit your goal by ``id``: only the fields passed change; ``archived`` hides/restores it.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Required: ``id`` (int). At least one of ``goal``, ``metric``, ``start_date``,
+        ``end_date``, ``description``, ``privacy_setting_id``, ``archived`` (bool).
+
+    Returns
+    -------
+    list[TextContent]
+        JSON object for the updated reading goal.
+    """
+    editable = (
+        "goal",
+        "metric",
+        "start_date",
+        "end_date",
+        "description",
+        "privacy_setting_id",
+        "archived",
+    )
+    if all(arguments.get(key) is None for key in editable):
+        return [
+            TextContent(
+                type="text",
+                text=f"Error: provide at least one of {', '.join(repr(k) for k in editable)}.",
+            )
+        ]
+
+    current = await _find_own_goal(arguments["id"])
+    if isinstance(current, str):
+        return [TextContent(type="text", text=current)]
+
+    def pick(key: str) -> Any:
+        return arguments[key] if arguments.get(key) is not None else current.get(key)
+
+    try:
+        goal = _require_int(pick("goal"), "goal")
+        if goal <= 0:
+            raise ValueError("'goal' must be greater than 0")
+        metric = _require_metric(pick("metric"))
+        start_date = _require_iso_date(pick("start_date"), "start_date")
+        end_date = _require_iso_date(pick("end_date"), "end_date")
+        if end_date < start_date:
+            raise ValueError("'end_date' must be on or after 'start_date'")
+        archived = pick("archived")
+        if not isinstance(archived, bool):
+            raise ValueError("'archived' must be true or false")
+        description = pick("description") or f"{goal} {metric}s"
+        if not isinstance(description, str):
+            raise ValueError("'description' must be a string")
+    except ValueError as exc:
+        return [TextContent(type="text", text=f"Error: {exc}")]
+
+    goal_input: dict[str, Any] = {
+        "goal": goal,
+        "metric": metric,
+        "start_date": start_date,
+        "end_date": end_date,
+        "description": description,
+        "archived": archived,
+        # The goals table doesn't expose conditions, so they can't be read back and kept.
+        "conditions": {},
+    }
+    privacy = pick("privacy_setting_id")
+    if privacy is not None:
+        try:
+            goal_input["privacy_setting_id"] = _require_int(privacy, "privacy_setting_id")
+        except ValueError as exc:
+            return [TextContent(type="text", text=f"Error: {exc}")]
+
+    result = await execute(
+        UPDATE_READING_GOAL_MUTATION, {"id": current["id"], "object": goal_input}
+    )
+    payload = result["data"]["update_goal"]
+    if payload.get("errors"):
+        return [TextContent(type="text", text=f"Error: {'; '.join(payload['errors'])}")]
+    raw_goal = payload.get("goal") or {**current, **goal_input}
+    return [TextContent(type="text", text=json.dumps(_format_reading_goal(raw_goal), indent=2))]
+
+
+async def handle_delete_reading_goal(arguments: dict[str, Any]) -> list[TextContent]:
+    """Permanently delete one of your reading goals by ``id``.
+
+    Parameters
+    ----------
+    arguments : dict[str, Any]
+        Required: ``id`` (int).
+
+    Returns
+    -------
+    list[TextContent]
+        JSON confirmation ``{deleted: true, id}``.
+    """
+    if arguments.get("id") is None:
+        return [TextContent(type="text", text="Error: 'id' is required.")]
+    current = await _find_own_goal(arguments["id"])
+    if isinstance(current, str):
+        return [TextContent(type="text", text=current)]
+
+    result = await execute(DELETE_READING_GOAL_MUTATION, {"id": current["id"]})
+    payload = result["data"]["delete_goal"] or {}
+    if payload.get("errors"):
+        return [TextContent(type="text", text=f"Error: {'; '.join(payload['errors'])}")]
+    return [TextContent(type="text", text=json.dumps({"deleted": True, "id": current["id"]}))]
+
+
 # ── Tool definitions ──
 
 TOOLS: list[ToolSpec] = [
@@ -263,7 +426,8 @@ TOOLS: list[ToolSpec] = [
                 "Get your active (non-archived) reading goals, soonest end date first. "
                 "Read-only. Returns each goal's id, target, metric (book/page), progress, date "
                 "range, and state; 'goals' is an empty array if you have none. To create or "
-                "change a goal use set_reading_goal."
+                "change or archive a goal use set_reading_goal; to delete one use "
+                "delete_reading_goal."
             ),
             inputSchema={
                 "type": "object",
@@ -284,14 +448,22 @@ TOOLS: list[ToolSpec] = [
         Tool(
             name="set_reading_goal",
             description=(
-                "Create or update a reading goal. Upsert: if an active goal with the same metric, "
-                "start_date, and end_date exists, its target, description, and privacy are "
-                "overwritten; otherwise a new goal is created. Returns the goal with id, target, "
-                "progress, and state. Use get_reading_goal to see existing goals first."
+                "Create, update, or archive a reading goal. Without id: goal, metric, "
+                "start_date, and end_date are required; if an active goal with the same "
+                "metric and dates exists its target, description, and privacy are "
+                "overwritten, otherwise a new goal is created. With id (from "
+                "get_reading_goal): edit that goal, changing only the fields you pass; "
+                "archived=true hides it from get_reading_goal and archived=false brings it "
+                "back. Returns the goal with id, target, progress, state, and archived. To "
+                "remove a goal for good use delete_reading_goal."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Goal ID to edit (from get_reading_goal). Omit to create.",
+                    },
                     "goal": {
                         "type": "integer",
                         "description": "Target count to reach by end_date.",
@@ -317,12 +489,40 @@ TOOLS: list[ToolSpec] = [
                         "type": "integer",
                         "description": "Optional privacy setting ID.",
                     },
+                    "archived": {
+                        "type": "boolean",
+                        "description": "With id: true archives the goal, false restores it.",
+                    },
                 },
-                "required": ["goal", "metric", "start_date", "end_date"],
             },
             annotations=UPDATE,
         ),
         handle_set_reading_goal,
+        toolset="library",
+        scopes=("read:goals", "read:me", "write:goals"),
+    ),
+    ToolSpec(
+        Tool(
+            name="delete_reading_goal",
+            description=(
+                "Permanently delete one of your reading goals by id (from get_reading_goal). "
+                "Cannot be undone; to just hide a goal use set_reading_goal(id, "
+                "archived=true). Your books and reading progress are unaffected. Returns "
+                "{deleted: true, id}."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Reading goal ID to delete.",
+                    },
+                },
+                "required": ["id"],
+            },
+            annotations=DELETE,
+        ),
+        handle_delete_reading_goal,
         toolset="library",
         scopes=("read:goals", "read:me", "write:goals"),
     ),

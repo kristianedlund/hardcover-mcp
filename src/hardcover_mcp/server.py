@@ -25,7 +25,6 @@ from hardcover_mcp.tools import (
     prompts,
     publishers,
     series,
-    stats,
     user,
 )
 from hardcover_mcp.tools._registry import CORE, TOOLSETS, Handler, ToolSpec
@@ -42,7 +41,6 @@ _MODULES = (
     publishers,
     discovery,
     library,
-    stats,
     goals,
     lists,
     journal,

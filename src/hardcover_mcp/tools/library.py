@@ -424,7 +424,7 @@ def _format_user_review(ub: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-# ── Write: set_edition_owned ──
+# ── Write: edition ownership (used by set_user_book) ──
 
 EDITION_OWNED_MUTATION = """
 mutation EditionOwned($id: Int!) {
@@ -448,54 +448,23 @@ query CheckEditionOwned($user_id: Int!, $edition_id: Int!) {
 """
 
 
-async def handle_set_edition_owned(arguments: dict[str, Any]) -> list[TextContent]:
-    """Mark an edition as owned or not owned.
+async def _set_edition_owned(edition_id: int, owned: bool) -> bool:
+    """Make an edition's ownership match ``owned``; return whether anything changed.
 
-    Uses the ``edition_owned`` toggle mutation. Checks current state first
-    to avoid toggling the wrong way — the call is idempotent.
-
-    Parameters
-    ----------
-    arguments : dict[str, Any]
-        Required: ``edition_id`` (int).
-        Required: ``owned`` (bool) — ``true`` to own, ``false`` to un-own.
-
-    Returns
-    -------
-    list[TextContent]
-        JSON with ``edition_id``, ``owned``, and whether a toggle was needed.
+    ``edition_owned`` is a toggle, so the Owned list is checked first — repeating a call is a
+    no-op.
     """
-    edition_id = arguments.get("edition_id")
-    owned = arguments.get("owned")
-
-    if edition_id is None:
-        return [TextContent(type="text", text="Error: 'edition_id' is required.")]
-    if owned is None:
-        return [TextContent(type="text", text="Error: 'owned' (true/false) is required.")]
-
-    try:
-        edition_id_int = _require_int(edition_id, "edition_id")
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
-
-    # Check current ownership via the Owned list
     user = await get_current_user()
     existing = await execute(
         CHECK_EDITION_OWNED_QUERY,
-        {"user_id": user["id"], "edition_id": edition_id_int},
+        {"user_id": user["id"], "edition_id": edition_id},
     )
     lists = existing["data"]["lists"]
     currently_owned = bool(lists and lists[0]["list_books"])
-
-    if currently_owned == bool(owned):
-        # Already in desired state — no toggle needed
-        output = {"edition_id": edition_id_int, "owned": bool(owned), "toggled": False}
-        return [TextContent(type="text", text=json.dumps(output, indent=2))]
-
-    # Toggle ownership
-    await execute(EDITION_OWNED_MUTATION, {"id": edition_id_int})
-    output = {"edition_id": edition_id_int, "owned": bool(owned), "toggled": True}
-    return [TextContent(type="text", text=json.dumps(output, indent=2))]
+    if currently_owned == owned:
+        return False
+    await execute(EDITION_OWNED_MUTATION, {"id": edition_id})
+    return True
 
 
 # ── Write: set_user_book ──
@@ -590,7 +559,7 @@ def _text_to_slate(text: str) -> list[dict[str, Any]]:
 
 
 async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
-    """Set or update a book's status, rating, review, notes, privacy, and edition.
+    """Set or update a book's status, rating, review, notes, privacy, edition, and ownership.
 
     Parameters
     ----------
@@ -600,14 +569,16 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
         ``review_raw`` (str), ``review_has_spoilers`` (bool),
         ``reviewed_at`` (str), ``private_notes`` (str),
         ``privacy`` (str or int; 1/Public, 2/Followers, 3/Private),
-        ``edition_id`` (int).
+        ``edition_id`` (int), ``owned`` (bool) — ownership of ``edition_id``, or of the
+        entry's current edition when ``edition_id`` isn't given.
         Unspecified fields are preserved on existing entries.
 
     Returns
     -------
     list[TextContent]
         JSON with the resulting ``user_book_id``, ``status``, ``privacy``,
-        ``rating``, and ``edition_id``.
+        ``rating``, and ``edition_id``; plus ``owned`` and ``owned_changed`` when
+        ``owned`` was given.
     """
     book_id = arguments.get("book_id")
     if not book_id:
@@ -639,6 +610,9 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
     reviewed_at = arguments.get("reviewed_at")
     private_notes = arguments.get("private_notes")
     edition_id = arguments.get("edition_id")
+    owned = arguments.get("owned")
+    if owned is not None and not isinstance(owned, bool):
+        return [TextContent(type="text", text="Error: 'owned' must be true or false.")]
 
     # Convert plain-text review to Slate JSON if provided
     review_slate = _text_to_slate(review_raw) if review_raw is not None else None
@@ -661,6 +635,21 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
         },
     )
     existing_books = existing["data"]["user_books"]
+
+    # Ownership is per edition: check one is known before writing anything.
+    owned_edition_id = edition_id
+    if owned_edition_id is None and existing_books:
+        owned_edition_id = existing_books[0].get("edition_id")
+    if owned is not None and owned_edition_id is None:
+        return [
+            TextContent(
+                type="text",
+                text=(
+                    "Error: 'owned' needs an edition. Pass edition_id (list a book's editions "
+                    "with get_book(include_editions=true))."
+                ),
+            )
+        ]
 
     if existing_books:
         # Merge: preserve existing fields the caller didn't specify
@@ -733,6 +722,9 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
         "rating": ub.get("rating"),
         "edition_id": ub.get("edition_id"),
     }
+    if owned is not None:
+        output["owned"] = owned
+        output["owned_changed"] = await _set_edition_owned(owned_edition_id, owned)
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
@@ -1088,7 +1080,7 @@ TOOLS: list[ToolSpec] = [
                 "date_added, or reviewed. Returns user_book_id, book_id, title, authors, "
                 "status, rating, and read dates per book. E.g. sort='rating' for top-rated; "
                 "a date range answers 'what did I read in May?'. owned=true keeps only books "
-                "with an edition in your Owned list (set with set_edition_owned); owned books "
+                "with an edition in your Owned list (set with set_user_book); owned books "
                 "that aren't in your library are not listed. Filters combine, e.g. owned=true "
                 "with status='Want to Read'. For one book's full entry use get_user_book."
             ),
@@ -1192,12 +1184,16 @@ TOOLS: list[ToolSpec] = [
         Tool(
             name="set_user_book",
             description=(
-                "Add a book to your library or update your existing entry for it: status, "
-                "rating, review, privacy, private notes, and edition. Upsert: creates the entry "
-                "if the book isn't in your library yet, otherwise overwrites only the fields you "
-                "pass and preserves the rest. Returns user_book_id, status, privacy, rating, and "
-                "edition_id. Use set_user_book_read for start/finish dates and progress; use "
-                "set_list_book for custom lists; use delete_user_book to remove the book."
+                "Add a book to your library or update your entry for it: status, rating, "
+                "review, privacy, private notes, edition, and whether you own it. Upsert: "
+                "creates the entry if the book isn't in your library yet, otherwise overwrites "
+                "only the fields you pass. owned=true/false marks ownership of edition_id (or of "
+                "the entry's current edition if edition_id is omitted; errors if there is "
+                "none); passing edition_id also makes it the edition you're reading. Ownership "
+                "changes are idempotent. Returns user_book_id, status, privacy, rating, "
+                "edition_id, and owned/owned_changed when owned was given. Use "
+                "set_user_book_read for start/finish dates and progress, set_list_book for "
+                "custom lists, and delete_user_book to remove the book."
             ),
             inputSchema={
                 "type": "object",
@@ -1243,6 +1239,13 @@ TOOLS: list[ToolSpec] = [
                             "Edition ID (from get_book). Sets which edition you're reading."
                         ),
                     },
+                    "owned": {
+                        "type": "boolean",
+                        "description": (
+                            "true/false: you own (or no longer own) edition_id, or the "
+                            "current edition if edition_id is omitted."
+                        ),
+                    },
                 },
                 "required": ["book_id"],
             },
@@ -1250,38 +1253,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_set_user_book,
         toolset="library",
-        scopes=("read:library", "read:me", "write:library", "write:reviews"),
-    ),
-    ToolSpec(
-        Tool(
-            name="set_edition_owned",
-            description=(
-                "Mark a specific edition as owned (true) or not owned (false). Idempotent: if "
-                "the edition is already in the requested state nothing changes. Returns "
-                "edition_id, owned, and 'toggled' (whether a change was made). Ownership is "
-                "independent of reading status (set_user_book); list owned books with "
-                "get_user_library(owned=true). Get the edition_id from get_book (by ISBN-13 "
-                "or ASIN) first."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "edition_id": {
-                        "type": "integer",
-                        "description": "Edition ID (from get_book).",
-                    },
-                    "owned": {
-                        "type": "boolean",
-                        "description": "true to mark as owned, false to un-own.",
-                    },
-                },
-                "required": ["edition_id", "owned"],
-            },
-            annotations=UPDATE,
-        ),
-        handle_set_edition_owned,
-        toolset="library",
-        scopes=("read:lists", "read:me", "write:library"),
+        scopes=("read:library", "read:lists", "read:me", "write:library", "write:reviews"),
     ),
     ToolSpec(
         Tool(

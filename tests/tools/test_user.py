@@ -1,6 +1,9 @@
 """Unit tests for tools.user."""
 
-from hardcover_mcp.tools.user import _format_user, _render_user_query
+import json
+from unittest.mock import AsyncMock, patch
+
+from hardcover_mcp.tools.user import _format_user, _render_user_query, handle_get_user
 
 
 class TestFormatUser:
@@ -78,3 +81,72 @@ class TestRenderUserQuery:
         assert "$status_id: Int!" in q
         assert "status_id: {_eq: $status_id}" in q
         assert "user_books(" in q
+
+
+def _profile(user_id: int = 1, **extra) -> dict:
+    return {"data": {"users": [{"id": user_id, "username": "me", **extra}]}}
+
+
+class TestHandleGetUserSections:
+    async def _run(self, arguments: dict, *responses: dict) -> tuple[str, AsyncMock]:
+        mock_exec = AsyncMock(side_effect=list(responses))
+        with (
+            patch(
+                "hardcover_mcp.tools.user.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch("hardcover_mcp.tools.user.execute", new=mock_exec),
+            patch(
+                "hardcover_mcp.tools.user.fetch_reading_stats",
+                new=AsyncMock(return_value={"total_books": 3}),
+            ) as mock_stats,
+        ):
+            result = await handle_get_user(arguments)
+        self.mock_stats = mock_stats
+        return result[0].text, mock_exec
+
+    async def test_include_stats_for_yourself(self):
+        text, _ = await self._run({"include_stats": True, "stats_year": "2022"}, _profile(1))
+
+        assert json.loads(text)["stats"] == {"total_books": 3}
+        self.mock_stats.assert_awaited_once_with(1, 2022)
+
+    async def test_include_stats_for_someone_else_is_an_error(self):
+        text, _ = await self._run({"id": 99, "include_stats": True}, _profile(99))
+
+        assert "only available for your own profile" in text
+        self.mock_stats.assert_not_awaited()
+
+    async def test_rejects_non_integer_stats_year(self):
+        text, mock_exec = await self._run({"include_stats": True, "stats_year": "soon"})
+
+        assert "must be an integer" in text
+        mock_exec.assert_not_awaited()
+
+    async def test_follow_lists_are_flattened(self):
+        raw = _profile(
+            1,
+            followed_users=[
+                {"created_at": "2025-01-02", "followed_user": {"id": 5, "username": "a"}}
+            ],
+            followed_by_users=[{"created_at": "2025-03-04", "user": {"id": 6, "username": "b"}}],
+        )
+        text, mock_exec = await self._run(
+            {"include_following": True, "include_followers": True, "follow_limit": 500}, raw
+        )
+
+        data = json.loads(text)
+        assert data["following"] == [
+            {"id": 5, "username": "a", "name": None, "since": "2025-01-02"}
+        ]
+        assert data["followers"][0]["username"] == "b"
+        assert mock_exec.call_args[0][1]["follow_limit"] == 100
+        query = mock_exec.call_args[0][0]
+        assert "followed_users(" in query and "followed_by_users(" in query
+
+    async def test_no_sections_by_default(self):
+        text, mock_exec = await self._run({}, _profile(1))
+
+        data = json.loads(text)
+        assert not {"stats", "following", "followers", "library"} & data.keys()
+        assert "followed_users(" not in mock_exec.call_args[0][0]

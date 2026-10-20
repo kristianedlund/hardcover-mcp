@@ -5,28 +5,26 @@ from datetime import date
 
 import pytest
 
-from hardcover_mcp.client import execute
-
 pytestmark = pytest.mark.integration
-
-DELETE_GOAL_MUTATION = """
-mutation DeleteGoal($id: Int!) {
-    delete_goal(id: $id) {
-        __typename
-    }
-}
-"""
 
 
 class TestReadingGoalsLifecycle:
-    """Create a goal → verify it appears → delete it."""
+    """Create a goal → verify it appears → archive → restore → edit → delete."""
 
-    async def test_set_then_get_reading_goal(self):
-        from hardcover_mcp.tools.goals import handle_get_reading_goal, handle_set_reading_goal
+    async def test_goal_lifecycle(self):
+        from hardcover_mcp.tools.goals import (
+            handle_delete_reading_goal,
+            handle_get_reading_goal,
+            handle_set_reading_goal,
+        )
 
         current_year = date.today().year
         start_date = f"{current_year}-06-01"
         end_date = f"{current_year}-06-30"
+
+        async def active_goal_ids() -> set[int]:
+            result = await handle_get_reading_goal({"limit": 100})
+            return {goal["id"] for goal in json.loads(result[0].text)["goals"]}
 
         goal_id = None
         try:
@@ -44,13 +42,32 @@ class TestReadingGoalsLifecycle:
             assert saved["goal"] == 99
             assert saved["metric"] == "book"
 
-            # 2. Verify the goal appears in active goals
-            result = await handle_get_reading_goal({"limit": 25})
-            data = json.loads(result[0].text)
-            goals = data["goals"]
+            # 2. It appears in active goals
+            assert goal_id in await active_goal_ids()
 
-            assert any(goal["id"] == goal_id and goal["goal"] == 99 for goal in goals)
+            # 3. Archive by id: hidden from active goals, target unchanged
+            archived = json.loads(
+                (await handle_set_reading_goal({"id": goal_id, "archived": True}))[0].text
+            )
+            assert archived["archived"] is True
+            assert archived["goal"] == 99
+            assert goal_id not in await active_goal_ids()
+
+            # 4. Restore and edit the target in one call
+            restored = json.loads(
+                (await handle_set_reading_goal({"id": goal_id, "archived": False, "goal": 98}))[
+                    0
+                ].text
+            )
+            assert restored["archived"] is False
+            assert restored["goal"] == 98
+            assert goal_id in await active_goal_ids()
+
+            # 5. Delete
+            deleted = json.loads((await handle_delete_reading_goal({"id": goal_id}))[0].text)
+            assert deleted == {"deleted": True, "id": goal_id}
+            goal_id = None
         finally:
-            # 3. Always clean up the test goal
+            # Always clean up the test goal, even if a step above failed.
             if goal_id is not None:
-                await execute(DELETE_GOAL_MUTATION, {"id": goal_id})
+                await handle_delete_reading_goal({"id": goal_id})

@@ -22,8 +22,8 @@ import _api_audit as audit
 
 # Scopes declared for something capabilities.json can't see, because it only maps root fields.
 EXTRA_SCOPES = {
-    # include_library reads the nested users { user_books } relation.
-    ("get_user", "read:library"),
+    # include_following / include_followers read nested users { followed_users } relations.
+    ("get_user", "read:social"),
     # Reads the nested me { followed_users } relation.
     ("set_following", "read:social"),
     # write:reviews gates review *arguments* (review_slate, reviewed_at, ...), not an operation.

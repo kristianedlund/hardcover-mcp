@@ -33,9 +33,16 @@ _RENDERERS: dict[str, list[dict]] = {
     ],
     "_render_library_by_date_query": [{"with_owned": o} for o in (False, True)],
     "_render_user_query": [
-        {"by": by, "with_library": lib, "with_status": st}
+        {
+            "by": by,
+            "with_library": lib,
+            "with_status": st,
+            "with_following": fg,
+            "with_followers": fs,
+        }
         for by in ("id", "username")
         for lib, st in [(False, False), (True, False), (True, True)]
+        for fg, fs in itertools.product([False, True], repeat=2)
     ],
     "_render_vibes_query": [{"featured_only": f} for f in (False, True)],
 }

@@ -515,7 +515,7 @@ TOOLS: list[ToolSpec] = [
                 "'characters' array in book order (id, name, slug, biography, plus 'spoiler' and "
                 "'only_mentioned' flags; don't reveal spoiler characters unless asked), and "
                 "include_editions=true adds an 'editions' array, most-read first, up to "
-                "editions_limit. Edition ids work with set_edition_owned and set_user_book. Use "
+                "editions_limit. Edition ids work with set_user_book (edition_id, owned). Use "
                 "search_books first if you only have a title; for your own status/rating of the "
                 "book use get_user_book."
             ),

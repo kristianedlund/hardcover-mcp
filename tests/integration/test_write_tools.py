@@ -407,13 +407,13 @@ class TestPrivacyControls:
 
 
 class TestOwnedBooksLifecycle:
-    """Mark edition as owned → verify get_user_library(owned=true) → restore."""
+    """set_user_book(owned=true) → verify get_user_library(owned=true) → no-op repeat → restore."""
 
     async def test_full_lifecycle(self):
         from hardcover_mcp.tools.library import (
             handle_get_user_book,
             handle_get_user_library,
-            handle_set_edition_owned,
+            handle_set_user_book,
         )
 
         lib_result = await handle_get_user_library({"status": "Read", "limit": 1})
@@ -439,7 +439,9 @@ class TestOwnedBooksLifecycle:
 
         try:
             # 1. Mark as owned (idempotent — won't double-toggle)
-            result = await handle_set_edition_owned({"edition_id": edition_id, "owned": True})
+            result = await handle_set_user_book(
+                {"book_id": book_id, "edition_id": edition_id, "owned": True}
+            )
             output = json.loads(result[0].text)
             assert output["edition_id"] == edition_id
             assert output["owned"] is True
@@ -448,11 +450,13 @@ class TestOwnedBooksLifecycle:
             assert book_id in await owned_book_ids()
 
             # 3. Calling again with owned=True should be a no-op
-            result2 = await handle_set_edition_owned({"edition_id": edition_id, "owned": True})
+            result2 = await handle_set_user_book({"book_id": book_id, "owned": True})
             output2 = json.loads(result2[0].text)
-            assert output2["toggled"] is False
+            assert output2["owned_changed"] is False
 
         finally:
             # Restore original state
             if not initially_owned:
-                await handle_set_edition_owned({"edition_id": edition_id, "owned": False})
+                await handle_set_user_book(
+                    {"book_id": book_id, "edition_id": edition_id, "owned": False}
+                )
