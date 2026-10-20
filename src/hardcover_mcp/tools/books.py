@@ -11,8 +11,15 @@ from hardcover_mcp.tools._validation import _require_int
 
 
 def author_names(book: dict[str, Any]) -> list[str]:
-    """Flatten a book's contributions into a list of author names."""
-    return [c["author"]["name"] for c in (book.get("contributions") or []) if c.get("author")]
+    """Flatten a book's contributors into a list of author names.
+
+    Reads ``cached_contributors`` (a JSON field, so it adds no query depth) when the query
+    selected it, otherwise the ``contributions { author { name } }`` relation.
+    """
+    contributors = book.get("cached_contributors")
+    if contributors is None:
+        contributors = book.get("contributions") or []
+    return [c["author"]["name"] for c in contributors if (c.get("author") or {}).get("name")]
 
 
 SEARCH_QUERY = """
@@ -71,6 +78,55 @@ query GetBookById($id: Int!) {
 GET_BOOK_BY_SLUG_QUERY = GET_BOOK_BY_ID_QUERY.replace(
     "GetBookById($id: Int!)", "GetBookBySlug($slug: String!)"
 ).replace("{id: {_eq: $id}}", "{slug: {_eq: $slug}}")
+
+GET_EDITIONS_QUERY = """
+query GetBookEditions($book_id: Int!, $limit: Int!) {
+    editions(where: {book_id: {_eq: $book_id}}, order_by: {users_count: desc}, limit: $limit) {
+        id
+        title
+        edition_format
+        physical_format
+        pages
+        audio_seconds
+        release_date
+        isbn_13
+        asin
+        users_count
+        language {
+            language
+        }
+        publisher {
+            name
+        }
+        reading_format {
+            format
+        }
+    }
+}
+"""
+
+_DEFAULT_EDITIONS_LIMIT = 10
+_MAX_EDITIONS_LIMIT = 50
+
+
+def _format_edition_summary(edition: dict[str, Any]) -> dict[str, Any]:
+    """Flatten an editions row (nested language/publisher/format names) for get_book."""
+    return {
+        "id": edition.get("id"),
+        "title": edition.get("title"),
+        "edition_format": edition.get("edition_format"),
+        "physical_format": edition.get("physical_format"),
+        "reading_format": (edition.get("reading_format") or {}).get("format"),
+        "pages": edition.get("pages"),
+        "audio_seconds": edition.get("audio_seconds"),
+        "release_date": edition.get("release_date"),
+        "isbn_13": edition.get("isbn_13"),
+        "asin": edition.get("asin"),
+        "language": (edition.get("language") or {}).get("language"),
+        "publisher": (edition.get("publisher") or {}).get("name"),
+        "users_count": edition.get("users_count"),
+    }
+
 
 GET_CHARACTERS_QUERY = """
 query GetCharacters($book_id: bigint!) {
@@ -269,13 +325,15 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
     ----------
     arguments : dict[str, Any]
         Tool arguments. Provide ``id`` (int) or ``slug`` (str).
-        Optional: ``include_characters`` (bool, default false).
+        Optional: ``include_characters`` (bool, default false),
+        ``include_editions`` (bool, default false), ``editions_limit``
+        (int, default 10, max 50).
 
     Returns
     -------
     list[TextContent]
-        JSON with book details including title, authors, pages, and rating, plus a
-        ``characters`` array when requested.
+        JSON with book details including title, authors, pages, and rating, plus
+        ``characters`` and ``editions`` arrays when requested.
     """
     book_id = arguments.get("id")
     slug = arguments.get("slug")
@@ -284,6 +342,12 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
         return [TextContent(type="text", text="Error: provide either 'id' or 'slug'.")]
 
     try:
+        editions_limit = min(
+            _require_int(
+                arguments.get("editions_limit", _DEFAULT_EDITIONS_LIMIT), "editions_limit"
+            ),
+            _MAX_EDITIONS_LIMIT,
+        )
         if book_id:
             result = await execute(GET_BOOK_BY_ID_QUERY, {"id": _require_int(book_id, "id")})
         else:
@@ -303,6 +367,12 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
     if arguments.get("include_characters"):
         chars = await execute(GET_CHARACTERS_QUERY, {"book_id": book["id"]})
         book["characters"] = [_format_character(bc) for bc in chars["data"]["book_characters"]]
+
+    if arguments.get("include_editions"):
+        editions = await execute(
+            GET_EDITIONS_QUERY, {"book_id": book["id"], "limit": editions_limit}
+        )
+        book["editions"] = [_format_edition_summary(e) for e in editions["data"]["editions"]]
 
     return [TextContent(type="text", text=json.dumps(book, indent=2))]
 
@@ -407,8 +477,11 @@ TOOLS: list[ToolSpec] = [
                 "id or slug, including title, authors, pages, and community rating. Read-only. "
                 "Set include_characters=true to add a 'characters' array in book order (id, "
                 "name, slug, biography, plus 'spoiler' and 'only_mentioned' flags; don't reveal "
-                "spoiler characters unless asked; empty if none are linked). Use search_books "
-                "first if you only "
+                "spoiler characters unless asked; empty if none are linked). Set "
+                "include_editions=true to add an 'editions' array, most-read first (id, format, "
+                "pages, audio length, release date, ISBN-13/ASIN, language, publisher), up to "
+                "editions_limit; use an edition id with get_edition, set_edition_owned, or "
+                "set_user_book. Use search_books first if you only "
                 "have a title. For a specific printing or ISBN use get_edition; for your own "
                 "status/rating of the book use get_user_book."
             ),
@@ -426,6 +499,16 @@ TOOLS: list[ToolSpec] = [
                     "include_characters": {
                         "type": "boolean",
                         "description": "Also return the book's characters (default false).",
+                    },
+                    "include_editions": {
+                        "type": "boolean",
+                        "description": "Also return the book's editions (default false).",
+                    },
+                    "editions_limit": {
+                        "type": "integer",
+                        "description": (
+                            "With include_editions: max editions to return (default 10, max 50)."
+                        ),
                     },
                 },
             },

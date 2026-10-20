@@ -430,11 +430,7 @@ query GetOwnedBooks($user_id: Int!, $limit: Int!, $offset: Int!) {
             book {
                 title
                 slug
-                contributions {
-                    author {
-                        name
-                    }
-                }
+                cached_contributors
             }
         }
         list_books_aggregate {
@@ -453,7 +449,7 @@ def _format_owned_book(lb: dict[str, Any]) -> dict[str, Any]:
     lb : dict[str, Any]
         Raw ``list_books`` entry from the Hardcover API. Expected to contain
         ``id``, ``edition_id``, ``book_id``, ``date_added``,
-        ``book`` (with ``title``, ``slug``, ``contributions``), and
+        ``book`` (with ``title``, ``slug``, ``cached_contributors``), and
         optionally ``edition``.
 
     Returns
@@ -1245,11 +1241,14 @@ TOOLS: list[ToolSpec] = [
         Tool(
             name="get_user_book",
             description=(
-                "Get your own library entry for one book (by book_id or slug). Read-only. "
+                "Get your own library entry for one book: pass book_id or slug (book_id wins "
+                "if both are given). Read-only. "
                 "Returns user_book_id, status, rating, privacy, review, private notes, chosen "
                 "edition, and every read entry (with their ids, needed by "
                 "set_user_book_read/delete_user_book_read). Returns 'Book not in your "
-                "library' if you haven't added it. To browse many books use get_user_library."
+                "library' if you haven't added it. This is your relationship to the book; for "
+                "the book itself (description, pages, community rating) use get_book, and to "
+                "browse many of your books use get_user_library."
             ),
             inputSchema={
                 "type": "object",

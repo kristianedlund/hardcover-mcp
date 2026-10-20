@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 from hardcover_mcp.tools.books import (
     _format_character,
     _format_search_hit,
+    author_names,
     handle_get_book,
     handle_search_books,
 )
@@ -309,3 +310,83 @@ class TestHandleGetBookIncludeCharacters:
         data = json.loads((await handle_get_book({"id": 123, "include_characters": True}))[0].text)
 
         assert data["characters"] == []
+
+
+class TestAuthorNames:
+    def test_reads_contributions_relation(self):
+        book = {"contributions": [{"author": {"name": "A"}}, {"author": None}, {}]}
+        assert author_names(book) == ["A"]
+
+    def test_prefers_cached_contributors(self):
+        book = {
+            "cached_contributors": [
+                {"author": {"id": 1, "name": "Neil Gaiman"}, "contribution": "Author"},
+                {"author": {"id": 2, "name": "Terry Pratchett"}, "contribution": "Author"},
+            ],
+            "contributions": [{"author": {"name": "ignored"}}],
+        }
+        assert author_names(book) == ["Neil Gaiman", "Terry Pratchett"]
+
+    def test_empty_cached_contributors_is_empty(self):
+        assert author_names({"cached_contributors": []}) == []
+
+    def test_no_contributors(self):
+        assert author_names({}) == []
+
+
+def _editions() -> dict:
+    return {
+        "data": {
+            "editions": [
+                {
+                    "id": 7,
+                    "title": "T",
+                    "edition_format": "Hardcover",
+                    "pages": 400,
+                    "isbn_13": "9780000000000",
+                    "users_count": 50,
+                    "language": {"language": "English"},
+                    "publisher": {"name": "Pub"},
+                    "reading_format": {"format": "Read"},
+                },
+                {"id": 8, "language": None, "publisher": None, "reading_format": None},
+            ]
+        }
+    }
+
+
+class TestHandleGetBookIncludeEditions:
+    @patch("hardcover_mcp.tools.books.execute", new_callable=AsyncMock)
+    async def test_omits_editions_by_default(self, mock_execute):
+        mock_execute.return_value = _book()
+
+        data = json.loads((await handle_get_book({"id": 123}))[0].text)
+
+        assert "editions" not in data
+        assert mock_execute.call_count == 1
+
+    @patch("hardcover_mcp.tools.books.execute", new_callable=AsyncMock)
+    async def test_includes_flattened_editions(self, mock_execute):
+        mock_execute.side_effect = [_book(), _editions()]
+
+        data = json.loads((await handle_get_book({"id": 123, "include_editions": True}))[0].text)
+
+        first, second = data["editions"]
+        assert first["language"] == "English"
+        assert first["publisher"] == "Pub"
+        assert first["reading_format"] == "Read"
+        assert second["language"] is None
+        assert mock_execute.call_args_list[1][0][1] == {"book_id": 123, "limit": 10}
+
+    @patch("hardcover_mcp.tools.books.execute", new_callable=AsyncMock)
+    async def test_editions_limit_is_capped(self, mock_execute):
+        mock_execute.side_effect = [_book(), {"data": {"editions": []}}]
+
+        await handle_get_book({"id": 123, "include_editions": True, "editions_limit": 500})
+
+        assert mock_execute.call_args_list[1][0][1]["limit"] == 50
+
+    async def test_rejects_non_integer_editions_limit(self):
+        result = await handle_get_book({"id": 123, "editions_limit": "lots"})
+
+        assert "must be an integer" in result[0].text

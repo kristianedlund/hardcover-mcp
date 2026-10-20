@@ -138,7 +138,7 @@ Optional environment variables, set in the same `env` block as your token:
 | Toolset | What it covers |
 |---------|----------------|
 | `core` | Always loaded: `search_books`, `get_user` |
-| `catalog` | Books (with characters), editions, authors, series, publishers, trending, vibes |
+| `catalog` | Books (with characters and editions), editions, authors, series, publishers, trending, vibes |
 | `library` | Your library, reading dates and progress, ownership, reviews, stats, goals |
 | `lists` | Viewing and managing your lists |
 | `journal` | Reading journal notes and quotes |
@@ -172,7 +172,7 @@ account and are hidden in read-only mode.
 
 | What you can do | Tool |
 |-----------------|------|
-| Look up a book by ID or slug, optionally with its characters | `get_book` |
+| Look up a book by ID or slug, optionally with its characters and editions | `get_book` |
 | Look up a specific edition by ISBN or ASIN | `get_edition` |
 | Browse an author's catalogue | `get_author` |
 | Explore a series in reading order | `get_series` |
