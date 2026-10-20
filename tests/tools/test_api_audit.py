@@ -32,13 +32,11 @@ EXTRA_SCOPES = {
 
 # Hardcover's roadmap limits query depth to 3. Its docs explorer (config "matches API limit")
 # counts fields inside the root object as level 0, which is depth 5 in ``audit.max_depth``
-# (where the root fields are 1). Not enforced yet; these known offenders are tracked for
-# flattening and must be removed from this set once fixed.
+# (where the root fields are 1). Not enforced yet. Author names come from the
+# ``cached_contributors`` JSON field where a relation chain would go too deep. Add a query
+# here only as a tracked exception, and remove it once flattened.
 DEPTH_LIMIT = 5
-KNOWN_TOO_DEEP = {
-    "hardcover_mcp.tools.library.GET_OWNED_BOOKS_QUERY",
-    "hardcover_mcp.tools.lists.GET_LIST_BY_ID_QUERY",
-}
+KNOWN_TOO_DEEP: set[str] = set()
 
 GRANTING = audit.scopes_granting()
 SPECS = {spec.tool.name: spec for spec in server.TOOL_REGISTRY}

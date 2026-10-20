@@ -204,7 +204,9 @@ TOOLS: list[ToolSpec] = [
                 "List community book prompts (questions like 'best sci-fi of 2025'), most "
                 "answered first, paginated with limit/offset. Read-only. Set featured=true for "
                 "featured prompts only. Returns id, question, description, answers_count, and "
-                "books_count. Pass a prompt id to set_prompt_answer to submit a book."
+                "books_count. Use it to browse; to find a prompt by words in its question use "
+                "search_books(query_type='Prompt'). Pass a prompt id to set_prompt_answer to "
+                "submit a book."
             ),
             inputSchema={
                 "type": "object",

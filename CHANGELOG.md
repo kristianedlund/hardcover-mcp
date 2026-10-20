@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_book(include_editions=true)` lists the book's editions, most-read first (format, pages,
+  audio length, release date, ISBN-13/ASIN, language, publisher), up to `editions_limit`
+  (default 10, max 50). Use an edition id with `get_edition`, `set_edition_owned`, or
+  `set_user_book`.
+- A test checks every tool's declared scopes and query depth against Hardcover's published
+  `capabilities.json`, so scope gaps are caught without a live run.
 - README section **API key and scopes**: the Hardcover API scopes each toolset needs, with links
   that open Hardcover's new-key form with the right scopes pre-selected (one for everything, one
   read-only). Each tool now declares its scopes in code; the README section is generated from
@@ -34,6 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rate limiting follows the API's `RateLimit` and `Retry-After` headers. When the daily limit is
   used up, calls stop immediately with a message instead of retrying. 503 responses are retried
   like 429s.
+- `get_owned_books` and `get_list` (with an id) read author names from the book's
+  `cached_contributors` field instead of a three-level relation, keeping both queries within
+  Hardcover's planned query-depth limit. The output is unchanged.
+- Clearer `get_user_book` and `get_prompts` descriptions: which argument wins, and when to use
+  `get_book` or `search_books` instead.
 - The User-Agent now reports the installed version (it was stuck at `0.7.1`) and links to the
   project.
 

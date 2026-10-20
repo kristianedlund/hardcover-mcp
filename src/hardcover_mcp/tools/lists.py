@@ -52,11 +52,7 @@ query GetListById($id: Int!, $book_limit: Int!, $book_offset: Int!) {
                 id
                 title
                 slug
-                contributions {
-                    author {
-                        name
-                    }
-                }
+                cached_contributors
             }
         }
     }
