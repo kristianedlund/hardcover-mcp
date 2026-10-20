@@ -22,9 +22,16 @@ CAPABILITIES = Path(__file__).parent / "data" / "capabilities.json"
 # Query-rendering helpers and the argument combinations that produce every variant.
 _RENDERERS: dict[str, list[dict]] = {
     "_render_library_query": [
-        {"with_status": s, "order_field": "updated_at", "order_dir": "desc", "with_review": r}
-        for s, r in itertools.product([False, True], repeat=2)
+        {
+            "with_status": s,
+            "order_field": "updated_at",
+            "order_dir": "desc",
+            "with_review": r,
+            "with_owned": o,
+        }
+        for s, r, o in itertools.product([False, True], repeat=3)
     ],
+    "_render_library_by_date_query": [{"with_owned": o} for o in (False, True)],
     "_render_user_query": [
         {"by": by, "with_library": lib, "with_status": st}
         for by in ("id", "username")

@@ -172,8 +172,7 @@ account and are hidden in read-only mode.
 
 | What you can do | Tool |
 |-----------------|------|
-| Look up a book by ID or slug, optionally with its characters and editions | `get_book` |
-| Look up a specific edition by ISBN or ASIN | `get_edition` |
+| Look up a book by ID or slug (optionally with its characters and editions), or a specific edition by ISBN, ASIN, or edition ID | `get_book` |
 | Browse an author's catalogue | `get_author` |
 | Explore a series in reading order | `get_series` |
 | Look up a publisher and its editions | `get_publisher` |
@@ -184,9 +183,8 @@ account and are hidden in read-only mode.
 
 | What you can do | Tool |
 |-----------------|------|
-| Browse your library: filter by status, date range, or reviewed books; sort by rating/date | `get_user_library` |
+| Browse your library: filter by status, date range, reviewed or owned books; sort by rating/date | `get_user_library` |
 | Check your status, rating, review, and reads for one book | `get_user_book` |
-| List books you own, with edition details | `get_owned_books` |
 | Get reading statistics (totals, ratings, books read per year) | `get_reading_stats` |
 | Get your active reading goals and progress | `get_reading_goal` |
 | ✏️ Add a book or update its status, rating, review, notes, privacy, and edition | `set_user_book` |

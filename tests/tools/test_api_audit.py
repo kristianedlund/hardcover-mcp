@@ -28,6 +28,8 @@ EXTRA_SCOPES = {
     ("set_following", "read:social"),
     # write:reviews gates review *arguments* (review_slate, reviewed_at, ...), not an operation.
     ("set_user_book", "write:reviews"),
+    # owned=true filters through the nested book { list_books { list } } relation.
+    ("get_user_library", "read:lists"),
 }
 
 # Hardcover's roadmap limits query depth to 3. Its docs explorer (config "matches API limit")

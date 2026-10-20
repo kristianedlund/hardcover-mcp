@@ -69,6 +69,21 @@ class TestGetBook:
         data = json.loads(result[0].text)
         assert data["title"] == "Project Hail Mary"
 
+    async def test_edition_key_returns_that_edition(self):
+        from hardcover_mcp.tools.books import handle_get_book
+
+        book = json.loads((await handle_get_book({"slug": "project-hail-mary"}))[0].text)
+        editions = json.loads(
+            (await handle_get_book({"id": book["id"], "include_editions": True}))[0].text
+        )["editions"]
+        with_isbn = next(e for e in editions if e["isbn_13"])
+
+        by_id = json.loads((await handle_get_book({"edition_id": with_isbn["id"]}))[0].text)
+        by_isbn = json.loads((await handle_get_book({"isbn_13": with_isbn["isbn_13"]}))[0].text)
+
+        assert by_id["id"] == by_isbn["id"] == with_isbn["id"]
+        assert by_id["book"]["id"] == book["id"]
+
     async def test_include_characters(self):
         from hardcover_mcp.tools.books import handle_get_book
 
@@ -82,6 +97,20 @@ class TestGetBook:
 
 
 class TestGetUserLibrary:
+    async def test_date_range_and_owned_filters_run(self):
+        # Both build their own queries; the date range was broken against the live API
+        # (unsortable finished_at) without any test noticing.
+        from hardcover_mcp.tools.library import handle_get_user_library
+
+        for args in (
+            {"start_date": "2000-01-01", "end_date": "2100-12-31", "limit": 5},
+            {"owned": True, "limit": 5},
+            {"owned": True, "start_date": "2000-01-01", "end_date": "2100-12-31", "limit": 5},
+        ):
+            data = json.loads((await handle_get_user_library(args))[0].text)
+            assert isinstance(data["books"], list), args
+            assert data["total"] >= data["returned"], args
+
     async def test_returns_library_entries(self):
         from hardcover_mcp.tools.library import handle_get_user_library
 

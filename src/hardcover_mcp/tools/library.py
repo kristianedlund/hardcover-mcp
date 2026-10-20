@@ -1,4 +1,4 @@
-"""Tools: get_user_library, get_user_book, get_owned_books, set_user_book, reading log, delete."""
+"""Tools: get_user_library, get_user_book, set_user_book, ownership, reading log, delete."""
 
 import json
 from typing import Any
@@ -109,10 +109,19 @@ LIBRARY_SORT_FIELDS: dict[str, str] = {
 }
 
 
+# Ownership is per edition, kept in the user's "owned" list; filtering through that
+# relation keeps the owned filter to one query.
+_OWNED_FILTER = ', book: {list_books: {list: {slug: {_eq: "owned"}, user_id: {_eq: $user_id}}}}'
+
+
 def _render_library_query(
-    with_status: bool, order_field: str, order_dir: str, with_review: bool = False
+    with_status: bool,
+    order_field: str,
+    order_dir: str,
+    with_review: bool = False,
+    with_owned: bool = False,
 ) -> str:
-    """Render a GetUserLibrary query with optional status/review filters and sort.
+    """Render a GetUserLibrary query with optional status/review/owned filters and sort.
 
     ``order_field``/``order_dir`` come from validated maps (never raw user
     input), so they are interpolated directly — Hasura order_by keys are
@@ -120,6 +129,7 @@ def _render_library_query(
     """
     status_filter = ", status_id: {_eq: $status_id}" if with_status else ""
     status_filter += ", has_review: {_eq: true}" if with_review else ""
+    status_filter += _OWNED_FILTER if with_owned else ""
     status_var = ", $status_id: Int!" if with_status else ""
     fields = _USER_BOOK_FIELDS + (_REVIEW_FIELDS if with_review else "")
     return f"""
@@ -155,25 +165,33 @@ _USER_BOOK_FIELDS_WITH_READS = (
 """
 )
 
-GET_USER_LIBRARY_BY_DATE_RANGE_QUERY = f"""
+
+def _render_library_by_date_query(with_owned: bool = False) -> str:
+    """Render the finished-date-range library query, optionally limited to owned books.
+
+    Sorted by ``last_read_date`` (the entry's latest finish date): ``user_books`` can't be
+    ordered by a read's ``finished_at``.
+    """
+    owned_filter = _OWNED_FILTER if with_owned else ""
+    return f"""
 query GetUserLibraryByDateRange(
     $user_id: Int!, $limit: Int!, $offset: Int!, $start_date: date!, $end_date: date!
 ) {{
     user_books(
         where: {{
             user_id: {{_eq: $user_id}},
-            user_book_reads: {{finished_at: {{_gte: $start_date, _lte: $end_date}}}}
+            user_book_reads: {{finished_at: {{_gte: $start_date, _lte: $end_date}}}}{owned_filter}
         }},
         limit: $limit,
         offset: $offset,
-        order_by: {{finished_at: desc}}
+        order_by: {{last_read_date: desc}}
     ) {{
         {_USER_BOOK_FIELDS_WITH_READS}
     }}
     user_books_aggregate(
         where: {{
             user_id: {{_eq: $user_id}},
-            user_book_reads: {{finished_at: {{_gte: $start_date, _lte: $end_date}}}}
+            user_book_reads: {{finished_at: {{_gte: $start_date, _lte: $end_date}}}}{owned_filter}
         }}
     ) {{
         aggregate {{ count }}
@@ -267,6 +285,7 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
         ``limit`` (int, default 25, max 100), ``offset`` (int, default 0),
         ``has_review`` (bool) — only reviewed books, with review fields, sorted by
         review date unless ``sort`` is given. Not combinable with a date range.
+        ``owned`` (bool) — only library books with an edition in your Owned list.
 
     Returns
     -------
@@ -279,6 +298,7 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
     start_date = arguments.get("start_date")
     end_date = arguments.get("end_date")
     has_review = bool(arguments.get("has_review", False))
+    owned = bool(arguments.get("owned", False))
     sort = arguments.get("sort", "reviewed" if has_review else "updated")
     order = arguments.get("order", "desc")
 
@@ -310,7 +330,7 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
 
     if start_date is not None:
         result = await execute(
-            GET_USER_LIBRARY_BY_DATE_RANGE_QUERY,
+            _render_library_by_date_query(with_owned=owned),
             {
                 "user_id": user_id,
                 "limit": limit,
@@ -330,6 +350,7 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
         query = _render_library_query(
             with_status=status_id is not None,
             with_review=has_review,
+            with_owned=owned,
             order_field=order_field,
             order_dir=order_dir,
         )
@@ -401,117 +422,6 @@ def _format_user_review(ub: dict[str, Any]) -> dict[str, Any]:
         "review_has_spoilers": ub.get("review_has_spoilers"),
         "reviewed_at": ub.get("reviewed_at"),
     }
-
-
-# ── Read: get_owned_books ──
-
-GET_OWNED_BOOKS_QUERY = """
-query GetOwnedBooks($user_id: Int!, $limit: Int!, $offset: Int!) {
-    lists(where: {slug: {_eq: "owned"}, user_id: {_eq: $user_id}}, limit: 1) {
-        id
-        list_books(limit: $limit, offset: $offset, order_by: {date_added: desc}) {
-            id
-            edition_id
-            book_id
-            date_added
-            edition {
-                id
-                title
-                isbn_13
-                asin
-                pages
-                audio_seconds
-                edition_format
-                release_date
-                language {
-                    language
-                }
-            }
-            book {
-                title
-                slug
-                cached_contributors
-            }
-        }
-        list_books_aggregate {
-            aggregate { count }
-        }
-    }
-}
-"""
-
-
-def _format_owned_book(lb: dict[str, Any]) -> dict[str, Any]:
-    """Format a list_book record from the Owned list into a summary dict.
-
-    Parameters
-    ----------
-    lb : dict[str, Any]
-        Raw ``list_books`` entry from the Hardcover API. Expected to contain
-        ``id``, ``edition_id``, ``book_id``, ``date_added``,
-        ``book`` (with ``title``, ``slug``, ``cached_contributors``), and
-        optionally ``edition``.
-
-    Returns
-    -------
-    dict[str, Any]
-        Flat dict with ``book_id``, ``edition_id``, ``title``, ``slug``,
-        ``authors``, ``edition``, and ``date_added``.
-    """
-    book = lb.get("book", {})
-    authors = author_names(book)
-    return {
-        "book_id": lb["book_id"],
-        "edition_id": lb.get("edition_id"),
-        "title": book.get("title"),
-        "slug": book.get("slug"),
-        "authors": authors,
-        "edition": lb.get("edition"),
-        "date_added": lb.get("date_added"),
-    }
-
-
-async def handle_get_owned_books(arguments: dict[str, Any]) -> list[TextContent]:
-    """Fetch all books the authenticated user has marked as owned.
-
-    Ownership is stored in the user's "Owned" list, managed via the
-    ``edition_owned`` toggle mutation.
-
-    Parameters
-    ----------
-    arguments : dict[str, Any]
-        Optional: ``page`` (int, default 1), ``per_page`` (int, default 20, max 100).
-
-    Returns
-    -------
-    list[TextContent]
-        JSON with ``total`` count, ``returned``, ``offset``, and ``books`` list.
-        Each book includes title, authors, and edition details.
-    """
-    user = await get_current_user()
-    user_id = user["id"]
-
-    per_page = min(arguments.get("per_page", 20), 100)
-    page = max(arguments.get("page", 1), 1)
-    offset = (page - 1) * per_page
-
-    result = await execute(
-        GET_OWNED_BOOKS_QUERY,
-        {"user_id": user_id, "limit": per_page, "offset": offset},
-    )
-
-    lists = result["data"]["lists"]
-    if not lists:
-        output = {"total": 0, "returned": 0, "offset": offset, "books": []}
-        return [TextContent(type="text", text=json.dumps(output, indent=2))]
-
-    owned_list = lists[0]
-    total = owned_list["list_books_aggregate"]["aggregate"]["count"]
-    list_books = owned_list["list_books"]
-    formatted = [_format_owned_book(lb) for lb in list_books]
-
-    output = {"total": total, "returned": len(formatted), "offset": offset, "books": formatted}
-    return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
 # ── Write: set_edition_owned ──
@@ -1177,8 +1087,10 @@ TOOLS: list[ToolSpec] = [
                 "flag, and review date; newest review first). Sort by updated, rating, "
                 "date_added, or reviewed. Returns user_book_id, book_id, title, authors, "
                 "status, rating, and read dates per book. E.g. sort='rating' for top-rated; "
-                "a date range answers 'what did I read in May?'. For one book's full entry "
-                "use get_user_book; for owned copies use get_owned_books."
+                "a date range answers 'what did I read in May?'. owned=true keeps only books "
+                "with an edition in your Owned list (set with set_edition_owned); owned books "
+                "that aren't in your library are not listed. Filters combine, e.g. owned=true "
+                "with status='Want to Read'. For one book's full entry use get_user_book."
             ),
             inputSchema={
                 "type": "object",
@@ -1221,6 +1133,13 @@ TOOLS: list[ToolSpec] = [
                             "Can't be combined with start_date/end_date."
                         ),
                     },
+                    "owned": {
+                        "type": "boolean",
+                        "description": (
+                            "Only books with an edition in your Owned list. Combines with the "
+                            "other filters."
+                        ),
+                    },
                     "limit": {
                         "type": "integer",
                         "description": "Max books to return (default 25, max 100).",
@@ -1235,7 +1154,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_user_library,
         toolset="library",
-        scopes=("read:library", "read:me"),
+        scopes=("read:library", "read:lists", "read:me"),
     ),
     ToolSpec(
         Tool(
@@ -1268,35 +1187,6 @@ TOOLS: list[ToolSpec] = [
         handle_get_user_book,
         toolset="library",
         scopes=("read:catalog", "read:library", "read:me"),
-    ),
-    ToolSpec(
-        Tool(
-            name="get_owned_books",
-            description=(
-                "List the editions you have marked as owned (your physical/digital copies), "
-                "newest first, paginated with page/per_page. Read-only. Returns total count and, "
-                "per book, title, authors, and edition details. Ownership is separate from "
-                "reading status: use get_user_library for your reading shelves, and "
-                "set_edition_owned to change ownership."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "page": {
-                        "type": "integer",
-                        "description": "Page number (default 1).",
-                    },
-                    "per_page": {
-                        "type": "integer",
-                        "description": "Results per page (default 20, max 100).",
-                    },
-                },
-            },
-            annotations=READ,
-        ),
-        handle_get_owned_books,
-        toolset="library",
-        scopes=("read:lists", "read:me"),
     ),
     ToolSpec(
         Tool(
@@ -1350,7 +1240,7 @@ TOOLS: list[ToolSpec] = [
                     "edition_id": {
                         "type": "integer",
                         "description": (
-                            "Edition ID (from get_edition). Sets which edition you're reading."
+                            "Edition ID (from get_book). Sets which edition you're reading."
                         ),
                     },
                 },
@@ -1369,15 +1259,16 @@ TOOLS: list[ToolSpec] = [
                 "Mark a specific edition as owned (true) or not owned (false). Idempotent: if "
                 "the edition is already in the requested state nothing changes. Returns "
                 "edition_id, owned, and 'toggled' (whether a change was made). Ownership is "
-                "independent of reading status (set_user_book). Get the edition_id from "
-                "get_edition (by ISBN-13 or ASIN) first."
+                "independent of reading status (set_user_book); list owned books with "
+                "get_user_library(owned=true). Get the edition_id from get_book (by ISBN-13 "
+                "or ASIN) first."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "edition_id": {
                         "type": "integer",
-                        "description": "Edition ID (from get_edition).",
+                        "description": "Edition ID (from get_book).",
                     },
                     "owned": {
                         "type": "boolean",

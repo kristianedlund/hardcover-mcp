@@ -35,7 +35,6 @@ def test_expected_tools_registered():
         "get_user",
         # catalog
         "get_book",
-        "get_edition",
         "get_author",
         "get_series",
         "get_publisher",
@@ -44,7 +43,6 @@ def test_expected_tools_registered():
         # library
         "get_user_library",
         "get_user_book",
-        "get_owned_books",
         "get_reading_stats",
         "set_user_book",
         "set_edition_owned",

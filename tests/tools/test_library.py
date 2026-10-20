@@ -7,7 +7,6 @@ import pytest
 
 from hardcover_mcp.tools.library import (
     _build_read_input,
-    _format_owned_book,
     _format_user_book,
     _format_user_book_detail,
     _format_user_review,
@@ -15,7 +14,6 @@ from hardcover_mcp.tools.library import (
     _resolve_privacy_id,
     _resolve_status_id,
     _text_to_slate,
-    handle_get_owned_books,
     handle_get_user_library,
     handle_set_edition_owned,
     handle_set_user_book,
@@ -974,204 +972,6 @@ class TestHandleSetUserBookPrivacy:
         assert "secret" in result[0].text
 
 
-class TestFormatOwnedBook:
-    """Verify that _format_owned_book produces the correct shape."""
-
-    def _make_lb(self, **extra: object) -> dict:
-        base: dict = {
-            "id": 7,
-            "book_id": 55,
-            "edition_id": 200,
-            "date_added": "2025-03-01T00:00:00+00:00",
-            "edition": None,
-            "book": {
-                "title": "Owned Book",
-                "slug": "owned-book",
-                "contributions": [{"author": {"name": "Jane Doe"}}],
-            },
-        }
-        base.update(extra)
-        return base
-
-    def test_output_shape(self):
-        result = _format_owned_book(self._make_lb())
-        assert result["book_id"] == 55
-        assert result["edition_id"] == 200
-        assert result["title"] == "Owned Book"
-        assert result["slug"] == "owned-book"
-        assert result["authors"] == ["Jane Doe"]
-        assert result["edition"] is None
-        assert result["date_added"] == "2025-03-01T00:00:00+00:00"
-
-    def test_multiple_authors(self):
-        lb = self._make_lb(
-            book={
-                "title": "Co-written",
-                "slug": "co-written",
-                "contributions": [
-                    {"author": {"name": "Alice"}},
-                    {"author": {"name": "Bob"}},
-                ],
-            }
-        )
-        result = _format_owned_book(lb)
-        assert result["authors"] == ["Alice", "Bob"]
-
-    def test_edition_present(self):
-        edition = {
-            "id": 200,
-            "title": "Paperback",
-            "isbn_13": "9781234567890",
-            "asin": None,
-            "pages": 300,
-            "audio_seconds": None,
-            "edition_format": "Paperback",
-            "release_date": "2020-01-01",
-            "language": {"language": "English"},
-        }
-        lb = self._make_lb(edition=edition)
-        result = _format_owned_book(lb)
-        assert result["edition"] == edition
-
-
-class TestHandleGetOwnedBooks:
-    """Verify the handle_get_owned_books handler."""
-
-    def _mock_api_response(self, books: list[dict], total: int = 1) -> dict:
-        return {
-            "data": {
-                "lists": [
-                    {
-                        "id": 100,
-                        "list_books": books,
-                        "list_books_aggregate": {"aggregate": {"count": total}},
-                    }
-                ]
-            }
-        }
-
-    def _mock_empty_response(self) -> dict:
-        return {"data": {"lists": []}}
-
-    def _make_owned_record(self) -> dict:
-        return {
-            "id": 7,
-            "book_id": 55,
-            "edition_id": 200,
-            "date_added": "2025-03-01T00:00:00+00:00",
-            "edition": None,
-            "book": {
-                "title": "Owned Book",
-                "slug": "owned-book",
-                "contributions": [{"author": {"name": "Jane Doe"}}],
-            },
-        }
-
-    async def test_returns_expected_output_structure(self):
-        mock_user = {"id": 1}
-        mock_result = self._mock_api_response([self._make_owned_record()], total=1)
-
-        with (
-            patch(
-                "hardcover_mcp.tools.library.get_current_user",
-                new=AsyncMock(return_value=mock_user),
-            ),
-            patch(
-                "hardcover_mcp.tools.library.execute",
-                new=AsyncMock(return_value=mock_result),
-            ),
-        ):
-            result = await handle_get_owned_books({})
-
-        data = json.loads(result[0].text)
-        assert data["total"] == 1
-        assert data["returned"] == 1
-        assert data["offset"] == 0
-        book = data["books"][0]
-        assert book["book_id"] == 55
-        assert book["edition_id"] == 200
-        assert book["authors"] == ["Jane Doe"]
-
-    async def test_default_pagination_params(self):
-        mock_user = {"id": 1}
-        mock_result = self._mock_api_response([])
-
-        with (
-            patch(
-                "hardcover_mcp.tools.library.get_current_user",
-                new=AsyncMock(return_value=mock_user),
-            ),
-            patch(
-                "hardcover_mcp.tools.library.execute",
-                new=AsyncMock(return_value=mock_result),
-            ) as mock_exec,
-        ):
-            await handle_get_owned_books({})
-
-        call_vars = mock_exec.call_args[0][1]
-        assert call_vars["limit"] == 20
-        assert call_vars["offset"] == 0
-
-    async def test_custom_page_and_per_page(self):
-        mock_user = {"id": 1}
-        mock_result = self._mock_api_response([])
-
-        with (
-            patch(
-                "hardcover_mcp.tools.library.get_current_user",
-                new=AsyncMock(return_value=mock_user),
-            ),
-            patch(
-                "hardcover_mcp.tools.library.execute",
-                new=AsyncMock(return_value=mock_result),
-            ) as mock_exec,
-        ):
-            await handle_get_owned_books({"page": 3, "per_page": 10})
-
-        call_vars = mock_exec.call_args[0][1]
-        assert call_vars["limit"] == 10
-        assert call_vars["offset"] == 20  # (3-1) * 10
-
-    async def test_per_page_capped_at_100(self):
-        mock_user = {"id": 1}
-        mock_result = self._mock_api_response([])
-
-        with (
-            patch(
-                "hardcover_mcp.tools.library.get_current_user",
-                new=AsyncMock(return_value=mock_user),
-            ),
-            patch(
-                "hardcover_mcp.tools.library.execute",
-                new=AsyncMock(return_value=mock_result),
-            ) as mock_exec,
-        ):
-            await handle_get_owned_books({"per_page": 500})
-
-        call_vars = mock_exec.call_args[0][1]
-        assert call_vars["limit"] == 100
-
-    async def test_empty_books_list(self):
-        mock_user = {"id": 1}
-        mock_result = self._mock_empty_response()
-
-        with (
-            patch(
-                "hardcover_mcp.tools.library.get_current_user",
-                new=AsyncMock(return_value=mock_user),
-            ),
-            patch(
-                "hardcover_mcp.tools.library.execute",
-                new=AsyncMock(return_value=mock_result),
-            ),
-        ):
-            result = await handle_get_owned_books({})
-
-        data = json.loads(result[0].text)
-        assert data["total"] == 0
-        assert data["books"] == []
-
-
 class TestHandleSetEditionOwned:
     """Verify handle_set_edition_owned checks state and toggles correctly."""
 
@@ -1518,3 +1318,37 @@ class TestHandleSetUserBookRead:
 
         assert json.loads(result[0].text) == {"id": 8}
         assert mock_exec.call_args_list[1][0][1]["userBookId"] == 5
+
+
+class TestHandleGetUserLibraryOwned:
+    async def _query(self, arguments: dict) -> str:
+        empty = {"data": {"user_books": [], "user_books_aggregate": {"aggregate": {"count": 0}}}}
+        mock_exec = AsyncMock(return_value=empty)
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch("hardcover_mcp.tools.library.execute", new=mock_exec),
+        ):
+            await handle_get_user_library(arguments)
+        return mock_exec.call_args[0][0]
+
+    async def test_owned_filters_through_owned_list(self):
+        query = await self._query({"owned": True})
+        assert 'list: {slug: {_eq: "owned"}, user_id: {_eq: $user_id}}' in query
+
+    async def test_owned_combines_with_status(self):
+        query = await self._query({"owned": True, "status": "Want to Read"})
+        assert "status_id: {_eq: $status_id}" in query
+        assert 'slug: {_eq: "owned"}' in query
+
+    async def test_owned_combines_with_date_range(self):
+        query = await self._query(
+            {"owned": True, "start_date": "2025-01-01", "end_date": "2025-12-31"}
+        )
+        assert "finished_at: {_gte: $start_date" in query
+        assert 'slug: {_eq: "owned"}' in query
+
+    async def test_without_owned_no_owned_filter(self):
+        assert "owned" not in await self._query({})

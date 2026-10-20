@@ -7,8 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking: more tools merged
+
+| Removed | Use instead |
+|---------|-------------|
+| `get_edition` | `get_book` with `isbn_13`, `asin`, or `edition_id` (returns that edition, as before) |
+| `get_owned_books` | `get_user_library` with `owned: true` |
+
+`get_book` now takes either a book key (`id` or `slug`, returning the book) or exactly one
+edition key (returning that specific edition with a summary of its book, the same output as
+`get_edition`). `include_characters` and `include_editions` only apply to book keys. Update
+permission rules that name `get_edition`.
+
+`get_user_library(owned=true)` lists library books with an edition in your Owned list, and
+combines with the other filters (e.g. owned books you haven't read). Unlike
+`get_owned_books`, it doesn't list owned books that aren't in your library, and rows show
+your library entry rather than the owned edition's details. Update permission rules that
+name `get_owned_books`.
+
 ### Fixed
 
+- `get_user_library` with `start_date`/`end_date` always failed against the live API
+  ("field 'finished_at' not found in type: 'user_books_order_by'"). Results are now sorted
+  by the entry's latest finish date (`last_read_date`), newest first.
 - Editing a journal entry with `set_journal_entry(id=...)` failed with the newer, scoped API keys
   ("variable 'id' is declared as 'Int!', but used where 'bigint' is expected"). The lookup now
   uses the `bigint` type the API schema specifies; legacy keys had tolerated the mismatch.

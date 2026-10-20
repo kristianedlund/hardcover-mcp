@@ -8,6 +8,7 @@ from mcp.types import TextContent, Tool
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools.editions import handle_get_edition
 
 
 def author_names(book: dict[str, Any]) -> list[str]:
@@ -318,13 +319,23 @@ async def handle_search_books(arguments: dict[str, Any]) -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
+_EDITION_KEYS = ("isbn_13", "asin", "edition_id")
+_ONE_KEY_ERROR = (
+    "Error: provide one of 'id' or 'slug' (the book), or exactly one of 'isbn_13', "
+    "'asin', or 'edition_id' (a specific edition)."
+)
+
+
 async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
-    """Fetch detailed info for a single book by Hardcover ID or slug.
+    """Fetch a book by Hardcover ID or slug, or one specific edition by an edition key.
 
     Parameters
     ----------
     arguments : dict[str, Any]
-        Tool arguments. Provide ``id`` (int) or ``slug`` (str).
+        Tool arguments. Provide ``id`` (int) or ``slug`` (str) for the book (``id``
+        wins if both are given), or exactly one edition key — ``isbn_13`` (str),
+        ``asin`` (str), or ``edition_id`` (int) — for that edition (see
+        ``handle_get_edition``). Edition keys can't be combined with book keys.
         Optional: ``include_characters`` (bool, default false),
         ``include_editions`` (bool, default false), ``editions_limit``
         (int, default 10, max 50).
@@ -333,13 +344,36 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
     -------
     list[TextContent]
         JSON with book details including title, authors, pages, and rating, plus
-        ``characters`` and ``editions`` arrays when requested.
+        ``characters`` and ``editions`` arrays when requested; or, for an edition
+        key, the edition's details with a summary of its book.
     """
     book_id = arguments.get("id")
     slug = arguments.get("slug")
+    edition_keys = {
+        key: arguments[key]
+        for key in _EDITION_KEYS
+        if arguments.get(key) is not None and arguments.get(key) != ""
+    }
+
+    if edition_keys:
+        if book_id or slug or len(edition_keys) > 1:
+            return [TextContent(type="text", text=_ONE_KEY_ERROR)]
+        if arguments.get("include_characters") or arguments.get("include_editions"):
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        "Error: include_characters and include_editions need a book key "
+                        "('id' or 'slug'); the edition's result includes its book id."
+                    ),
+                )
+            ]
+        # The edition lookup calls its id key 'id'; here 'id' means the book.
+        key, value = next(iter(edition_keys.items()))
+        return await handle_get_edition({"id" if key == "edition_id" else key: value})
 
     if not book_id and not slug:
-        return [TextContent(type="text", text="Error: provide either 'id' or 'slug'.")]
+        return [TextContent(type="text", text=_ONE_KEY_ERROR)]
 
     try:
         editions_limit = min(
@@ -473,17 +507,17 @@ TOOLS: list[ToolSpec] = [
         Tool(
             name="get_book",
             description=(
-                "Get catalog details for one book (the work, across all editions) by Hardcover "
-                "id or slug, including title, authors, pages, and community rating. Read-only. "
-                "Set include_characters=true to add a 'characters' array in book order (id, "
-                "name, slug, biography, plus 'spoiler' and 'only_mentioned' flags; don't reveal "
-                "spoiler characters unless asked; empty if none are linked). Set "
-                "include_editions=true to add an 'editions' array, most-read first (id, format, "
-                "pages, audio length, release date, ISBN-13/ASIN, language, publisher), up to "
-                "editions_limit; use an edition id with get_edition, set_edition_owned, or "
-                "set_user_book. Use search_books first if you only "
-                "have a title. For a specific printing or ISBN use get_edition; for your own "
-                "status/rating of the book use get_user_book."
+                "Look up a book or one specific edition of it. Read-only. With id or slug: the "
+                "book (the work, across all editions) — title, authors, pages, community rating. "
+                "With exactly one of isbn_13, asin, or edition_id: that specific printing, ebook, "
+                "or audiobook — format, pages, audio length, release date, language, publisher, "
+                "and a summary of its book. For a book, include_characters=true adds a "
+                "'characters' array in book order (id, name, slug, biography, plus 'spoiler' and "
+                "'only_mentioned' flags; don't reveal spoiler characters unless asked), and "
+                "include_editions=true adds an 'editions' array, most-read first, up to "
+                "editions_limit. Edition ids work with set_edition_owned and set_user_book. Use "
+                "search_books first if you only have a title; for your own status/rating of the "
+                "book use get_user_book."
             ),
             inputSchema={
                 "type": "object",
@@ -496,13 +530,25 @@ TOOLS: list[ToolSpec] = [
                         "type": "string",
                         "description": "Hardcover book slug (e.g. 'project-hail-mary').",
                     },
+                    "isbn_13": {
+                        "type": "string",
+                        "description": "ISBN-13 of a specific edition (e.g. '9780593135204').",
+                    },
+                    "asin": {
+                        "type": "string",
+                        "description": "Amazon ASIN of a specific edition.",
+                    },
+                    "edition_id": {
+                        "type": "integer",
+                        "description": "Hardcover edition ID (e.g. from include_editions).",
+                    },
                     "include_characters": {
                         "type": "boolean",
-                        "description": "Also return the book's characters (default false).",
+                        "description": "With id/slug: also return its characters (default false).",
                     },
                     "include_editions": {
                         "type": "boolean",
-                        "description": "Also return the book's editions (default false).",
+                        "description": "With id/slug: also return its editions (default false).",
                     },
                     "editions_limit": {
                         "type": "integer",

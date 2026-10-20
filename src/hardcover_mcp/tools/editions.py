@@ -1,12 +1,11 @@
-"""Tools: get_edition."""
+"""Edition lookup by Hardcover ID, ISBN-13, or ASIN — used by get_book's edition keys."""
 
 import json
 from typing import Any
 
-from mcp.types import TextContent, Tool
+from mcp.types import TextContent
 
 from hardcover_mcp.client import execute
-from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 
 # ── Edition field fragment, shared across lookup queries ──
@@ -183,42 +182,3 @@ async def handle_get_edition(arguments: dict[str, Any]) -> list[TextContent]:
 
     output = _format_edition(editions[0])
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
-
-
-# ── Tool definitions ──
-
-TOOLS: list[ToolSpec] = [
-    ToolSpec(
-        Tool(
-            name="get_edition",
-            description=(
-                "Get one specific edition (a particular printing, ebook, or audiobook of a "
-                "book) by exactly one of Hardcover id, ISBN-13, or ASIN. Read-only. Returns "
-                "format, pages, audio length, release date, language, publisher, and the "
-                "parent book. Use this to get the edition_id needed by set_edition_owned, "
-                "set_user_book, or audiobook progress; for the work as a whole use get_book."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "id": {
-                        "type": "integer",
-                        "description": "Hardcover edition ID.",
-                    },
-                    "isbn_13": {
-                        "type": "string",
-                        "description": "ISBN-13 of the edition (e.g. '9780547928227').",
-                    },
-                    "asin": {
-                        "type": "string",
-                        "description": "Amazon ASIN of the edition.",
-                    },
-                },
-            },
-            annotations=READ,
-        ),
-        handle_get_edition,
-        toolset="catalog",
-        scopes=("read:catalog",),
-    ),
-]

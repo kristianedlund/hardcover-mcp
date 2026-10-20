@@ -17,7 +17,6 @@ from hardcover_mcp.tools import (
     authors,
     books,
     discovery,
-    editions,
     follow,
     goals,
     journal,
@@ -38,7 +37,6 @@ from hardcover_mcp.tools._registry import CORE, TOOLSETS, Handler, ToolSpec
 _MODULES = (
     user,
     books,
-    editions,
     authors,
     series,
     publishers,
