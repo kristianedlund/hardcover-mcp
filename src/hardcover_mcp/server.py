@@ -11,6 +11,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import CallToolResult, ListToolsResult, TextContent
 
+from hardcover_mcp import client
 from hardcover_mcp.client import HardcoverAPIError
 from hardcover_mcp.tools import (
     activity,
@@ -180,8 +181,11 @@ server = Server("hardcover", on_list_tools=list_tools, on_call_tool=call_tool)
 
 async def _run() -> None:
     """Start the MCP server over stdio."""
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+    try:
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(read_stream, write_stream, server.create_initialization_options())
+    finally:
+        await client.aclose()
 
 
 def main() -> None:

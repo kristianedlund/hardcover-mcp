@@ -38,6 +38,10 @@ _MAX_RETRIES = 5
 _RETRY_BACKOFF = 3.0  # seconds, doubles each retry
 _RETRYABLE_STATUSES = {429, 503}
 
+# One HTTP client per event loop, so requests reuse open connections (keep-alive).
+_client: httpx.AsyncClient | None = None
+_client_loop: asyncio.AbstractEventLoop | None = None
+
 
 class HardcoverAPIError(RuntimeError):
     """A failure reported by the Hardcover API, with a message meant for the user."""
@@ -156,6 +160,29 @@ def _auth_error(response: httpx.Response) -> HardcoverAPIError:
     return HardcoverAPIError(f"Hardcover denied access: {reason}.")
 
 
+def _http_client() -> httpx.AsyncClient:
+    """The shared HTTP client, created on first use.
+
+    A client is bound to the event loop it was first used on, so a different running loop
+    (e.g. a new one per test) gets a new client.
+    """
+    global _client, _client_loop
+    loop = asyncio.get_running_loop()
+    if _client is None or _client.is_closed or _client_loop is not loop:
+        _client = httpx.AsyncClient(timeout=30.0)
+        _client_loop = loop
+    return _client
+
+
+async def aclose() -> None:
+    """Close the shared HTTP client, if one is open. The next request opens a new one."""
+    global _client, _client_loop
+    if _client is not None and _client_loop is asyncio.get_running_loop():
+        await _client.aclose()
+    _client = None
+    _client_loop = None
+
+
 def _get_token() -> str:
     """Read the API token from the environment."""
     token = os.environ.get("HARDCOVER_API_TOKEN", "").strip()
@@ -211,8 +238,7 @@ async def execute(
     backoff = _RETRY_BACKOFF
 
     for attempt in range(_MAX_RETRIES + 1):
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(API_URL, json=payload, headers=headers)
+        response = await _http_client().post(API_URL, json=payload, headers=headers)
 
         _record_rate_limit(response.headers)
 
