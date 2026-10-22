@@ -213,6 +213,20 @@ query GetUserBook($user_id: Int!, $book_id: Int!) {{
     ) {{
         {_USER_BOOK_DETAIL_FIELDS}
     }}
+    # Your lists the book is on, minus the internal Owned list (ownership shows elsewhere).
+    list_books(
+        where: {{
+            book_id: {{_eq: $book_id}},
+            list: {{user_id: {{_eq: $user_id}}, slug: {{_neq: "owned"}}}}
+        }},
+        order_by: [{{list: {{name: asc}}}}, {{id: asc}}]
+    ) {{
+        position
+        list {{
+            id
+            name
+        }}
+    }}
 }}
 """
 
@@ -244,6 +258,20 @@ def _format_user_book(ub: dict[str, Any]) -> dict[str, Any]:
         result["finished_at"] = reads[0].get("finished_at")
         result["started_at"] = reads[0].get("started_at")
     return result
+
+
+def _list_memberships(list_books: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """``{id, name, position}`` per list, once per list even if several editions are on it."""
+    lists: dict[int, dict[str, Any]] = {}
+    for lb in list_books:
+        lst = lb.get("list") or {}
+        if lst.get("id") is not None and lst["id"] not in lists:
+            lists[lst["id"]] = {
+                "id": lst["id"],
+                "name": lst.get("name"),
+                "position": lb.get("position"),
+            }
+    return list(lists.values())
 
 
 def _format_user_book_detail(ub: dict[str, Any]) -> dict[str, Any]:
@@ -364,7 +392,8 @@ async def handle_get_user_book(arguments: dict[str, Any]) -> list[TextContent]:
     Returns
     -------
     list[TextContent]
-        JSON with status, rating, and reading history for the book.
+        JSON with status, rating, reading history, and ``lists`` (your lists the book is
+        on, as ``{id, name, position}``; the Owned list is left out).
     """
     book_id = arguments.get("book_id")
     slug = arguments.get("slug")
@@ -393,6 +422,7 @@ async def handle_get_user_book(arguments: dict[str, Any]) -> list[TextContent]:
         return [TextContent(type="text", text="Book not in your library.")]
 
     output = _format_user_book_detail(user_books[0])
+    output["lists"] = _list_memberships(result["data"].get("list_books") or [])
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
@@ -1081,7 +1111,8 @@ TOOLS: list[ToolSpec] = [
                 "if both are given). Read-only. "
                 "Returns user_book_id, status, rating, privacy, review, private notes, chosen "
                 "edition, and every read entry (with their ids, needed by "
-                "set_user_book_read/delete_user_book_read). Returns 'Book not in your "
+                "set_user_book_read/delete_user_book_read), plus the lists of yours it's on "
+                "(not Owned; change them with set_list_book). Returns 'Book not in your "
                 "library' if you haven't added it. This is your relationship to the book; for "
                 "the book itself (description, pages, community rating) use get_book, and to "
                 "browse many of your books use get_user_library."
@@ -1103,7 +1134,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_get_user_book,
         toolset="library",
-        scopes=("read:catalog", "read:library", "read:me"),
+        scopes=("read:catalog", "read:library", "read:lists", "read:me"),
     ),
     ToolSpec(
         Tool(

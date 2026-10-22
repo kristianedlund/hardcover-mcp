@@ -16,6 +16,7 @@ from hardcover_mcp.tools.library import (
     _resolve_status_id,
     _set_edition_owned,
     _text_to_slate,
+    handle_get_user_book,
     handle_get_user_library,
     handle_set_user_book,
     handle_set_user_book_read,
@@ -732,6 +733,62 @@ class TestHandleGetUserLibraryHasReview:
         assert data["total"] == 0
         assert data["returned"] == 0
         assert data["books"] == []
+
+
+_LIBRARY_ENTRY = {"id": 1, "book_id": 42, "status_id": 3, "book": {"title": "T"}}
+
+
+class TestHandleGetUserBookLists:
+    async def _run(self, list_books: list[dict]) -> tuple[dict, AsyncMock]:
+        mock_exec = AsyncMock(
+            return_value={"data": {"user_books": [_LIBRARY_ENTRY], "list_books": list_books}}
+        )
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 7}),
+            ),
+            patch("hardcover_mcp.tools.library.execute", new=mock_exec),
+        ):
+            result = await handle_get_user_book({"book_id": 42})
+        return json.loads(result[0].text), mock_exec
+
+    async def test_lists_the_book_is_on(self):
+        data, _ = await self._run(
+            [
+                {"position": 4, "list": {"id": 123, "name": "Biography and Business"}},
+                {"position": None, "list": {"id": 9, "name": "Favourites"}},
+            ]
+        )
+
+        assert data["lists"] == [
+            {"id": 123, "name": "Biography and Business", "position": 4},
+            {"id": 9, "name": "Favourites", "position": None},
+        ]
+
+    async def test_one_entry_per_list_when_several_editions_are_on_it(self):
+        data, _ = await self._run(
+            [
+                {"position": 2, "list": {"id": 5, "name": "Sci-fi"}},
+                {"position": 8, "list": {"id": 5, "name": "Sci-fi"}},
+            ]
+        )
+
+        assert data["lists"] == [{"id": 5, "name": "Sci-fi", "position": 2}]
+
+    async def test_on_no_lists_is_empty(self):
+        data, _ = await self._run([])
+
+        assert data["lists"] == []
+
+    async def test_query_is_one_request_scoped_to_your_lists_without_owned(self):
+        _, mock_exec = await self._run([])
+
+        mock_exec.assert_awaited_once()
+        query, variables = mock_exec.call_args[0]
+        assert "list_books(" in query
+        assert 'slug: {_neq: "owned"}' in query
+        assert variables == {"user_id": 7, "book_id": 42}
 
 
 class TestFormatUserBookDetailPrivacy:
