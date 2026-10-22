@@ -38,10 +38,13 @@ jobs:
             uv sync --group dev --resolution lowest-direct
           fi
 
+      # Lint once, with the locked ruff: older ruff versions format differently.
       - name: Lint with ruff
+        if: matrix.resolution == 'highest'
         run: uv run --no-sync ruff check .
 
       - name: Check formatting
+        if: matrix.resolution == 'highest'
         run: uv run --no-sync ruff format --check .
 
       - name: Run tests
