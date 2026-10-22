@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from hardcover_mcp.client import HardcoverAPIError
 from hardcover_mcp.tools._validation import ToolError
 from hardcover_mcp.tools.lists import (
     _build_list_input,
@@ -97,10 +98,17 @@ class TestHandleSetListBook:
             await handle_set_list_book({"list_id": 1, "book_id": 2})
         assert "'on_list'" in str(exc.value)
 
-    async def test_rejects_missing_ids(self):
+    async def test_rejects_missing_book_id(self):
         with pytest.raises(ToolError) as exc:
             await handle_set_list_book({"list_id": 1, "on_list": True})
-        assert "'list_id' and 'book_id'" in str(exc.value)
+        assert "'book_id'" in str(exc.value)
+
+    @pytest.mark.parametrize(
+        "lists", [{}, {"list_id": 1, "list_ids": [2]}], ids=["neither", "both"]
+    )
+    async def test_needs_exactly_one_of_list_id_and_list_ids(self, lists):
+        with pytest.raises(ToolError, match="either 'list_id' or 'list_ids'"):
+            await handle_set_list_book({"book_id": 2, "on_list": True, **lists})
 
     async def test_adds_when_absent(self):
         mock = AsyncMock(
@@ -197,3 +205,123 @@ class TestHandleGetList:
 
         assert json.loads(result[0].text)[0]["name"] == "A"
         assert mock.call_args[0][1] == {"user_id": 42, "limit": 5, "offset": 0}
+
+
+def _own(lists: list[int], entries: dict[int, int] | None = None) -> dict:
+    """FindOwnListBooks response: your lists among the ids, and the book's entries on them."""
+    list_books = [{"id": lb_id, "list_id": lid} for lid, lb_id in (entries or {}).items()]
+    return {"data": {"lists": [{"id": i} for i in lists], "list_books": list_books}}
+
+
+def _inserted(list_book_id: int) -> dict:
+    return {"data": {"insert_list_book": {"list_book": {"id": list_book_id}}}}
+
+
+class TestHandleSetListBookMany:
+    async def _run(self, arguments: dict, *responses) -> tuple[dict, AsyncMock]:
+        mock = AsyncMock(side_effect=list(responses))
+        self.mock = mock
+        with (
+            patch(
+                "hardcover_mcp.tools.lists.get_current_user",
+                new=AsyncMock(return_value={"id": 7}),
+            ),
+            patch("hardcover_mcp.tools.lists.execute", new=mock),
+        ):
+            result = await handle_set_list_book({"book_id": 42, **arguments})
+        return json.loads(result[0].text), mock
+
+    async def test_adds_where_missing_and_leaves_the_rest(self):
+        data, mock = await self._run(
+            {"list_ids": [1, 2, 3], "on_list": True},
+            _own([1, 2, 3], {2: 512}),
+            _inserted(900),
+            _inserted(901),
+        )
+
+        assert data == {
+            "book_id": 42,
+            "on_list": True,
+            "results": [
+                {"list_id": 1, "changed": True, "list_book_id": 900},
+                {"list_id": 2, "changed": False, "list_book_id": 512},
+                {"list_id": 3, "changed": True, "list_book_id": 901},
+            ],
+        }
+        assert mock.call_args_list[0][0][1] == {"list_ids": [1, 2, 3], "book_id": 42, "user_id": 7}
+        assert mock.call_args_list[1][0][1] == {"object": {"list_id": 1, "book_id": 42}}
+        assert mock.call_args_list[2][0][1] == {"object": {"list_id": 3, "book_id": 42}}
+
+    async def test_removes_where_present(self):
+        data, mock = await self._run(
+            {"list_ids": [1, 2], "on_list": False},
+            _own([1, 2], {1: 512}),
+            {"data": {"delete_list_book": {}}},
+        )
+
+        assert data["results"] == [
+            {"list_id": 1, "changed": True, "list_book_id": None},
+            {"list_id": 2, "changed": False, "list_book_id": None},
+        ]
+        assert mock.call_args_list[1][0][1] == {"id": 512}
+        assert mock.call_count == 2
+
+    async def test_list_that_is_not_yours_is_reported_and_not_written(self):
+        data, mock = await self._run(
+            {"list_ids": [1, 99], "on_list": True}, _own([1]), _inserted(900)
+        )
+
+        assert data["results"][1] == {
+            "list_id": 99,
+            "changed": False,
+            "error": "not one of your lists.",
+        }
+        assert mock.call_count == 2  # lookup + one insert, nothing for list 99
+
+    async def test_one_failing_list_does_not_stop_the_others(self):
+        data, _ = await self._run(
+            {"list_ids": [1, 2, 3], "on_list": True},
+            _own([1, 2, 3]),
+            _inserted(900),
+            HardcoverAPIError("GraphQL error: boom"),
+            _inserted(902),
+        )
+
+        assert [r["changed"] for r in data["results"]] == [True, False, True]
+        assert data["results"][1]["error"] == "GraphQL error: boom"
+        assert data["results"][2]["list_book_id"] == 902
+
+    async def test_duplicate_ids_are_handled_once(self):
+        data, _ = await self._run({"list_ids": [1, "1", 1], "on_list": True}, _own([1], {1: 512}))
+
+        assert data["results"] == [{"list_id": 1, "changed": False, "list_book_id": 512}]
+
+    async def test_single_list_id_keeps_the_flat_result(self):
+        data, _ = await self._run({"list_id": 1, "on_list": True}, _found(9))
+
+        assert data == {
+            "list_id": 1,
+            "book_id": 42,
+            "on_list": True,
+            "changed": False,
+            "list_book_id": 9,
+        }
+
+    @pytest.mark.parametrize(
+        ("list_ids", "message"),
+        [
+            ([], "non-empty array"),
+            (5, "non-empty array"),
+            (["x"], "'list_ids' must be an integer"),
+            (list(range(21)), "at most 20"),
+        ],
+    )
+    async def test_rejects_bad_list_ids_before_api_calls(self, list_ids, message):
+        with pytest.raises(ToolError, match=message):
+            await self._run({"list_ids": list_ids, "on_list": True})
+        self.mock.assert_not_awaited()
+
+    async def test_rejects_position_with_list_ids(self):
+        with pytest.raises(ToolError, match="'position' only works"):
+            await self._run({"list_ids": [1, 2], "on_list": True, "position": 3})
+        self.mock.assert_not_awaited()

@@ -7,33 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Performance
+### Breaking: privacy reported the same way everywhere
 
-- Requests reuse one HTTP connection, so tools that make several API calls are faster.
+| Tool | Before | Now |
+|------|--------|-----|
+| `set_user_book`, `get_user_book`, `get_user` | `Public` / `Followers` / `Private` | `public` / `followers` / `private` |
+| `get_list`, `set_list` | `public` / `followers_only` / `private` | `public` / `followers` / `private` |
 
-### Changed: one privacy vocabulary
-
-Every tool that sets privacy (`set_user_book`, `set_list`, `set_journal_entry`,
-`set_reading_goal`) takes a `privacy` argument with the same values: `public`, `followers`
-(or `followers_only`), or `private`, in any case, or `1`/`2`/`3`. Other values are an error
-listing the valid ones (before, `set_user_book` and `set_list` passed any number through).
-
-- `set_journal_entry` and `set_reading_goal` gain `privacy`. Their `privacy_setting_id`
-  still works but is deprecated; passing both with different values is an error.
-- **Output values changed:** privacy is reported as `public` / `followers` / `private`
-  everywhere. `set_user_book`, `get_user_book`, and `get_user` used to return `Public` /
-  `Followers` / `Private`; `get_list` and `set_list` used to return `followers_only`.
-  Journal entries and goals now include `privacy` next to `privacy_setting_id`. An
-  unrecognised id is reported as `unknown (<id>)`.
-
-### Added
-
-- `get_user_book` returns `lists`: your lists the book is on, as `{id, name, position}`
-  (the Owned list is left out, since ownership shows separately). Needs the `read:lists`
-  scope, which the `library` toolset already requested.
-- `get_book` returns `contributors`: everyone credited on the book as `{name, role}`
-  (e.g. `{"name": "Julia Whelan", "role": "Narrator"}`), so narrators, translators, and
-  illustrators are still available now that `authors` leaves them out.
+Journal entries and goals now include `privacy` next to `privacy_setting_id`. An
+unrecognised privacy id is reported as `unknown (<id>)`. Update anything that matches on the
+old values.
 
 ### Fixed
 
@@ -48,7 +31,6 @@ listing the valid ones (before, `set_user_book` and `set_list` passed any number
   search results, `get_book`, library rows, `get_user_book`, list books, journal entries,
   and trending/vibe books. A book whose contributors have no author role shows its first
   contributor.
-
 - `get_user_library` paging no longer repeats or skips books when several share the sort
   value (e.g. the same rating). Every sort now breaks ties by entry id. Books with no value
   for the sort field (e.g. unrated books under `sort="rating"`) now come last in both
@@ -56,6 +38,30 @@ listing the valid ones (before, `set_user_book` and `set_list` passed any number
 - Same tiebreaker for the other paginated reads: the finished-date-range library query,
   `get_reading_journal`, `get_activity_feed`, `get_list` (lists and their books), `get_vibes`,
   and `get_prompts`.
+
+### Added
+
+- `set_list_book` takes `list_ids` to put a book on (or take it off) up to 20 lists in one
+  call, with one result per list. A list that isn't yours, or whose change fails, gets an
+  `error` in its result while the others still change. Calls with a single `list_id` work
+  and return the same as before.
+- `get_user_book` returns `lists`: your lists the book is on, as `{id, name, position}`
+  (the Owned list is left out, since ownership shows separately). Needs the `read:lists`
+  scope, which the `library` toolset already requested.
+- `get_book` returns `contributors`: everyone credited on the book as `{name, role}`
+  (e.g. `{"name": "Julia Whelan", "role": "Narrator"}`), so narrators, translators, and
+  illustrators are still available now that `authors` leaves them out.
+- `set_journal_entry` and `set_reading_goal` take `privacy`, like the other write tools.
+  Their `privacy_setting_id` still works but is deprecated; passing both with different
+  values is an error.
+
+### Changed
+
+- Every tool that sets privacy (`set_user_book`, `set_list`, `set_journal_entry`,
+  `set_reading_goal`) accepts the same values: `public`, `followers` (or `followers_only`),
+  or `private`, in any case, or `1`/`2`/`3`. Other values are an error listing the valid
+  ones; before, `set_user_book` and `set_list` passed any number through.
+- Requests reuse one HTTP connection, so tools that make several API calls are faster.
 
 ## [0.9.0] - 2026-10-20
 

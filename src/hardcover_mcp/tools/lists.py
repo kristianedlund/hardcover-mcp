@@ -5,7 +5,7 @@ from typing import Any
 
 from mcp.types import TextContent, Tool, ToolAnnotations
 
-from hardcover_mcp.client import execute
+from hardcover_mcp.client import HardcoverAPIError, execute
 from hardcover_mcp.tools._registry import DELETE, READ, UPDATE, ToolSpec
 from hardcover_mcp.tools._validation import (
     PRIVACY_DESCRIPTION,
@@ -361,31 +361,59 @@ query FindListBook($list_id: Int!, $book_id: Int!) {
 """
 
 
+# For list_ids: which of the lists are yours, and the book's entries on them, in one request.
+FIND_OWN_LIST_BOOKS_QUERY = """
+query FindOwnListBooks($list_ids: [Int!], $book_id: Int!, $user_id: Int!) {
+    lists(where: {id: {_in: $list_ids}, user_id: {_eq: $user_id}}) {
+        id
+    }
+    list_books(where: {list_id: {_in: $list_ids}, book_id: {_eq: $book_id}}) {
+        id
+        list_id
+    }
+}
+"""
+
+# Keeps a many-list call well inside the per-minute rate limit.
+_MAX_LIST_IDS = 20
+
+
 async def handle_set_list_book(arguments: dict[str, Any]) -> list[TextContent]:
-    """Put a book on a list or take it off, so membership matches ``on_list``.
+    """Put a book on one or more lists or take it off, so membership matches ``on_list``.
 
     Checks current membership first, so repeating a call is a no-op.
 
     Parameters
     ----------
     arguments : dict[str, Any]
-        Required: ``list_id`` (int), ``book_id`` (int), ``on_list`` (bool).
-        Optional: ``position`` (int), used only when adding.
+        Required: ``book_id`` (int), ``on_list`` (bool), and either ``list_id`` (int) or
+        ``list_ids`` (list of int, up to 20). Optional: ``position`` (int), used only when
+        adding to a single ``list_id``.
 
     Returns
     -------
     list[TextContent]
-        JSON with ``list_id``, ``book_id``, ``on_list``, ``changed``, and
-        ``list_book_id`` (null once removed).
+        With ``list_id``: JSON with ``list_id``, ``book_id``, ``on_list``, ``changed``, and
+        ``list_book_id`` (null once removed). With ``list_ids``: ``book_id``, ``on_list``,
+        and ``results`` with one entry per list (see ``_set_on_lists``).
     """
     on_list = arguments.get("on_list")
     if not isinstance(on_list, bool):
         raise ToolError("'on_list' (true/false) is required.")
-    if not arguments.get("list_id") or not arguments.get("book_id"):
-        raise ToolError("'list_id' and 'book_id' are required.")
+    if not arguments.get("book_id"):
+        raise ToolError("'book_id' is required.")
+    has_one = arguments.get("list_id") is not None
+    has_many = arguments.get("list_ids") is not None
+    if has_one == has_many:
+        raise ToolError("provide either 'list_id' or 'list_ids'.")
+
+    book_id = _require_int(arguments["book_id"], "book_id")
+    if has_many:
+        if arguments.get("position") is not None:
+            raise ToolError("'position' only works with a single 'list_id'.")
+        return await _set_on_lists(arguments["list_ids"], book_id, on_list)
 
     list_id = _require_int(arguments["list_id"], "list_id")
-    book_id = _require_int(arguments["book_id"], "book_id")
     position = (
         _require_int(arguments["position"], "position")
         if arguments.get("position") is not None
@@ -411,6 +439,62 @@ async def handle_set_list_book(arguments: dict[str, Any]) -> list[TextContent]:
     else:
         output.update(changed=False, list_book_id=existing_id)
 
+    return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+
+async def _set_on_lists(raw_ids: Any, book_id: int, on_list: bool) -> list[TextContent]:
+    """Apply ``on_list`` for one book on each of several lists.
+
+    Each list is checked and changed on its own, so the call stays idempotent. A list that
+    isn't yours, or whose change the API rejects, gets an ``error`` in its entry and the
+    others still go ahead.
+
+    Returns
+    -------
+    list[TextContent]
+        JSON with ``book_id``, ``on_list``, and ``results``: per list, ``list_id`` and
+        ``changed``, plus ``list_book_id`` on success or ``error`` on failure.
+    """
+    if not isinstance(raw_ids, list) or not raw_ids:
+        raise ToolError("'list_ids' must be a non-empty array of list ids.")
+    list_ids = list(dict.fromkeys(_require_int(i, "list_ids") for i in raw_ids))
+    if len(list_ids) > _MAX_LIST_IDS:
+        raise ToolError(f"'list_ids' takes at most {_MAX_LIST_IDS} lists per call.")
+
+    user = await get_current_user()
+    found = await execute(
+        FIND_OWN_LIST_BOOKS_QUERY,
+        {"list_ids": list_ids, "book_id": book_id, "user_id": user["id"]},
+    )
+    own = {lst["id"] for lst in found["data"]["lists"]}
+    existing: dict[int, int] = {}
+    for lb in found["data"]["list_books"]:
+        existing.setdefault(lb["list_id"], lb["id"])
+
+    results: list[dict[str, Any]] = []
+    for list_id in list_ids:
+        entry: dict[str, Any] = {"list_id": list_id, "changed": False}
+        if list_id not in own:
+            entry["error"] = "not one of your lists."
+        elif on_list == (list_id in existing):
+            entry["list_book_id"] = existing.get(list_id)
+        else:
+            try:
+                if on_list:
+                    result = await execute(
+                        INSERT_LIST_BOOK_MUTATION,
+                        {"object": {"list_id": list_id, "book_id": book_id}},
+                    )
+                    lb = result["data"]["insert_list_book"].get("list_book") or {}
+                    entry.update(changed=True, list_book_id=lb.get("id"))
+                else:
+                    await execute(DELETE_LIST_BOOK_MUTATION, {"id": existing[list_id]})
+                    entry.update(changed=True, list_book_id=None)
+            except HardcoverAPIError as exc:
+                entry["error"] = str(exc)
+        results.append(entry)
+
+    output = {"book_id": book_id, "on_list": on_list, "results": results}
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
@@ -531,19 +615,27 @@ TOOLS: list[ToolSpec] = [
         Tool(
             name="set_list_book",
             description=(
-                "Put a book on one of your lists (on_list=true, optionally at a position) or "
-                "take it off (on_list=false). Idempotent: if the book is already in the "
-                "requested state nothing changes, and an existing entry's position is not "
-                "moved. Does not touch your library or reading status (use set_user_book). "
-                "Returns list_id, book_id, on_list, 'changed', and list_book_id. Find list ids "
-                "with get_list and book ids with search_books."
+                "Put a book on your lists (on_list=true) or take it off (on_list=false): one "
+                "list with list_id (optionally at a position), or up to 20 at once with "
+                "list_ids. Idempotent: lists already in the requested state don't change, and "
+                "an existing entry's position is not moved. Does not touch your library or "
+                "reading status (use set_user_book). With list_id returns list_id, book_id, "
+                "on_list, 'changed', and list_book_id; with list_ids returns one result per "
+                "list, and a list that isn't yours or fails gets an 'error' while the others "
+                "still change. Find list ids with get_list (or a book's current lists with "
+                "get_user_book) and book ids with search_books."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "list_id": {
                         "type": "integer",
-                        "description": "Hardcover list ID.",
+                        "description": "Hardcover list ID. Use this or list_ids.",
+                    },
+                    "list_ids": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Several list IDs (up to 20). Use this or list_id.",
                     },
                     "book_id": {
                         "type": "integer",
@@ -555,15 +647,18 @@ TOOLS: list[ToolSpec] = [
                     },
                     "position": {
                         "type": "integer",
-                        "description": "Position when adding (optional; ignored when removing).",
+                        "description": (
+                            "Position when adding to a single list_id (optional; ignored when "
+                            "removing)."
+                        ),
                     },
                 },
-                "required": ["list_id", "book_id", "on_list"],
+                "required": ["book_id", "on_list"],
             },
             annotations=UPDATE,
         ),
         handle_set_list_book,
         toolset="lists",
-        scopes=("read:lists", "write:lists"),
+        scopes=("read:lists", "read:me", "write:lists"),
     ),
 ]
