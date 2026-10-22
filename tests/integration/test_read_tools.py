@@ -231,6 +231,27 @@ class TestGetListOwn:
             assert "name" in lst
 
 
+class TestGetUserBookLists:
+    async def test_shows_a_list_the_book_is_on(self):
+        from hardcover_mcp.tools.library import handle_get_user_book
+        from hardcover_mcp.tools.lists import handle_get_list
+
+        lists = json.loads((await handle_get_list({"limit": 50}))[0].text)
+        for summary in lists:
+            if summary["slug"] == "owned" or not summary["books_count"]:
+                continue
+            detail = json.loads((await handle_get_list({"id": summary["id"]}))[0].text)
+            for book in detail["books"][:3]:
+                result = await handle_get_user_book({"book_id": book["book_id"]})
+                if result[0].text == "Book not in your library.":
+                    continue
+                entry = json.loads(result[0].text)
+                assert summary["id"] in [lst["id"] for lst in entry["lists"]]
+                assert all(lst["name"] != "Owned" for lst in entry["lists"])
+                return
+        pytest.skip("no listed book from your library to check")
+
+
 class TestGetSeries:
     async def test_get_series_by_slug(self):
         from hardcover_mcp.tools.series import handle_get_series

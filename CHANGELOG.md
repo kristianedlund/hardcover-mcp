@@ -28,6 +28,9 @@ listing the valid ones (before, `set_user_book` and `set_list` passed any number
 
 ### Added
 
+- `get_user_book` returns `lists`: your lists the book is on, as `{id, name, position}`
+  (the Owned list is left out, since ownership shows separately). Needs the `read:lists`
+  scope, which the `library` toolset already requested.
 - `get_book` returns `contributors`: everyone credited on the book as `{name, role}`
   (e.g. `{"name": "Julia Whelan", "role": "Narrator"}`), so narrators, translators, and
   illustrators are still available now that `authors` leaves them out.
