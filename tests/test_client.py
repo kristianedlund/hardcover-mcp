@@ -19,15 +19,14 @@ class _FakeAsyncClient:
 
     responses: list[httpx.Response] = []  # noqa: RUF012 - reset per test by the fixture
     captured_headers: list[dict] = []  # noqa: RUF012
+    instances: int = 0
 
     def __init__(self, *args, **kwargs):
-        pass
+        _FakeAsyncClient.instances += 1
+        self.is_closed = False
 
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        return False
+    async def aclose(self):
+        self.is_closed = True
 
     async def post(self, url, json=None, headers=None):
         _FakeAsyncClient.captured_headers.append(headers)
@@ -41,6 +40,8 @@ def sleeps(monkeypatch) -> list[float]:
     monkeypatch.setattr(client, "_blocked_until", 0.0)
     monkeypatch.setattr(client, "_daily_reset_at", None)
     monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClient)
+    monkeypatch.setattr(client, "_client", None)
+    monkeypatch.setattr(client, "_client_loop", None)
     monkeypatch.setenv("HARDCOVER_API_TOKEN", "test-token-not-real")
     recorded: list[float] = []
 
@@ -50,6 +51,7 @@ def sleeps(monkeypatch) -> list[float]:
     monkeypatch.setattr(client.asyncio, "sleep", fake_sleep)
     _FakeAsyncClient.responses = []
     _FakeAsyncClient.captured_headers = []
+    _FakeAsyncClient.instances = 0
     yield recorded
     client._request_timestamps.clear()
 
@@ -215,3 +217,44 @@ async def test_429_with_daily_quota_used_up_fails_fast():
 
     with pytest.raises(client.HardcoverAPIError, match="daily API limit"):
         await client.execute("query { me { id } }")
+
+
+# ── Connection reuse ──
+
+
+async def test_requests_share_one_http_client():
+    _FakeAsyncClient.responses = [_response(), _response(429, {}), _response()]
+
+    await client.execute("query { me { id } }")
+    await client.execute("query { me { id } }")  # includes a retry
+
+    assert len(_FakeAsyncClient.captured_headers) == 3
+    assert _FakeAsyncClient.instances == 1
+
+
+async def test_new_event_loop_gets_a_new_client(monkeypatch):
+    _FakeAsyncClient.responses = [_response(), _response()]
+    await client.execute("query { me { id } }")
+    monkeypatch.setattr(client, "_client_loop", object())  # as if created on another loop
+
+    await client.execute("query { me { id } }")
+
+    assert _FakeAsyncClient.instances == 2
+
+
+async def test_aclose_closes_and_the_next_request_reopens():
+    _FakeAsyncClient.responses = [_response(), _response()]
+    await client.execute("query { me { id } }")
+    first = client._client
+
+    await client.aclose()
+    assert first.is_closed
+    assert client._client is None
+
+    await client.execute("query { me { id } }")
+    assert _FakeAsyncClient.instances == 2
+
+
+async def test_aclose_without_a_client_is_a_no_op():
+    await client.aclose()
+    assert client._client is None

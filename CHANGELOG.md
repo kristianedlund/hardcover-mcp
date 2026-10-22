@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Requests reuse one HTTP connection, so tools that make several API calls are faster.
+
 ### Changed: one privacy vocabulary
 
 Every tool that sets privacy (`set_user_book`, `set_list`, `set_journal_entry`,
@@ -20,7 +24,7 @@ listing the valid ones (before, `set_user_book` and `set_list` passed any number
   everywhere. `set_user_book`, `get_user_book`, and `get_user` used to return `Public` /
   `Followers` / `Private`; `get_list` and `set_list` used to return `followers_only`.
   Journal entries and goals now include `privacy` next to `privacy_setting_id`. An
-  unrecognised id is reported as `unknown (<id>)` (#63).
+  unrecognised id is reported as `unknown (<id>)`.
 
 ### Added
 
@@ -35,17 +39,17 @@ listing the valid ones (before, `set_user_book` and `set_list` passed any number
   unchanged (`Error: …`). Answers like `No book found.` or `Book not in your library.` are
   still normal results. Invalid input that used to come back as a traceback (e.g. a
   non-numeric `book_id` on `get_reading_journal`) now gets the same short error as other
-  tools (#62).
+  tools.
 - `authors` lists only the book's authors. It used to include every contributor (narrators,
   translators, illustrators, foreword writers…). This applies everywhere `authors` appears:
   search results, `get_book`, library rows, `get_user_book`, list books, journal entries,
   and trending/vibe books. A book whose contributors have no author role shows its first
-  contributor (#66).
+  contributor.
 
 - `get_user_library` paging no longer repeats or skips books when several share the sort
   value (e.g. the same rating). Every sort now breaks ties by entry id. Books with no value
   for the sort field (e.g. unrated books under `sort="rating"`) now come last in both
-  directions, instead of first under `desc` (#65).
+  directions, instead of first under `desc`.
 - Same tiebreaker for the other paginated reads: the finished-date-range library query,
   `get_reading_journal`, `get_activity_feed`, `get_list` (lists and their books), `get_vibes`,
   and `get_prompts`.
