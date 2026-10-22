@@ -42,6 +42,7 @@ _USER_BOOK_FIELDS = """
         title
         slug
         contributions {
+            contribution
             author {
                 name
             }
@@ -85,6 +86,7 @@ _USER_BOOK_DETAIL_FIELDS = """
         slug
         pages
         contributions {
+            contribution
             author {
                 name
             }

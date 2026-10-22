@@ -10,17 +10,37 @@ from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._validation import _require_int
 from hardcover_mcp.tools.editions import handle_get_edition
 
+# Older records leave the role empty; on those the contributions relation says "Author".
+_AUTHOR_ROLES = {None, "Author"}
 
-def author_names(book: dict[str, Any]) -> list[str]:
-    """Flatten a book's contributors into a list of author names.
+
+def contributors(book: dict[str, Any]) -> list[dict[str, Any]]:
+    """List a book's contributors as ``{name, role}``, in the API's order.
 
     Reads ``cached_contributors`` (a JSON field, so it adds no query depth) when the query
-    selected it, otherwise the ``contributions { author { name } }`` relation.
+    selected it, otherwise the ``contributions { contribution author { name } }`` relation
+    (search documents carry the same shape under ``contributions``). An empty role is
+    reported as ``"Author"``.
     """
-    contributors = book.get("cached_contributors")
-    if contributors is None:
-        contributors = book.get("contributions") or []
-    return [c["author"]["name"] for c in contributors if (c.get("author") or {}).get("name")]
+    entries = book.get("cached_contributors")
+    if entries is None:
+        entries = book.get("contributions") or []
+    return [
+        {"name": c["author"]["name"], "role": c.get("contribution") or "Author"}
+        for c in entries
+        if (c.get("author") or {}).get("name")
+    ]
+
+
+def author_names(book: dict[str, Any]) -> list[str]:
+    """Names of a book's authors, leaving out narrators, translators, illustrators, etc.
+
+    Falls back to the first contributor when none has an author role, so a book with
+    contributors never comes back without a name.
+    """
+    everyone = contributors(book)
+    authors = [c["name"] for c in everyone if c["role"] in _AUTHOR_ROLES]
+    return authors or [c["name"] for c in everyone[:1]]
 
 
 SEARCH_QUERY = """
@@ -67,6 +87,7 @@ query GetBookById($id: Int!) {
         rating
         ratings_count
         contributions {
+            contribution
             author {
                 name
                 slug
@@ -214,6 +235,9 @@ def _format_search_hit(hit: dict[str, Any], query_type: str = "Book") -> dict[st
     doc = hit.get("document", {})
     fields = _HIT_FIELDS.get(query_type, _HIT_FIELDS["Book"])
     out = {out_key: doc.get(doc_key) for out_key, doc_key in fields.items()}
+    # ``author_names`` on the document lists every contributor; its contributions carry roles.
+    if "authors" in out and doc.get("contributions"):
+        out["authors"] = author_names(doc)
     if out.get("authors") is None and "authors" in out:
         out["authors"] = []
     return out
@@ -228,6 +252,7 @@ query BooksByIds($ids: [Int!]) {
         rating
         release_year
         contributions {
+            contribution
             author {
                 name
             }
@@ -343,7 +368,8 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
     Returns
     -------
     list[TextContent]
-        JSON with book details including title, authors, pages, and rating, plus
+        JSON with book details including title, authors, ``contributors`` (every
+        contributor as ``{name, role}``, e.g. narrators), pages, and rating, plus
         ``characters`` and ``editions`` arrays when requested; or, for an edition
         key, the edition's details with a summary of its book.
     """
@@ -396,6 +422,7 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
     book = books[0]
     # Flatten authors for readability
     book["authors"] = author_names(book)
+    book["contributors"] = contributors(book)
     del book["contributions"]
 
     if arguments.get("include_characters"):
