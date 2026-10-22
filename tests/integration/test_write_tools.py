@@ -103,6 +103,42 @@ class TestListLifecycle:
             assert deleted["deleted"] is True
 
 
+class TestListBookOnSeveralLists:
+    """Create two lists → add a book to both in one call (twice) → remove from both → delete."""
+
+    async def test_add_and_remove_on_two_lists(self):
+        from hardcover_mcp.tools.lists import (
+            handle_delete_list,
+            handle_set_list,
+            handle_set_list_book,
+        )
+
+        unique = uuid.uuid4().hex[:8]
+        list_ids = []
+        try:
+            for n in (1, 2):
+                result = await handle_set_list(
+                    {"name": f"_test_integration_{unique}_{n}", "privacy": "private"}
+                )
+                list_ids.append(json.loads(result[0].text)["id"])
+
+            book_id = await _find_book_not_in_library()
+            call = {"list_ids": list_ids, "book_id": book_id}
+
+            added = json.loads((await handle_set_list_book({**call, "on_list": True}))[0].text)
+            assert [r["list_id"] for r in added["results"]] == list_ids
+            assert all(r["changed"] and r["list_book_id"] for r in added["results"])
+
+            again = json.loads((await handle_set_list_book({**call, "on_list": True}))[0].text)
+            assert not any(r["changed"] for r in again["results"])
+
+            removed = json.loads((await handle_set_list_book({**call, "on_list": False}))[0].text)
+            assert all(r["changed"] for r in removed["results"])
+        finally:
+            for list_id in list_ids:
+                await handle_delete_list({"id": list_id})
+
+
 class TestUserBookLifecycle:
     """Add a book to library → verify → delete."""
 
