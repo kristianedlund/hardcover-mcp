@@ -125,7 +125,8 @@ def _render_library_query(
 
     ``order_field``/``order_dir`` come from validated maps (never raw user
     input), so they are interpolated directly — Hasura order_by keys are
-    enums and can't be GraphQL variables.
+    enums and can't be GraphQL variables. Entries without a value sort last in
+    either direction, and ``id`` breaks ties so ``offset`` pages don't overlap.
     """
     status_filter = ", status_id: {_eq: $status_id}" if with_status else ""
     status_filter += ", has_review: {_eq: true}" if with_review else ""
@@ -138,7 +139,7 @@ query GetUserLibrary($user_id: Int!, $limit: Int!, $offset: Int!{status_var}) {{
         where: {{user_id: {{_eq: $user_id}}{status_filter}}},
         limit: $limit,
         offset: $offset,
-        order_by: {{{order_field}: {order_dir}}}
+        order_by: [{{{order_field}: {order_dir}_nulls_last}}, {{id: desc}}]
     ) {{
         {fields}
     }}
@@ -184,7 +185,7 @@ query GetUserLibraryByDateRange(
         }},
         limit: $limit,
         offset: $offset,
-        order_by: {{last_read_date: desc}}
+        order_by: [{{last_read_date: desc_nulls_last}}, {{id: desc}}]
     ) {{
         {_USER_BOOK_FIELDS_WITH_READS}
     }}

@@ -138,6 +138,26 @@ class TestGetUserLibrary:
         data = json.loads(result[0].text)
         assert data["returned"] <= 2
 
+    async def test_rating_pages_do_not_overlap(self):
+        from hardcover_mcp.tools.library import handle_get_user_library
+
+        args = {"sort": "rating", "order": "desc", "limit": 20}
+        page1 = json.loads((await handle_get_user_library({**args, "offset": 0}))[0].text)
+        page2 = json.loads((await handle_get_user_library({**args, "offset": 20}))[0].text)
+
+        ids1 = {b["user_book_id"] for b in page1["books"]}
+        ids2 = {b["user_book_id"] for b in page2["books"]}
+        assert not ids1 & ids2
+
+    async def test_rating_desc_puts_unrated_last(self):
+        from hardcover_mcp.tools.library import handle_get_user_library
+
+        result = await handle_get_user_library({"sort": "rating", "order": "desc", "limit": 50})
+
+        ratings = [b["rating"] for b in json.loads(result[0].text)["books"]]
+        rated = [r is not None for r in ratings]
+        assert rated == sorted(rated, reverse=True)
+
 
 class TestGetAuthor:
     async def test_get_author_by_slug(self):

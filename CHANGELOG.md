@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `get_user_library` paging no longer repeats or skips books when several share the sort
+  value (e.g. the same rating). Every sort now breaks ties by entry id. Books with no value
+  for the sort field (e.g. unrated books under `sort="rating"`) now come last in both
+  directions, instead of first under `desc` (#65).
+- Same tiebreaker for the other paginated reads: the finished-date-range library query,
+  `get_reading_journal`, `get_activity_feed`, `get_list` (lists and their books), `get_vibes`,
+  and `get_prompts`.
+
 ## [0.9.0] - 2026-10-20
 
 ### Breaking: more tools merged (31 → 28)

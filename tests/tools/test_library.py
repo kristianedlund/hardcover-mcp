@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from hardcover_mcp.tools.library import (
+    LIBRARY_SORT_FIELDS,
     _build_read_input,
     _format_user_book,
     _format_user_book_detail,
@@ -1166,6 +1167,25 @@ class TestGetUserLibrarySort:
         assert "date_added" in query
         assert "asc" in query
 
+    @pytest.mark.parametrize("sort", sorted(LIBRARY_SORT_FIELDS))
+    @pytest.mark.parametrize("order", ["asc", "desc"])
+    async def test_sort_puts_nulls_last_with_id_tiebreaker(self, sort, order):
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(return_value=self._mock_result()),
+            ) as mock_exec,
+        ):
+            await handle_get_user_library({"sort": sort, "order": order})
+
+        field = LIBRARY_SORT_FIELDS[sort]
+        expected = f"order_by: [{{{field}: {order}_nulls_last}}, {{id: desc}}]"
+        assert expected in mock_exec.call_args[0][0]
+
     async def test_invalid_sort_returns_error(self):
         result = await handle_get_user_library({"sort": "banana"})
         assert "Error" in result[0].text
@@ -1205,6 +1225,10 @@ class TestGetUserLibraryDateRange:
             )
 
         assert len(result) == 1
+        assert (
+            "order_by: [{last_read_date: desc_nulls_last}, {id: desc}]"
+            in mock_exec.call_args[0][0]
+        )
         call_vars = mock_exec.call_args[0][1]
         assert call_vars["start_date"] == "2025-05-01"
         assert call_vars["end_date"] == "2025-05-31"
@@ -1279,12 +1303,12 @@ class TestHandleGetUserLibraryHasReviewQuery:
         _, mock_exec = await self._run({"has_review": True})
         query = mock_exec.call_args[0][0]
         assert "has_review: {_eq: true}" in query
-        assert "order_by: {reviewed_at: desc}" in query
+        assert "order_by: [{reviewed_at: desc_nulls_last}, {id: desc}]" in query
         assert "review_raw" in query
 
     async def test_explicit_sort_overrides_review_default(self):
         _, mock_exec = await self._run({"has_review": True, "sort": "rating"})
-        assert "order_by: {rating: desc}" in mock_exec.call_args[0][0]
+        assert "order_by: [{rating: desc_nulls_last}, {id: desc}]" in mock_exec.call_args[0][0]
 
     async def test_without_has_review_no_review_filter(self):
         _, mock_exec = await self._run({})

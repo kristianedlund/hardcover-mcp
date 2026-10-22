@@ -22,7 +22,7 @@ query GetReadingJournal(
 ) {
     reading_journals(
         where: $where,
-        order_by: {action_at: desc},
+        order_by: [{action_at: desc}, {id: desc}],
         limit: $limit,
         offset: $offset
     ) {
