@@ -7,7 +7,14 @@ from mcp.types import TextContent, Tool, ToolAnnotations
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import DELETE, READ, ToolSpec
-from hardcover_mcp.tools._validation import ToolError, _require_int
+from hardcover_mcp.tools._validation import (
+    PRIVACY_DESCRIPTION,
+    PRIVACY_SETTING_ID_DESCRIPTION,
+    ToolError,
+    _privacy_argument,
+    _require_int,
+    privacy_label,
+)
 from hardcover_mcp.tools.books import author_names
 from hardcover_mcp.tools.user import get_current_user
 
@@ -122,8 +129,8 @@ def _format_journal_entry(raw: dict[str, Any]) -> dict[str, Any]:
     -------
     dict[str, Any]
         Flattened dict with ``id``, ``event``, ``entry``, ``action_at``,
-        ``book_id``, ``edition_id``, ``metadata``, ``privacy_setting_id``,
-        and ``book`` (with ``title``, ``slug``, ``authors``).
+        ``book_id``, ``edition_id``, ``metadata``, ``privacy`` (label),
+        ``privacy_setting_id``, and ``book`` (with ``title``, ``slug``, ``authors``).
     """
     book_raw = raw.get("book") or {}
     authors = author_names(book_raw)
@@ -136,6 +143,7 @@ def _format_journal_entry(raw: dict[str, Any]) -> dict[str, Any]:
         "book_id": raw.get("book_id"),
         "edition_id": raw.get("edition_id"),
         "metadata": raw.get("metadata"),
+        "privacy": privacy_label(raw.get("privacy_setting_id")),
         "privacy_setting_id": raw.get("privacy_setting_id"),
         "book": {
             "title": book_raw.get("title"),
@@ -228,6 +236,7 @@ def _format_written_entry(raw: dict[str, Any]) -> dict[str, Any]:
         "entry": raw.get("entry"),
         "action_at": raw.get("action_at"),
         "metadata": raw.get("metadata"),
+        "privacy": privacy_label(raw.get("privacy_setting_id")),
         "privacy_setting_id": raw.get("privacy_setting_id"),
     }
 
@@ -252,7 +261,8 @@ async def _create_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
     ----------
     arguments : dict[str, Any]
         Required: ``book_id`` (int), ``entry`` (str), ``event`` (``"note"`` or ``"quote"``).
-        Optional: ``edition_id`` (int), ``privacy_setting_id`` (int).
+        Optional: ``edition_id`` (int), ``privacy`` (public/followers/private or 1/2/3;
+        ``privacy_setting_id`` is a deprecated alias).
 
     Returns
     -------
@@ -277,13 +287,9 @@ async def _create_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
     }
     if arguments.get("edition_id") is not None:
         obj["edition_id"] = _require_int(arguments["edition_id"], "edition_id")
-    # Required by the API; valid values are 1 (public), 2 (followers),
-    # 3 (private). A 0 is silently rejected (returns a null entry).
-    obj["privacy_setting_id"] = (
-        _require_int(arguments["privacy_setting_id"], "privacy_setting_id")
-        if arguments.get("privacy_setting_id") is not None
-        else 1
-    )
+    # Required by the API; anything but 1/2/3 is silently rejected (returns a null entry).
+    privacy_setting_id = _privacy_argument(arguments)
+    obj["privacy_setting_id"] = 1 if privacy_setting_id is None else privacy_setting_id
     obj["tags"] = arguments.get("tags", [])
 
     # Auth gate — the API scopes the mutation to the authenticated user via token.
@@ -291,7 +297,7 @@ async def _create_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
     result = await execute(INSERT_READING_JOURNAL_MUTATION, {"object": obj})
     created = result["data"]["insert_reading_journal"]["reading_journal"]
     if created is None:
-        raise ToolError("journal entry not created (privacy_setting_id must be 1, 2, or 3).")
+        raise ToolError("journal entry not created.")
     return [TextContent(type="text", text=json.dumps(_format_written_entry(created), indent=2))]
 
 
@@ -302,7 +308,8 @@ async def _update_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
     ----------
     arguments : dict[str, Any]
         Required: ``id`` (int). Optional: ``entry`` (str), ``event`` (note/quote),
-        ``edition_id`` (int), ``privacy_setting_id`` (int). ``book_id`` is ignored.
+        ``edition_id`` (int), ``privacy`` (or deprecated ``privacy_setting_id``).
+        ``book_id`` is ignored.
 
     Returns
     -------
@@ -318,13 +325,13 @@ async def _update_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
         updates["entry"] = entry.strip()
     if arguments.get("event") is not None:
         updates["event"] = _parse_event(arguments["event"])
-    for key in ("edition_id", "privacy_setting_id"):
-        if arguments.get(key) is not None:
-            updates[key] = _require_int(arguments[key], key)
+    if arguments.get("edition_id") is not None:
+        updates["edition_id"] = _require_int(arguments["edition_id"], "edition_id")
+    privacy_setting_id = _privacy_argument(arguments)
+    if privacy_setting_id is not None:
+        updates["privacy_setting_id"] = privacy_setting_id
     if not updates:
-        raise ToolError(
-            "provide at least one of 'entry', 'event', 'edition_id', 'privacy_setting_id'."
-        )
+        raise ToolError("provide at least one of 'entry', 'event', 'edition_id', 'privacy'.")
 
     # Only your own entries; scoping by user_id also gives a clear "not found".
     user = await get_current_user()
@@ -438,7 +445,7 @@ TOOLS: list[ToolSpec] = [
                 "Add a note or quote to your reading journal (omit id; book_id, entry, and "
                 "event required) or edit one of your existing notes/quotes (pass its id from "
                 "get_reading_journal; only the fields you pass change, the book can't). New "
-                "entries are public unless privacy_setting_id says otherwise. Each create makes "
+                "entries are public unless privacy says otherwise. Each create makes "
                 "a separate entry. Status, rating, and progress entries can't be created or "
                 "edited here; they come from set_user_book and set_user_book_read. Returns the "
                 "entry with its id."
@@ -467,11 +474,13 @@ TOOLS: list[ToolSpec] = [
                         "type": "integer",
                         "description": "Optional Hardcover edition ID.",
                     },
+                    "privacy": {
+                        "type": "string",
+                        "description": PRIVACY_DESCRIPTION + " Default when creating: public.",
+                    },
                     "privacy_setting_id": {
                         "type": "integer",
-                        "description": (
-                            "1 public (default when creating), 2 followers, 3 private."
-                        ),
+                        "description": PRIVACY_SETTING_ID_DESCRIPTION,
                     },
                 },
             },

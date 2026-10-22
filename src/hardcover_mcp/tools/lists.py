@@ -7,15 +7,15 @@ from mcp.types import TextContent, Tool, ToolAnnotations
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import DELETE, READ, UPDATE, ToolSpec
-from hardcover_mcp.tools._validation import ToolError, _require_int
+from hardcover_mcp.tools._validation import (
+    PRIVACY_DESCRIPTION,
+    ToolError,
+    _require_int,
+    _require_privacy,
+    privacy_label,
+)
 from hardcover_mcp.tools.books import author_names
 from hardcover_mcp.tools.user import get_current_user
-
-PRIVACY_MAP = {
-    1: "public",
-    2: "followers_only",
-    3: "private",
-}
 
 GET_MY_LISTS_QUERY = """
 query GetMyLists($user_id: Int!, $limit: Int!, $offset: Int!) {
@@ -72,7 +72,7 @@ def _format_list_summary(lst: dict[str, Any]) -> dict[str, Any]:
         "slug": lst["slug"],
         "description": lst.get("description"),
         "books_count": lst["books_count"],
-        "privacy": PRIVACY_MAP.get(lst.get("privacy_setting_id"), "unknown"),
+        "privacy": privacy_label(lst.get("privacy_setting_id")),
         "updated_at": lst.get("updated_at"),
     }
 
@@ -164,8 +164,6 @@ async def handle_get_list(arguments: dict[str, Any]) -> list[TextContent]:
 
 # ── Write: list CRUD ──
 
-PRIVACY_NAME_TO_ID = {v: k for k, v in PRIVACY_MAP.items()}
-
 CREATE_LIST_MUTATION = """
 mutation CreateList($object: ListInput!) {
     insert_list(object: $object) {
@@ -210,7 +208,7 @@ def _build_list_input(arguments: dict[str, Any]) -> dict[str, Any]:
 
     Raises
     ------
-    ValueError
+    ToolError
         If an unrecognised privacy value is provided.
     """
     obj: dict[str, Any] = {}
@@ -220,15 +218,7 @@ def _build_list_input(arguments: dict[str, Any]) -> dict[str, Any]:
         obj["description"] = arguments["description"]
     privacy = arguments.get("privacy")
     if privacy is not None:
-        if isinstance(privacy, int) or (isinstance(privacy, str) and privacy.isdigit()):
-            obj["privacy_setting_id"] = int(privacy)
-        else:
-            pid = PRIVACY_NAME_TO_ID.get(str(privacy).lower())
-            if pid is None:
-                raise ToolError(
-                    f"Unknown privacy '{privacy}'. Valid: {', '.join(PRIVACY_MAP.values())}"
-                )
-            obj["privacy_setting_id"] = pid
+        obj["privacy_setting_id"] = _require_privacy(privacy)
     return obj
 
 
@@ -261,7 +251,7 @@ async def _create_list(arguments: dict[str, Any]) -> list[TextContent]:
         "name": lst.get("name"),
         "slug": lst.get("slug"),
         "description": lst.get("description"),
-        "privacy": PRIVACY_MAP.get(lst.get("privacy_setting_id"), "unknown"),
+        "privacy": privacy_label(lst.get("privacy_setting_id")),
     }
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
@@ -299,7 +289,7 @@ async def _update_list(arguments: dict[str, Any]) -> list[TextContent]:
         "name": lst.get("name"),
         "slug": lst.get("slug"),
         "description": lst.get("description"),
-        "privacy": PRIVACY_MAP.get(lst.get("privacy_setting_id"), "unknown"),
+        "privacy": privacy_label(lst.get("privacy_setting_id")),
     }
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
@@ -496,10 +486,7 @@ TOOLS: list[ToolSpec] = [
                     },
                     "privacy": {
                         "type": "string",
-                        "description": (
-                            "'public', 'followers_only', or 'private'. Default when creating: "
-                            "public."
-                        ),
+                        "description": PRIVACY_DESCRIPTION + " Default when creating: public.",
                     },
                 },
             },

@@ -7,7 +7,15 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import DELETE, READ, UPDATE, ToolSpec
-from hardcover_mcp.tools._validation import ToolError, _require_int, _require_iso_date
+from hardcover_mcp.tools._validation import (
+    PRIVACY_DESCRIPTION,
+    PRIVACY_SETTING_ID_DESCRIPTION,
+    ToolError,
+    _privacy_argument,
+    _require_int,
+    _require_iso_date,
+    privacy_label,
+)
 from hardcover_mcp.tools.user import get_current_user
 
 VALID_GOAL_METRICS = {"book", "page"}
@@ -131,6 +139,7 @@ def _format_reading_goal(goal: dict[str, Any]) -> dict[str, Any]:
         "start_date": goal.get("start_date"),
         "end_date": goal.get("end_date"),
         "state": goal.get("state"),
+        "privacy": privacy_label(goal.get("privacy_setting_id")),
         "privacy_setting_id": goal.get("privacy_setting_id"),
         "archived": goal.get("archived", False),
     }
@@ -186,7 +195,8 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
     arguments : dict[str, Any]
         Required: ``goal`` (int), ``metric`` (str: books/pages), ``start_date`` (str),
         and ``end_date`` (str), both as ISO 8601 dates.
-        Optional: ``description`` (str), ``privacy_setting_id`` (int).
+        Optional: ``description`` (str), ``privacy`` (public/followers/private or 1/2/3;
+        ``privacy_setting_id`` is a deprecated alias).
         With ``id`` (int), edits that goal instead — see ``_edit_reading_goal``.
 
     Returns
@@ -218,12 +228,7 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
         raise ToolError("'description' must be a string")
     description = description_raw if description_raw else f"{goal} {metric}s"
 
-    privacy_setting_id = None
-    if "privacy_setting_id" in arguments and arguments["privacy_setting_id"] is not None:
-        privacy_setting_id = _require_int(
-            arguments["privacy_setting_id"],
-            "privacy_setting_id",
-        )
+    privacy_setting_id = _privacy_argument(arguments)
 
     # --- 2. Build mutation input
     user = await get_current_user()
@@ -300,7 +305,8 @@ async def _edit_reading_goal(arguments: dict[str, Any]) -> list[TextContent]:
     ----------
     arguments : dict[str, Any]
         Required: ``id`` (int). At least one of ``goal``, ``metric``, ``start_date``,
-        ``end_date``, ``description``, ``privacy_setting_id``, ``archived`` (bool).
+        ``end_date``, ``description``, ``privacy`` (or deprecated ``privacy_setting_id``),
+        ``archived`` (bool).
 
     Returns
     -------
@@ -313,10 +319,10 @@ async def _edit_reading_goal(arguments: dict[str, Any]) -> list[TextContent]:
         "start_date",
         "end_date",
         "description",
-        "privacy_setting_id",
+        "privacy",
         "archived",
     )
-    if all(arguments.get(key) is None for key in editable):
+    if all(arguments.get(key) is None for key in (*editable, "privacy_setting_id")):
         raise ToolError(f"provide at least one of {', '.join(repr(k) for k in editable)}.")
 
     current = await _find_own_goal(arguments["id"])
@@ -349,9 +355,11 @@ async def _edit_reading_goal(arguments: dict[str, Any]) -> list[TextContent]:
         # The goals table doesn't expose conditions, so they can't be read back and kept.
         "conditions": {},
     }
-    privacy = pick("privacy_setting_id")
+    privacy = _privacy_argument(arguments)
+    if privacy is None:
+        privacy = current.get("privacy_setting_id")
     if privacy is not None:
-        goal_input["privacy_setting_id"] = _require_int(privacy, "privacy_setting_id")
+        goal_input["privacy_setting_id"] = privacy
 
     result = await execute(
         UPDATE_READING_GOAL_MUTATION, {"id": current["id"], "object": goal_input}
@@ -456,9 +464,13 @@ TOOLS: list[ToolSpec] = [
                         "type": "string",
                         "description": "Optional goal description.",
                     },
+                    "privacy": {
+                        "type": "string",
+                        "description": PRIVACY_DESCRIPTION,
+                    },
                     "privacy_setting_id": {
                         "type": "integer",
-                        "description": "Optional privacy setting ID.",
+                        "description": PRIVACY_SETTING_ID_DESCRIPTION,
                     },
                     "archived": {
                         "type": "boolean",

@@ -42,7 +42,7 @@ class TestFormatListSummary:
         }
         result = _format_list_summary(lst)
 
-        assert result["privacy"] == "unknown"
+        assert result["privacy"] == "unknown (99)"
 
 
 class TestFormatListBook:
@@ -75,8 +75,12 @@ class TestBuildListInput:
 
         assert result["privacy_setting_id"] == 2
 
+    @pytest.mark.parametrize("privacy", ["followers", "Followers", "followers_only", 2])
+    def test_accepts_every_followers_spelling(self, privacy):
+        assert _build_list_input({"privacy": privacy})["privacy_setting_id"] == 2
+
     def test_raises_on_invalid_privacy(self):
-        with pytest.raises(ToolError, match="Unknown privacy"):
+        with pytest.raises(ToolError, match="'privacy' must be"):
             _build_list_input({"privacy": "secret"})
 
     def test_returns_empty_when_no_fields(self):

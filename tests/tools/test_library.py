@@ -13,7 +13,6 @@ from hardcover_mcp.tools.library import (
     _format_user_book_detail,
     _format_user_review,
     _merge_read_input,
-    _resolve_privacy_id,
     _resolve_status_id,
     _set_edition_owned,
     _text_to_slate,
@@ -735,29 +734,6 @@ class TestHandleGetUserLibraryHasReview:
         assert data["books"] == []
 
 
-class TestResolvePrivacyId:
-    def test_returns_none_for_none(self):
-        assert _resolve_privacy_id(None) is None
-
-    def test_resolves_int_directly(self):
-        assert _resolve_privacy_id(1) == 1
-        assert _resolve_privacy_id(3) == 3
-
-    def test_resolves_numeric_string(self):
-        assert _resolve_privacy_id("2") == 2
-
-    def test_resolves_name_case_insensitive(self):
-        assert _resolve_privacy_id("public") == 1
-        assert _resolve_privacy_id("Public") == 1
-        assert _resolve_privacy_id("followers") == 2
-        assert _resolve_privacy_id("Followers") == 2
-        assert _resolve_privacy_id("private") == 3
-        assert _resolve_privacy_id("Private") == 3
-
-    def test_returns_none_for_unknown_name(self):
-        assert _resolve_privacy_id("secret") is None
-
-
 class TestFormatUserBookDetailPrivacy:
     """Verify that _format_user_book_detail surfaces the privacy field."""
 
@@ -788,22 +764,22 @@ class TestFormatUserBookDetailPrivacy:
     def test_privacy_public(self):
         ub = self._make_ub(privacy_setting_id=1)
         result = _format_user_book_detail(ub)
-        assert result["privacy"] == "Public"
+        assert result["privacy"] == "public"
 
     def test_privacy_followers(self):
         ub = self._make_ub(privacy_setting_id=2)
         result = _format_user_book_detail(ub)
-        assert result["privacy"] == "Followers"
+        assert result["privacy"] == "followers"
 
     def test_privacy_private(self):
         ub = self._make_ub(privacy_setting_id=3)
         result = _format_user_book_detail(ub)
-        assert result["privacy"] == "Private"
+        assert result["privacy"] == "private"
 
     def test_privacy_unknown_id(self):
         ub = self._make_ub(privacy_setting_id=99)
         result = _format_user_book_detail(ub)
-        assert "Unknown" in result["privacy"]
+        assert result["privacy"] == "unknown (99)"
 
 
 class TestHandleSetUserBookPrivacy:
@@ -881,7 +857,7 @@ class TestHandleSetUserBookPrivacy:
         insert_obj = mock_exec.call_args_list[1][0][1]["object"]
         assert insert_obj["privacy_setting_id"] == 3
         output = json.loads(result[0].text)
-        assert output["privacy"] == "Private"
+        assert output["privacy"] == "private"
 
     async def test_privacy_passed_on_update(self):
         mock_user = {"id": 1}
@@ -901,7 +877,7 @@ class TestHandleSetUserBookPrivacy:
         update_obj = mock_exec.call_args_list[1][0][1]["object"]
         assert update_obj["privacy_setting_id"] == 2
         output = json.loads(result[0].text)
-        assert output["privacy"] == "Followers"
+        assert output["privacy"] == "followers"
 
     async def test_privacy_preserved_on_update_when_not_specified(self):
         mock_user = {"id": 1}

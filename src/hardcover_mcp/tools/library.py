@@ -7,7 +7,14 @@ from mcp.types import TextContent, Tool, ToolAnnotations
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import DELETE, READ, UPDATE, ToolSpec
-from hardcover_mcp.tools._validation import ToolError, _require_float, _require_int
+from hardcover_mcp.tools._validation import (
+    PRIVACY_DESCRIPTION,
+    ToolError,
+    _require_float,
+    _require_int,
+    _require_privacy,
+    privacy_label,
+)
 from hardcover_mcp.tools.books import author_names
 from hardcover_mcp.tools.user import get_current_user
 
@@ -21,14 +28,6 @@ STATUS_MAP: dict[int, str] = {
 }
 
 STATUS_NAME_TO_ID: dict[str, int] = {v.lower(): k for k, v in STATUS_MAP.items()}
-
-PRIVACY_MAP: dict[int, str] = {
-    1: "Public",
-    2: "Followers",
-    3: "Private",
-}
-
-PRIVACY_NAME_TO_ID: dict[str, int] = {v.lower(): k for k, v in PRIVACY_MAP.items()}
 
 # ── Shared field fragments ──
 
@@ -251,7 +250,6 @@ def _format_user_book_detail(ub: dict[str, Any]) -> dict[str, Any]:
     """Format a user_book record into a detailed dict including reads, review, and edition."""
     book = ub.get("book", {})
     authors = author_names(book)
-    privacy_id = ub.get("privacy_setting_id")
     return {
         "user_book_id": ub["id"],
         "book_id": ub["book_id"],
@@ -260,11 +258,7 @@ def _format_user_book_detail(ub: dict[str, Any]) -> dict[str, Any]:
         "pages": book.get("pages"),
         "authors": authors,
         "status": STATUS_MAP.get(ub["status_id"], f"Unknown ({ub['status_id']})"),
-        "privacy": (
-            PRIVACY_MAP.get(privacy_id, f"Unknown ({privacy_id})")
-            if privacy_id is not None
-            else None
-        ),
+        "privacy": privacy_label(ub.get("privacy_setting_id")),
         "rating": ub.get("rating"),
         "updated_at": ub.get("updated_at"),
         "review_raw": ub.get("review_raw"),
@@ -523,17 +517,6 @@ def _resolve_status_id(status: str | int | None) -> int | None:
     return STATUS_NAME_TO_ID.get(str(status).lower())
 
 
-def _resolve_privacy_id(privacy: str | int | None) -> int | None:
-    """Convert a privacy label or numeric string to its integer ID."""
-    if privacy is None:
-        return None
-    if isinstance(privacy, int):
-        return privacy
-    if isinstance(privacy, str) and privacy.isdigit():
-        return int(privacy)
-    return PRIVACY_NAME_TO_ID.get(str(privacy).lower())
-
-
 def _text_to_slate(text: str) -> list[dict[str, Any]]:
     """Convert plain text to Slate JSON paragraph nodes.
 
@@ -556,7 +539,7 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
         Optional: ``status`` (str or int), ``rating`` (float),
         ``review_raw`` (str), ``review_has_spoilers`` (bool),
         ``reviewed_at`` (str), ``private_notes`` (str),
-        ``privacy`` (str or int; 1/Public, 2/Followers, 3/Private),
+        ``privacy`` (str or int; public/followers/private or 1/2/3),
         ``edition_id`` (int), ``owned`` (bool) — ownership of ``edition_id``, or of the
         entry's current edition when ``edition_id`` isn't given.
         Unspecified fields are preserved on existing entries.
@@ -582,10 +565,7 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
         raise ToolError(f"unknown status '{status}'. Valid: {valid}")
 
     privacy = arguments.get("privacy")
-    privacy_setting_id = _resolve_privacy_id(privacy)
-    if privacy is not None and privacy_setting_id is None:
-        valid_privacy = ", ".join(PRIVACY_MAP.values())
-        raise ToolError(f"unknown privacy '{privacy}'. Valid: {valid_privacy}")
+    privacy_setting_id = None if privacy is None else _require_privacy(privacy)
 
     rating = arguments.get("rating")
     review_raw = arguments.get("review_raw")
@@ -688,12 +668,11 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
         raise ToolError(str(mutation_result["error"]))
 
     ub = mutation_result.get("user_book", {})
-    privacy_id_out = ub.get("privacy_setting_id")
     output = {
         "user_book_id": ub.get("id"),
         "book_id": ub.get("book_id"),
         "status": STATUS_MAP.get(ub.get("status_id"), str(ub.get("status_id"))),
-        "privacy": PRIVACY_MAP.get(privacy_id_out) if privacy_id_out is not None else None,
+        "privacy": privacy_label(ub.get("privacy_setting_id")),
         "rating": ub.get("rating"),
         "edition_id": ub.get("edition_id"),
     }
@@ -1174,10 +1153,7 @@ TOOLS: list[ToolSpec] = [
                     },
                     "privacy": {
                         "type": "string",
-                        "description": (
-                            "Privacy setting: 'Public', 'Followers', or 'Private'"
-                            " (or numeric ID 1/2/3)."
-                        ),
+                        "description": PRIVACY_DESCRIPTION,
                     },
                     "edition_id": {
                         "type": "integer",

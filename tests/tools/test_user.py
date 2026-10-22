@@ -31,7 +31,7 @@ class TestFormatUser:
         assert result["id"] == 1
         assert result["username"] == "adam"
         assert result["following_count"] == 1010
-        assert result["privacy"] == "Public"
+        assert result["privacy"] == "public"
         assert result["image_url"] == "https://example.com/a.jpg"
         assert "library" not in result
 
@@ -58,7 +58,7 @@ class TestFormatUser:
 
         result = _format_user(raw)
 
-        assert result["privacy"] == "Followers"
+        assert result["privacy"] == "followers"
         assert result["image_url"] is None
         assert len(result["library"]) == 1
         entry = result["library"][0]

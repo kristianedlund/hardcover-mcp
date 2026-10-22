@@ -371,13 +371,13 @@ class TestPrivacyControls:
         )
         created = json.loads(result[0].text)
         user_book_id = created["user_book_id"]
-        assert created["privacy"] == "Private"
+        assert created["privacy"] == "private"
 
         try:
             # 2. Verify privacy is returned by get_user_book
             result = await handle_get_user_book({"book_id": book_id})
             detail = json.loads(result[0].text)
-            assert detail["privacy"] == "Private"
+            assert detail["privacy"] == "private"
 
             # 3. Update to Public — privacy_setting_id must change
             result = await handle_set_user_book(
@@ -387,7 +387,7 @@ class TestPrivacyControls:
                 }
             )
             updated = json.loads(result[0].text)
-            assert updated["privacy"] == "Public"
+            assert updated["privacy"] == "public"
 
             # 4. Update without specifying privacy — should be preserved
             result = await handle_set_user_book(
@@ -397,7 +397,7 @@ class TestPrivacyControls:
                 }
             )
             preserved = json.loads(result[0].text)
-            assert preserved["privacy"] == "Public"
+            assert preserved["privacy"] == "public"
 
         finally:
             # 5. Clean up
