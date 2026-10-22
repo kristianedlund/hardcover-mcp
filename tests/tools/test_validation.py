@@ -91,19 +91,12 @@ class TestPrivacyArgument:
     def test_privacy(self):
         assert _privacy_argument({"privacy": "followers"}) == 2
 
-    def test_deprecated_alias(self):
-        assert _privacy_argument({"privacy_setting_id": 3}) == 3
-
-    def test_both_agreeing(self):
-        assert _privacy_argument({"privacy": "private", "privacy_setting_id": 3}) == 3
-
-    def test_both_disagreeing(self):
-        with pytest.raises(ToolError, match="disagree"):
-            _privacy_argument({"privacy": "public", "privacy_setting_id": 3})
-
-    def test_invalid_alias(self):
-        with pytest.raises(ToolError, match="'privacy_setting_id' must be"):
-            _privacy_argument({"privacy_setting_id": 9})
+    @pytest.mark.parametrize(
+        "arguments", [{"privacy_setting_id": 3}, {"privacy": "private", "privacy_setting_id": 3}]
+    )
+    def test_removed_privacy_setting_id_is_rejected(self, arguments):
+        with pytest.raises(ToolError, match="'privacy_setting_id' was removed; use 'privacy'"):
+            _privacy_argument(arguments)
 
 
 class TestPrivacyLabel:

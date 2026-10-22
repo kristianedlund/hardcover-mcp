@@ -306,7 +306,7 @@ class TestHandleSetJournalEntryCreate:
                 "entry": "Important note",
                 "event": "NOTE",
                 "edition_id": "7",
-                "privacy_setting_id": "3",
+                "privacy": "3",
             }
         )
         data = json.loads(result[0].text)
@@ -441,7 +441,7 @@ class TestHandleSetJournalEntryEdit:
             "data": {"update_reading_journal": {"errors": ["nope"], "reading_journal": None}}
         }
         with pytest.raises(ToolError) as exc:
-            await self._run({"id": 101, "privacy_setting_id": 1}, _own_entry(), failed)
+            await self._run({"id": 101, "privacy": "public"}, _own_entry(), failed)
 
         assert str(exc.value) == "nope"
 

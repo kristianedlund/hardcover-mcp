@@ -163,7 +163,7 @@ class TestHandleSetReadingGoal:
                 "start_date": "2026-01-01",
                 "end_date": "2026-12-31",
                 "description": "Read one per week",
-                "privacy_setting_id": 2,
+                "privacy": "followers",
             }
         )
         data = json.loads(result[0].text)
@@ -276,19 +276,19 @@ class TestGoalEditAndDelete:
         assert sent["metric"] == "book"
         assert sent["archived"] is False
 
-    @pytest.mark.parametrize(
-        "arguments",
-        [{"privacy": "followers"}, {"privacy_setting_id": 2}],
-        ids=["privacy", "alias"],
-    )
-    async def test_edit_privacy(self, arguments):
+    async def test_edit_privacy(self):
         updated = {"data": {"update_goal": {"errors": None, "goal": None}}}
         text, mock_exec = await self._run(
-            handle_set_reading_goal, {"id": 7, **arguments}, _own_goal(), updated
+            handle_set_reading_goal, {"id": 7, "privacy": "followers"}, _own_goal(), updated
         )
 
         assert mock_exec.call_args_list[1][0][1]["object"]["privacy_setting_id"] == 2
         assert json.loads(text)["privacy"] == "followers"
+
+    async def test_removed_privacy_setting_id_errors_before_api_calls(self):
+        with pytest.raises(ToolError, match="'privacy_setting_id' was removed"):
+            await self._run(handle_set_reading_goal, {"id": 7, "privacy_setting_id": 3})
+        self.mock_exec.assert_not_awaited()
 
     async def test_edit_keeps_privacy_when_not_passed(self):
         updated = {"data": {"update_goal": {"errors": None, "goal": None}}}

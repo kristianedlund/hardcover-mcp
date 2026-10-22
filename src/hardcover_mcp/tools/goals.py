@@ -9,7 +9,6 @@ from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import DELETE, READ, UPDATE, ToolSpec
 from hardcover_mcp.tools._validation import (
     PRIVACY_DESCRIPTION,
-    PRIVACY_SETTING_ID_DESCRIPTION,
     ToolError,
     _privacy_argument,
     _require_int,
@@ -195,8 +194,7 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
     arguments : dict[str, Any]
         Required: ``goal`` (int), ``metric`` (str: books/pages), ``start_date`` (str),
         and ``end_date`` (str), both as ISO 8601 dates.
-        Optional: ``description`` (str), ``privacy`` (public/followers/private or 1/2/3;
-        ``privacy_setting_id`` is a deprecated alias).
+        Optional: ``description`` (str), ``privacy`` (public/followers/private or 1/2/3).
         With ``id`` (int), edits that goal instead — see ``_edit_reading_goal``.
 
     Returns
@@ -305,8 +303,7 @@ async def _edit_reading_goal(arguments: dict[str, Any]) -> list[TextContent]:
     ----------
     arguments : dict[str, Any]
         Required: ``id`` (int). At least one of ``goal``, ``metric``, ``start_date``,
-        ``end_date``, ``description``, ``privacy`` (or deprecated ``privacy_setting_id``),
-        ``archived`` (bool).
+        ``end_date``, ``description``, ``privacy``, ``archived`` (bool).
 
     Returns
     -------
@@ -322,7 +319,8 @@ async def _edit_reading_goal(arguments: dict[str, Any]) -> list[TextContent]:
         "privacy",
         "archived",
     )
-    if all(arguments.get(key) is None for key in (*editable, "privacy_setting_id")):
+    privacy = _privacy_argument(arguments)
+    if all(arguments.get(key) is None for key in editable):
         raise ToolError(f"provide at least one of {', '.join(repr(k) for k in editable)}.")
 
     current = await _find_own_goal(arguments["id"])
@@ -355,7 +353,6 @@ async def _edit_reading_goal(arguments: dict[str, Any]) -> list[TextContent]:
         # The goals table doesn't expose conditions, so they can't be read back and kept.
         "conditions": {},
     }
-    privacy = _privacy_argument(arguments)
     if privacy is None:
         privacy = current.get("privacy_setting_id")
     if privacy is not None:
@@ -467,10 +464,6 @@ TOOLS: list[ToolSpec] = [
                     "privacy": {
                         "type": "string",
                         "description": PRIVACY_DESCRIPTION,
-                    },
-                    "privacy_setting_id": {
-                        "type": "integer",
-                        "description": PRIVACY_SETTING_ID_DESCRIPTION,
                     },
                     "archived": {
                         "type": "boolean",
