@@ -52,6 +52,7 @@ class TestFormatJournalEntry:
         assert result["entry"] == "Really liked the ending."
         assert result["action_at"] == "2025-03-15T10:00:00+00:00"
         assert result["metadata"] is None
+        assert result["privacy"] == "public"
         assert result["privacy_setting_id"] == 1
 
     def test_includes_book_title_and_slug(self):
@@ -263,6 +264,36 @@ class TestHandleGetReadingJournal:
 
 
 class TestHandleSetJournalEntryCreate:
+    @pytest.mark.parametrize(
+        ("privacy", "expected"), [("followers", 2), ("Private", 3), (None, 1)]
+    )
+    async def test_privacy_reaches_the_mutation(self, privacy, expected):
+        mock_exec = AsyncMock(return_value=_INSERT_RESPONSE)
+        arguments = {"book_id": 42, "entry": "x", "event": "note"}
+        if privacy is not None:
+            arguments["privacy"] = privacy
+        with (
+            patch(
+                "hardcover_mcp.tools.journal.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch("hardcover_mcp.tools.journal.execute", new=mock_exec),
+        ):
+            await handle_set_journal_entry(arguments)
+
+        assert mock_exec.call_args[0][1]["object"]["privacy_setting_id"] == expected
+
+    async def test_invalid_privacy_errors_before_api_calls(self):
+        mock_exec = AsyncMock()
+        with (
+            patch("hardcover_mcp.tools.journal.execute", new=mock_exec),
+            pytest.raises(ToolError, match="'privacy' must be"),
+        ):
+            await handle_set_journal_entry(
+                {"book_id": 42, "entry": "x", "event": "note", "privacy": "friends"}
+            )
+        mock_exec.assert_not_awaited()
+
     @patch("hardcover_mcp.tools.journal.get_current_user", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.journal.execute", new_callable=AsyncMock)
     async def test_returns_created_entry(self, mock_execute, mock_user):
@@ -378,6 +409,12 @@ class TestHandleSetJournalEntryEdit:
             "id": 101,
             "object": {"entry": "New text", "event": "note", "privacy_setting_id": 3},
         }
+
+    async def test_privacy_alone_is_a_change(self):
+        updated = {"data": {"update_reading_journal": {"errors": None, "reading_journal": {}}}}
+        _, mock_exec = await self._run({"id": 101, "privacy": "public"}, _own_entry(), updated)
+
+        assert mock_exec.call_args_list[1][0][1]["object"]["privacy_setting_id"] == 1
 
     async def test_requires_a_field_to_change(self):
         with pytest.raises(ToolError) as exc:

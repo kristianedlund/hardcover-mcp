@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: one privacy vocabulary
+
+Every tool that sets privacy (`set_user_book`, `set_list`, `set_journal_entry`,
+`set_reading_goal`) takes a `privacy` argument with the same values: `public`, `followers`
+(or `followers_only`), or `private`, in any case, or `1`/`2`/`3`. Other values are an error
+listing the valid ones (before, `set_user_book` and `set_list` passed any number through).
+
+- `set_journal_entry` and `set_reading_goal` gain `privacy`. Their `privacy_setting_id`
+  still works but is deprecated; passing both with different values is an error.
+- **Output values changed:** privacy is reported as `public` / `followers` / `private`
+  everywhere. `set_user_book`, `get_user_book`, and `get_user` used to return `Public` /
+  `Followers` / `Private`; `get_list` and `set_list` used to return `followers_only`.
+  Journal entries and goals now include `privacy` next to `privacy_setting_id`. An
+  unrecognised id is reported as `unknown (<id>)` (#63).
+
 ### Added
 
 - `get_book` returns `contributors`: everyone credited on the book as `{name, role}`

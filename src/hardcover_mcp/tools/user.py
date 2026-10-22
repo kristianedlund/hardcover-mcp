@@ -8,7 +8,7 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import NEW_API_KEY_URL, HardcoverAPIError, execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
-from hardcover_mcp.tools._validation import ToolError, _require_int
+from hardcover_mcp.tools._validation import ToolError, _require_int, privacy_label
 from hardcover_mcp.tools.books import resolve_id_by_name
 from hardcover_mcp.tools.stats import fetch_reading_stats
 
@@ -149,7 +149,7 @@ def _format_user(raw: dict[str, Any]) -> dict[str, Any]:
     (i.e. the caller requested it). Library entries respect the API's own
     privacy enforcement — a private user returns an empty list to non-followers.
     """
-    from hardcover_mcp.tools.library import PRIVACY_MAP, STATUS_MAP
+    from hardcover_mcp.tools.library import STATUS_MAP
 
     image = raw.get("cached_image") or {}
     privacy_id = raw.get("account_privacy_setting_id")
@@ -163,11 +163,7 @@ def _format_user(raw: dict[str, Any]) -> dict[str, Any]:
         "following_count": raw.get("followed_users_count"),
         "flair": raw.get("flair"),
         "pro": raw.get("pro"),
-        "privacy": (
-            PRIVACY_MAP.get(privacy_id, f"Unknown ({privacy_id})")
-            if privacy_id is not None
-            else None
-        ),
+        "privacy": privacy_label(privacy_id),
         "image_url": image.get("url"),
         "created_at": raw.get("created_at"),
     }

@@ -1,8 +1,15 @@
-"""Tests for tools/_validation.py — _require_int and _require_float."""
+"""Tests for tools/_validation.py — numeric and privacy validators."""
 
 import pytest
 
-from hardcover_mcp.tools._validation import ToolError, _require_float, _require_int
+from hardcover_mcp.tools._validation import (
+    ToolError,
+    _privacy_argument,
+    _require_float,
+    _require_int,
+    _require_privacy,
+    privacy_label,
+)
 
 
 class TestRequireInt:
@@ -42,3 +49,69 @@ class TestRequireFloat:
     def test_raises_on_none(self):
         with pytest.raises(ToolError, match="must be a number"):
             _require_float(None, "rating")
+
+
+class TestRequirePrivacy:
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("public", 1),
+            ("Public", 1),
+            ("followers", 2),
+            ("FOLLOWERS", 2),
+            ("followers_only", 2),
+            ("Followers_Only", 2),
+            ("private", 3),
+            (" Private ", 3),
+            (1, 1),
+            (2, 2),
+            (3, 3),
+            ("3", 3),
+        ],
+    )
+    def test_accepts_labels_aliases_and_ids(self, value, expected):
+        assert _require_privacy(value) == expected
+
+    @pytest.mark.parametrize("value", ["secret", "", 0, 4, "4", True, None, 1.0])
+    def test_rejects_everything_else(self, value):
+        with pytest.raises(
+            ToolError, match="'privacy' must be 'public', 'followers', or 'private'"
+        ):
+            _require_privacy(value)
+
+    def test_error_names_the_argument(self):
+        with pytest.raises(ToolError, match="'privacy_setting_id' must be"):
+            _require_privacy("nope", "privacy_setting_id")
+
+
+class TestPrivacyArgument:
+    def test_neither_is_none(self):
+        assert _privacy_argument({}) is None
+
+    def test_privacy(self):
+        assert _privacy_argument({"privacy": "followers"}) == 2
+
+    def test_deprecated_alias(self):
+        assert _privacy_argument({"privacy_setting_id": 3}) == 3
+
+    def test_both_agreeing(self):
+        assert _privacy_argument({"privacy": "private", "privacy_setting_id": 3}) == 3
+
+    def test_both_disagreeing(self):
+        with pytest.raises(ToolError, match="disagree"):
+            _privacy_argument({"privacy": "public", "privacy_setting_id": 3})
+
+    def test_invalid_alias(self):
+        with pytest.raises(ToolError, match="'privacy_setting_id' must be"):
+            _privacy_argument({"privacy_setting_id": 9})
+
+
+class TestPrivacyLabel:
+    def test_labels(self):
+        assert [privacy_label(i) for i in (1, 2, 3)] == ["public", "followers", "private"]
+
+    def test_none(self):
+        assert privacy_label(None) is None
+
+    def test_unknown(self):
+        assert privacy_label(7) == "unknown (7)"

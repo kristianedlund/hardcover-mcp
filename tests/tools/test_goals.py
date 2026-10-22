@@ -37,6 +37,7 @@ class TestFormatReadingGoal:
             "start_date": "2026-01-01",
             "end_date": "2026-12-31",
             "state": "active",
+            "privacy": "public",
             "privacy_setting_id": 1,
             "archived": False,
         }
@@ -274,6 +275,48 @@ class TestGoalEditAndDelete:
         assert sent["goal"] == 60
         assert sent["metric"] == "book"
         assert sent["archived"] is False
+
+    @pytest.mark.parametrize(
+        "arguments",
+        [{"privacy": "followers"}, {"privacy_setting_id": 2}],
+        ids=["privacy", "alias"],
+    )
+    async def test_edit_privacy(self, arguments):
+        updated = {"data": {"update_goal": {"errors": None, "goal": None}}}
+        text, mock_exec = await self._run(
+            handle_set_reading_goal, {"id": 7, **arguments}, _own_goal(), updated
+        )
+
+        assert mock_exec.call_args_list[1][0][1]["object"]["privacy_setting_id"] == 2
+        assert json.loads(text)["privacy"] == "followers"
+
+    async def test_edit_keeps_privacy_when_not_passed(self):
+        updated = {"data": {"update_goal": {"errors": None, "goal": None}}}
+        _, mock_exec = await self._run(
+            handle_set_reading_goal,
+            {"id": 7, "goal": 60},
+            _own_goal(privacy_setting_id=3),
+            updated,
+        )
+
+        assert mock_exec.call_args_list[1][0][1]["object"]["privacy_setting_id"] == 3
+
+    async def test_create_with_privacy(self):
+        inserted = {"data": {"insert_goal": {"id": 55, "errors": None, "goal": None}}}
+        _, mock_exec = await self._run(
+            handle_set_reading_goal,
+            {
+                "goal": 52,
+                "metric": "book",
+                "start_date": "2026-01-01",
+                "end_date": "2026-12-31",
+                "privacy": "private",
+            },
+            {"data": {"goals": []}},
+            inserted,
+        )
+
+        assert mock_exec.call_args_list[1][0][1]["object"]["privacy_setting_id"] == 3
 
     async def test_edit_requires_a_field(self):
         with pytest.raises(ToolError) as exc:
