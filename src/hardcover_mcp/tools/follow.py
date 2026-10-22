@@ -7,7 +7,7 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import UPDATE, ToolSpec
-from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools._validation import ToolError, _require_int
 from hardcover_mcp.tools.activity import FOLLOWED_IDS_QUERY, GET_USER_ID_BY_USERNAME_QUERY
 
 FOLLOW_USER_MUTATION = """
@@ -32,13 +32,13 @@ mutation UnfollowUser($id: Int!) {
 async def _resolve_user_id(arguments: dict[str, Any]) -> int | str:
     """Resolve user_id from arguments, looking up username if needed.
 
-    Returns the resolved int id, or an error string.
+    Returns the resolved int id, or a "No user found" message for an unknown username.
     """
     user_id = arguments.get("user_id")
     username = arguments.get("username")
 
     if not user_id and not username:
-        return "Error: provide either user_id or username."
+        raise ToolError("provide either user_id or username.")
 
     if username and not user_id:
         found = await execute(GET_USER_ID_BY_USERNAME_QUERY, {"username": username})
@@ -47,10 +47,7 @@ async def _resolve_user_id(arguments: dict[str, Any]) -> int | str:
             return f"No user found for username '{username}'."
         user_id = users[0]["id"]
 
-    try:
-        return _require_int(user_id, "user_id")
-    except ValueError as e:
-        return f"Error: {e}"
+    return _require_int(user_id, "user_id")
 
 
 async def _is_following(user_id: int) -> bool:
@@ -78,7 +75,7 @@ async def handle_set_following(arguments: dict[str, Any]) -> list[TextContent]:
     """
     following = arguments.get("following")
     if not isinstance(following, bool):
-        return [TextContent(type="text", text="Error: 'following' (true/false) is required.")]
+        raise ToolError("'following' (true/false) is required.")
 
     resolved = await _resolve_user_id(arguments)
     if isinstance(resolved, str):
@@ -95,7 +92,7 @@ async def handle_set_following(arguments: dict[str, Any]) -> list[TextContent]:
         result = await execute(UNFOLLOW_USER_MUTATION, {"id": resolved})
         payload = result["data"]["delete_followed_user"]
     if payload.get("error"):
-        return [TextContent(type="text", text=f"Error: {payload['error']}")]
+        raise ToolError(str(payload["error"]))
 
     output = {"user_id": resolved, "following": following, "changed": True}
     return [TextContent(type="text", text=json.dumps(output, indent=2))]

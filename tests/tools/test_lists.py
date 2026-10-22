@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from hardcover_mcp.tools._validation import ToolError
 from hardcover_mcp.tools.lists import (
     _build_list_input,
     _format_list_book,
@@ -75,7 +76,7 @@ class TestBuildListInput:
         assert result["privacy_setting_id"] == 2
 
     def test_raises_on_invalid_privacy(self):
-        with pytest.raises(ValueError, match="Unknown privacy"):
+        with pytest.raises(ToolError, match="Unknown privacy"):
             _build_list_input({"privacy": "secret"})
 
     def test_returns_empty_when_no_fields(self):
@@ -88,12 +89,14 @@ def _found(*ids: int) -> dict:
 
 class TestHandleSetListBook:
     async def test_rejects_missing_on_list(self):
-        result = await handle_set_list_book({"list_id": 1, "book_id": 2})
-        assert "'on_list'" in result[0].text
+        with pytest.raises(ToolError) as exc:
+            await handle_set_list_book({"list_id": 1, "book_id": 2})
+        assert "'on_list'" in str(exc.value)
 
     async def test_rejects_missing_ids(self):
-        result = await handle_set_list_book({"list_id": 1, "on_list": True})
-        assert "'list_id' and 'book_id'" in result[0].text
+        with pytest.raises(ToolError) as exc:
+            await handle_set_list_book({"list_id": 1, "on_list": True})
+        assert "'list_id' and 'book_id'" in str(exc.value)
 
     async def test_adds_when_absent(self):
         mock = AsyncMock(
@@ -145,8 +148,9 @@ class TestHandleSetListBook:
 
 class TestHandleSetList:
     async def test_create_requires_name(self):
-        result = await handle_set_list({"description": "x"})
-        assert "'name' is required" in result[0].text
+        with pytest.raises(ToolError) as exc:
+            await handle_set_list({"description": "x"})
+        assert "'name' is required" in str(exc.value)
 
     async def test_without_id_creates(self):
         created = {"list": {"id": 5, "name": "N", "slug": "n", "privacy_setting_id": 1}}
@@ -167,8 +171,9 @@ class TestHandleSetList:
         assert "update_list" in mock.call_args[0][0]
 
     async def test_update_requires_a_field(self):
-        result = await handle_set_list({"id": 5})
-        assert "at least one" in result[0].text
+        with pytest.raises(ToolError) as exc:
+            await handle_set_list({"id": 5})
+        assert "at least one" in str(exc.value)
 
 
 class TestHandleGetList:

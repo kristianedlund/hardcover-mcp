@@ -3,6 +3,9 @@
 import json
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
+from hardcover_mcp.tools._validation import ToolError
 from hardcover_mcp.tools.books import (
     _format_character,
     _format_search_hit,
@@ -126,20 +129,22 @@ class TestFormatSearchHit:
 
 class TestHandleSearchBooks:
     async def test_returns_error_on_empty_query(self):
-        result = await handle_search_books({"query": ""})
+        with pytest.raises(ToolError) as exc:
+            await handle_search_books({"query": ""})
 
-        assert len(result) == 1
-        assert "required" in result[0].text.lower()
+        assert "required" in str(exc.value)
 
     async def test_returns_error_on_missing_query(self):
-        result = await handle_search_books({})
+        with pytest.raises(ToolError) as exc:
+            await handle_search_books({})
 
-        assert "required" in result[0].text.lower()
+        assert "required" in str(exc.value)
 
     async def test_returns_error_on_invalid_query_type(self):
-        result = await handle_search_books({"query": "test", "query_type": "Planet"})
+        with pytest.raises(ToolError) as exc:
+            await handle_search_books({"query": "test", "query_type": "Planet"})
 
-        assert "invalid query_type" in result[0].text.lower()
+        assert "invalid query_type" in str(exc.value)
 
     @patch("hardcover_mcp.tools.books.execute", new_callable=AsyncMock)
     async def test_caps_per_page_at_25(self, mock_execute):
@@ -239,9 +244,10 @@ class TestHandleSearchBooks:
 
 class TestHandleGetBook:
     async def test_returns_error_on_non_numeric_id(self):
-        result = await handle_get_book({"id": "not-a-number"})
+        with pytest.raises(ToolError) as exc:
+            await handle_get_book({"id": "not-a-number"})
 
-        assert "must be an integer" in result[0].text
+        assert "must be an integer" in str(exc.value)
 
 
 class TestFormatCharacter:
@@ -463,9 +469,10 @@ class TestHandleGetBookIncludeEditions:
         assert mock_execute.call_args_list[1][0][1]["limit"] == 50
 
     async def test_rejects_non_integer_editions_limit(self):
-        result = await handle_get_book({"id": 123, "editions_limit": "lots"})
+        with pytest.raises(ToolError) as exc:
+            await handle_get_book({"id": 123, "editions_limit": "lots"})
 
-        assert "must be an integer" in result[0].text
+        assert "must be an integer" in str(exc.value)
 
 
 class TestHandleGetBookEditionKeys:
@@ -491,21 +498,25 @@ class TestHandleGetBookEditionKeys:
         mock_edition.assert_awaited_once_with({"asin": "B08FHBV4ZX"})
 
     async def test_rejects_book_and_edition_keys_together(self):
-        result = await handle_get_book({"id": 1, "isbn_13": "9780593135204"})
+        with pytest.raises(ToolError) as exc:
+            await handle_get_book({"id": 1, "isbn_13": "9780593135204"})
 
-        assert "provide one of 'id' or 'slug'" in result[0].text
+        assert "provide one of 'id' or 'slug'" in str(exc.value)
 
     async def test_rejects_two_edition_keys(self):
-        result = await handle_get_book({"isbn_13": "9780593135204", "asin": "B08FHBV4ZX"})
+        with pytest.raises(ToolError) as exc:
+            await handle_get_book({"isbn_13": "9780593135204", "asin": "B08FHBV4ZX"})
 
-        assert "exactly one of 'isbn_13'" in result[0].text
+        assert "exactly one of 'isbn_13'" in str(exc.value)
 
     async def test_rejects_include_flags_with_edition_key(self):
-        result = await handle_get_book({"isbn_13": "9780593135204", "include_editions": True})
+        with pytest.raises(ToolError) as exc:
+            await handle_get_book({"isbn_13": "9780593135204", "include_editions": True})
 
-        assert "need a book key" in result[0].text
+        assert "need a book key" in str(exc.value)
 
     async def test_requires_some_key(self):
-        result = await handle_get_book({})
+        with pytest.raises(ToolError) as exc:
+            await handle_get_book({})
 
-        assert "provide one of 'id' or 'slug'" in result[0].text
+        assert "provide one of 'id' or 'slug'" in str(exc.value)

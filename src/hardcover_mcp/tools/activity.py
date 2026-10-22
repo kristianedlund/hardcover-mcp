@@ -112,11 +112,8 @@ async def handle_get_activity_feed(arguments: dict[str, Any]) -> list[TextConten
     list[TextContent]
         JSON array of activity events (event type, book, user, timestamp).
     """
-    try:
-        limit = min(_require_int(arguments.get("limit", _DEFAULT_LIMIT), "limit"), _MAX_LIMIT)
-        offset = _require_int(arguments.get("offset", 0), "offset")
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    limit = min(_require_int(arguments.get("limit", _DEFAULT_LIMIT), "limit"), _MAX_LIMIT)
+    offset = _require_int(arguments.get("offset", 0), "offset")
 
     user_id = arguments.get("user_id")
     username = arguments.get("username")
@@ -129,10 +126,7 @@ async def handle_get_activity_feed(arguments: dict[str, Any]) -> list[TextConten
         user_id = users[0]["id"]
 
     if user_id:
-        try:
-            uid = _require_int(user_id, "user_id")
-        except ValueError as e:
-            return [TextContent(type="text", text=f"Error: {e}")]
+        uid = _require_int(user_id, "user_id")
         result = await execute(
             USER_ACTIVITY_QUERY, {"user_id": uid, "limit": limit, "offset": offset}
         )

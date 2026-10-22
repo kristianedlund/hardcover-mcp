@@ -7,7 +7,7 @@ from mcp.types import TextContent, Tool, ToolAnnotations
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import DELETE, READ, ToolSpec
-from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools._validation import ToolError, _require_int
 from hardcover_mcp.tools.books import author_names
 from hardcover_mcp.tools.user import get_current_user
 
@@ -241,7 +241,7 @@ def _parse_event(value: Any) -> str:
         If the value is not ``"note"`` or ``"quote"``.
     """
     if not isinstance(value, str) or value.strip().lower() not in _EDITABLE_EVENTS:
-        raise ValueError("'event' must be one of: note, quote.")
+        raise ToolError("'event' must be one of: note, quote.")
     return value.strip().lower()
 
 
@@ -261,45 +261,37 @@ async def _create_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
     """
     book_id = arguments.get("book_id")
     if book_id is None:
-        return [TextContent(type="text", text="Error: 'book_id' is required when creating.")]
+        raise ToolError("'book_id' is required when creating.")
 
     entry = arguments.get("entry")
     if not isinstance(entry, str) or not entry.strip():
-        return [TextContent(type="text", text="Error: 'entry' must be a non-empty string.")]
+        raise ToolError("'entry' must be a non-empty string.")
 
     if arguments.get("event") is None:
-        return [TextContent(type="text", text="Error: 'event' is required when creating.")]
+        raise ToolError("'event' is required when creating.")
 
-    try:
-        obj: dict[str, Any] = {
-            "book_id": _require_int(book_id, "book_id"),
-            "entry": entry.strip(),
-            "event": _parse_event(arguments["event"]),
-        }
-        if arguments.get("edition_id") is not None:
-            obj["edition_id"] = _require_int(arguments["edition_id"], "edition_id")
-        # Required by the API; valid values are 1 (public), 2 (followers),
-        # 3 (private). A 0 is silently rejected (returns a null entry).
-        obj["privacy_setting_id"] = (
-            _require_int(arguments["privacy_setting_id"], "privacy_setting_id")
-            if arguments.get("privacy_setting_id") is not None
-            else 1
-        )
-        obj["tags"] = arguments.get("tags", [])
-    except ValueError as exc:
-        return [TextContent(type="text", text=f"Error: {exc}")]
+    obj: dict[str, Any] = {
+        "book_id": _require_int(book_id, "book_id"),
+        "entry": entry.strip(),
+        "event": _parse_event(arguments["event"]),
+    }
+    if arguments.get("edition_id") is not None:
+        obj["edition_id"] = _require_int(arguments["edition_id"], "edition_id")
+    # Required by the API; valid values are 1 (public), 2 (followers),
+    # 3 (private). A 0 is silently rejected (returns a null entry).
+    obj["privacy_setting_id"] = (
+        _require_int(arguments["privacy_setting_id"], "privacy_setting_id")
+        if arguments.get("privacy_setting_id") is not None
+        else 1
+    )
+    obj["tags"] = arguments.get("tags", [])
 
     # Auth gate — the API scopes the mutation to the authenticated user via token.
     await get_current_user()
     result = await execute(INSERT_READING_JOURNAL_MUTATION, {"object": obj})
     created = result["data"]["insert_reading_journal"]["reading_journal"]
     if created is None:
-        return [
-            TextContent(
-                type="text",
-                text="Error: journal entry not created (privacy_setting_id must be 1, 2, or 3).",
-            )
-        ]
+        raise ToolError("journal entry not created (privacy_setting_id must be 1, 2, or 3).")
     return [TextContent(type="text", text=json.dumps(_format_written_entry(created), indent=2))]
 
 
@@ -317,49 +309,34 @@ async def _update_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
     list[TextContent]
         Single-element list with JSON for the updated journal entry.
     """
-    try:
-        entry_id = _require_int(arguments["id"], "id")
-        updates: dict[str, Any] = {}
-        if arguments.get("entry") is not None:
-            entry = arguments["entry"]
-            if not isinstance(entry, str) or not entry.strip():
-                raise ValueError("'entry' must be a non-empty string.")
-            updates["entry"] = entry.strip()
-        if arguments.get("event") is not None:
-            updates["event"] = _parse_event(arguments["event"])
-        for key in ("edition_id", "privacy_setting_id"):
-            if arguments.get(key) is not None:
-                updates[key] = _require_int(arguments[key], key)
-    except ValueError as exc:
-        return [TextContent(type="text", text=f"Error: {exc}")]
+    entry_id = _require_int(arguments["id"], "id")
+    updates: dict[str, Any] = {}
+    if arguments.get("entry") is not None:
+        entry = arguments["entry"]
+        if not isinstance(entry, str) or not entry.strip():
+            raise ToolError("'entry' must be a non-empty string.")
+        updates["entry"] = entry.strip()
+    if arguments.get("event") is not None:
+        updates["event"] = _parse_event(arguments["event"])
+    for key in ("edition_id", "privacy_setting_id"):
+        if arguments.get(key) is not None:
+            updates[key] = _require_int(arguments[key], key)
     if not updates:
-        return [
-            TextContent(
-                type="text",
-                text=(
-                    "Error: provide at least one of 'entry', 'event', 'edition_id', "
-                    "'privacy_setting_id'."
-                ),
-            )
-        ]
+        raise ToolError(
+            "provide at least one of 'entry', 'event', 'edition_id', 'privacy_setting_id'."
+        )
 
     # Only your own entries; scoping by user_id also gives a clear "not found".
     user = await get_current_user()
     found = await execute(GET_OWN_JOURNAL_ENTRY_QUERY, {"id": entry_id, "user_id": user["id"]})
     rows = found["data"]["reading_journals"]
     if not rows:
-        return [TextContent(type="text", text="Error: no journal entry of yours with that id.")]
+        raise ToolError("no journal entry of yours with that id.")
     current = rows[0]
     if current.get("event") not in _EDITABLE_EVENTS:
-        return [
-            TextContent(
-                type="text",
-                text=(
-                    f"Error: only note and quote entries can be edited (this one is "
-                    f"'{current.get('event')}')."
-                ),
-            )
-        ]
+        raise ToolError(
+            f"only note and quote entries can be edited (this one is '{current.get('event')}')."
+        )
 
     # Send the full editable set so unspecified fields keep their current values.
     obj = {
@@ -372,7 +349,7 @@ async def _update_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
     result = await execute(UPDATE_READING_JOURNAL_MUTATION, {"id": entry_id, "object": obj})
     payload = result["data"]["update_reading_journal"]
     if payload.get("errors"):
-        return [TextContent(type="text", text=f"Error: {'; '.join(payload['errors'])}")]
+        raise ToolError("; ".join(payload["errors"]))
     updated = payload.get("reading_journal") or {**current, **obj, "id": entry_id}
     return [TextContent(type="text", text=json.dumps(_format_written_entry(updated), indent=2))]
 
@@ -399,12 +376,9 @@ async def handle_delete_journal_entry(arguments: dict[str, Any]) -> list[TextCon
     """
     entry_id = arguments.get("id")
     if entry_id is None:
-        return [TextContent(type="text", text="Error: 'id' is required.")]
+        raise ToolError("'id' is required.")
 
-    try:
-        entry_id_int = _require_int(entry_id, "id")
-    except ValueError as exc:
-        return [TextContent(type="text", text=f"Error: {exc}")]
+    entry_id_int = _require_int(entry_id, "id")
 
     # Auth gate — the API scopes the mutation to the authenticated user via token.
     await get_current_user()

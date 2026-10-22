@@ -7,7 +7,7 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
-from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools._validation import ToolError, _require_int
 from hardcover_mcp.tools.editions import handle_get_edition
 
 # Older records leave the role empty; on those the contributions relation says "Author".
@@ -307,17 +307,12 @@ async def handle_search_books(arguments: dict[str, Any]) -> list[TextContent]:
     """
     query = arguments.get("query", "").strip()
     if not query:
-        return [TextContent(type="text", text="Error: 'query' is required.")]
+        raise ToolError("'query' is required.")
 
     query_type = arguments.get("query_type", "Book")
     if query_type not in VALID_QUERY_TYPES:
         valid = ", ".join(sorted(VALID_QUERY_TYPES))
-        return [
-            TextContent(
-                type="text",
-                text=f"Error: invalid query_type '{query_type}'. Must be one of: {valid}.",
-            )
-        ]
+        raise ToolError(f"invalid query_type '{query_type}'. Must be one of: {valid}.")
 
     per_page = min(arguments.get("per_page", 10), 25)
     page = arguments.get("page", 1)
@@ -346,7 +341,7 @@ async def handle_search_books(arguments: dict[str, Any]) -> list[TextContent]:
 
 _EDITION_KEYS = ("isbn_13", "asin", "edition_id")
 _ONE_KEY_ERROR = (
-    "Error: provide one of 'id' or 'slug' (the book), or exactly one of 'isbn_13', "
+    "provide one of 'id' or 'slug' (the book), or exactly one of 'isbn_13', "
     "'asin', or 'edition_id' (a specific edition)."
 )
 
@@ -383,37 +378,27 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
 
     if edition_keys:
         if book_id or slug or len(edition_keys) > 1:
-            return [TextContent(type="text", text=_ONE_KEY_ERROR)]
+            raise ToolError(_ONE_KEY_ERROR)
         if arguments.get("include_characters") or arguments.get("include_editions"):
-            return [
-                TextContent(
-                    type="text",
-                    text=(
-                        "Error: include_characters and include_editions need a book key "
-                        "('id' or 'slug'); the edition's result includes its book id."
-                    ),
-                )
-            ]
+            raise ToolError(
+                "include_characters and include_editions need a book key "
+                "('id' or 'slug'); the edition's result includes its book id."
+            )
         # The edition lookup calls its id key 'id'; here 'id' means the book.
         key, value = next(iter(edition_keys.items()))
         return await handle_get_edition({"id" if key == "edition_id" else key: value})
 
     if not book_id and not slug:
-        return [TextContent(type="text", text=_ONE_KEY_ERROR)]
+        raise ToolError(_ONE_KEY_ERROR)
 
-    try:
-        editions_limit = min(
-            _require_int(
-                arguments.get("editions_limit", _DEFAULT_EDITIONS_LIMIT), "editions_limit"
-            ),
-            _MAX_EDITIONS_LIMIT,
-        )
-        if book_id:
-            result = await execute(GET_BOOK_BY_ID_QUERY, {"id": _require_int(book_id, "id")})
-        else:
-            result = await execute(GET_BOOK_BY_SLUG_QUERY, {"slug": slug})
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    editions_limit = min(
+        _require_int(arguments.get("editions_limit", _DEFAULT_EDITIONS_LIMIT), "editions_limit"),
+        _MAX_EDITIONS_LIMIT,
+    )
+    if book_id:
+        result = await execute(GET_BOOK_BY_ID_QUERY, {"id": _require_int(book_id, "id")})
+    else:
+        result = await execute(GET_BOOK_BY_SLUG_QUERY, {"slug": slug})
 
     books = result["data"]["books"]
     if not books:

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from hardcover_mcp.tools._validation import ToolError
 from hardcover_mcp.tools.prompts import (
     _format_prompt,
     handle_get_prompts,
@@ -150,22 +151,20 @@ def _existing(*ids: int) -> dict:
 
 class TestHandleSetPromptAnswer:
     async def test_returns_error_when_answered_missing(self):
-        result = await handle_set_prompt_answer({"prompt_id": 7, "book_id": 42})
+        with pytest.raises(ToolError) as exc:
+            await handle_set_prompt_answer({"prompt_id": 7, "book_id": 42})
 
-        assert "'answered'" in result[0].text
+        assert "'answered'" in str(exc.value)
 
     async def test_returns_error_when_prompt_id_missing(self):
-        result = await handle_set_prompt_answer({"book_id": 42, "answered": True})
+        with pytest.raises(ToolError) as exc:
+            await handle_set_prompt_answer({"book_id": 42, "answered": True})
 
-        assert "Error" in result[0].text
-        assert "prompt_id" in result[0].text
+        assert "prompt_id" in str(exc.value)
 
     async def test_returns_error_for_non_integer_ids(self):
-        result = await handle_set_prompt_answer(
-            {"prompt_id": "abc", "book_id": 42, "answered": True}
-        )
-
-        assert "Error" in result[0].text
+        with pytest.raises(ToolError):
+            await handle_set_prompt_answer({"prompt_id": "abc", "book_id": 42, "answered": True})
 
     async def _run(self, arguments: dict, *responses: dict) -> tuple[dict, AsyncMock]:
         mock_exec = AsyncMock(side_effect=list(responses))
@@ -236,10 +235,9 @@ class TestHandleSetPromptAnswer:
                 new=AsyncMock(return_value={"id": 5}),
             ),
             patch("hardcover_mcp.tools.prompts.execute", new=mock_exec),
+            pytest.raises(ToolError) as exc,
         ):
-            result = await handle_set_prompt_answer(
-                {"prompt_id": 7, "book_id": 42, "answered": False}
-            )
+            await handle_set_prompt_answer({"prompt_id": 7, "book_id": 42, "answered": False})
 
-        assert "could not withdraw" in result[0].text
-        assert "few seconds" in result[0].text
+        assert "could not withdraw" in str(exc.value)
+        assert "few seconds" in str(exc.value)

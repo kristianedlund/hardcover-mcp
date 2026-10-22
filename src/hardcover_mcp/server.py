@@ -28,6 +28,7 @@ from hardcover_mcp.tools import (
     user,
 )
 from hardcover_mcp.tools._registry import CORE, TOOLSETS, Handler, ToolSpec
+from hardcover_mcp.tools._validation import ToolError
 
 # ── Tool registry ──
 # Each tool module exports TOOLS: list[ToolSpec] next to its handlers.
@@ -151,6 +152,11 @@ async def call_tool(ctx: Any, params: Any) -> CallToolResult:
     try:
         content = await handler(params.arguments or {})
         return CallToolResult(content=content)
+    except ToolError as exc:
+        # Bad input or a rejected action: the message is the whole story.
+        return CallToolResult(
+            content=[TextContent(type="text", text=f"Error: {exc}")], is_error=True
+        )
     except HardcoverAPIError as exc:
         # Known API failures already carry a user-facing message; a traceback adds noise.
         return CallToolResult(

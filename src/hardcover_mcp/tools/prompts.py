@@ -7,7 +7,7 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, UPDATE, ToolSpec
-from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools._validation import ToolError, _require_int
 from hardcover_mcp.tools.user import get_current_user
 
 GET_PROMPTS_QUERY = """
@@ -143,15 +143,12 @@ async def handle_set_prompt_answer(arguments: dict[str, Any]) -> list[TextConten
     """
     answered = arguments.get("answered")
     if not isinstance(answered, bool):
-        return [TextContent(type="text", text="Error: 'answered' (true/false) is required.")]
+        raise ToolError("'answered' (true/false) is required.")
     if arguments.get("prompt_id") is None or arguments.get("book_id") is None:
-        return [TextContent(type="text", text="Error: 'prompt_id' and 'book_id' are required.")]
+        raise ToolError("'prompt_id' and 'book_id' are required.")
 
-    try:
-        prompt_id = _require_int(arguments["prompt_id"], "prompt_id")
-        book_id = _require_int(arguments["book_id"], "book_id")
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    prompt_id = _require_int(arguments["prompt_id"], "prompt_id")
+    book_id = _require_int(arguments["book_id"], "book_id")
 
     user = await get_current_user()
     found = await execute(
@@ -177,16 +174,11 @@ async def handle_set_prompt_answer(arguments: dict[str, Any]) -> list[TextConten
             # Reads of prompt answers lag a few seconds behind writes, so the lookup can
             # return an answer that was just withdrawn; deleting it again fails on
             # Hardcover's side with an opaque webhook error.
-            return [
-                TextContent(
-                    type="text",
-                    text=(
-                        "Error: Hardcover could not withdraw that answer. It may already have "
-                        "been withdrawn moments ago; changes to prompt answers can take a few "
-                        "seconds to show."
-                    ),
-                )
-            ]
+            raise ToolError(
+                "Hardcover could not withdraw that answer. It may already have "
+                "been withdrawn moments ago; changes to prompt answers can take a few "
+                "seconds to show."
+            ) from None
         output.update(changed=True, answer_id=None)
     else:
         output.update(changed=False, answer_id=existing_id)

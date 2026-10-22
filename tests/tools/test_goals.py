@@ -3,6 +3,9 @@
 import json
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
+from hardcover_mcp.tools._validation import ToolError
 from hardcover_mcp.tools.goals import (
     _format_reading_goal,
     handle_delete_reading_goal,
@@ -73,53 +76,58 @@ class TestHandleGetReadingGoal:
         assert query_vars["user_id"] == 1
 
     async def test_invalid_limit_returns_error(self):
-        result = await handle_get_reading_goal({"limit": 0})
-        assert result[0].text == "Error: 'limit' must be greater than 0."
+        with pytest.raises(ToolError) as exc:
+            await handle_get_reading_goal({"limit": 0})
+        assert str(exc.value) == "'limit' must be greater than 0."
 
 
 class TestHandleSetReadingGoal:
     async def test_missing_required_field_returns_error(self):
-        result = await handle_set_reading_goal(
-            {
-                "goal": 52,
-                "metric": "books",
-                "start_date": "2026-01-01",
-            }
-        )
-        assert result[0].text == "Error: 'end_date' is required."
+        with pytest.raises(ToolError) as exc:
+            await handle_set_reading_goal(
+                {
+                    "goal": 52,
+                    "metric": "books",
+                    "start_date": "2026-01-01",
+                }
+            )
+        assert str(exc.value) == "'end_date' is required."
 
     async def test_invalid_metric_returns_error(self):
-        result = await handle_set_reading_goal(
-            {
-                "goal": 52,
-                "metric": "hours",
-                "start_date": "2026-01-01",
-                "end_date": "2026-12-31",
-            }
-        )
-        assert result[0].text == "Error: 'metric' must be either 'book' or 'page'"
+        with pytest.raises(ToolError) as exc:
+            await handle_set_reading_goal(
+                {
+                    "goal": 52,
+                    "metric": "hours",
+                    "start_date": "2026-01-01",
+                    "end_date": "2026-12-31",
+                }
+            )
+        assert str(exc.value) == "'metric' must be either 'book' or 'page'"
 
     async def test_invalid_date_returns_error(self):
-        result = await handle_set_reading_goal(
-            {
-                "goal": 52,
-                "metric": "book",
-                "start_date": "2026-13-01",
-                "end_date": "2026-12-31",
-            }
-        )
-        assert "'start_date' must be an ISO 8601 date" in result[0].text
+        with pytest.raises(ToolError) as exc:
+            await handle_set_reading_goal(
+                {
+                    "goal": 52,
+                    "metric": "book",
+                    "start_date": "2026-13-01",
+                    "end_date": "2026-12-31",
+                }
+            )
+        assert "'start_date' must be an ISO 8601 date" in str(exc.value)
 
     async def test_end_date_before_start_date_returns_error(self):
-        result = await handle_set_reading_goal(
-            {
-                "goal": 52,
-                "metric": "book",
-                "start_date": "2026-12-31",
-                "end_date": "2026-01-01",
-            }
-        )
-        assert result[0].text == "Error: 'end_date' must be on or after 'start_date'"
+        with pytest.raises(ToolError) as exc:
+            await handle_set_reading_goal(
+                {
+                    "goal": 52,
+                    "metric": "book",
+                    "start_date": "2026-12-31",
+                    "end_date": "2026-01-01",
+                }
+            )
+        assert str(exc.value) == "'end_date' must be on or after 'start_date'"
 
     @patch("hardcover_mcp.tools.goals.get_current_user", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.goals.execute", new_callable=AsyncMock)
@@ -231,6 +239,7 @@ def _own_goal(**overrides) -> dict:
 class TestGoalEditAndDelete:
     async def _run(self, handler, arguments: dict, *responses: dict) -> tuple[str, AsyncMock]:
         mock_exec = AsyncMock(side_effect=list(responses))
+        self.mock_exec = mock_exec
         with (
             patch(
                 "hardcover_mcp.tools.goals.get_current_user",
@@ -267,32 +276,35 @@ class TestGoalEditAndDelete:
         assert sent["archived"] is False
 
     async def test_edit_requires_a_field(self):
-        text, mock_exec = await self._run(handle_set_reading_goal, {"id": 7})
+        with pytest.raises(ToolError) as exc:
+            await self._run(handle_set_reading_goal, {"id": 7})
 
-        assert "at least one of" in text
-        mock_exec.assert_not_awaited()
+        assert "at least one of" in str(exc.value)
+        self.mock_exec.assert_not_awaited()
 
     async def test_edit_someone_elses_goal_is_not_found(self):
-        text, _ = await self._run(
-            handle_set_reading_goal, {"id": 7, "archived": True}, {"data": {"goals": []}}
-        )
+        with pytest.raises(ToolError) as exc:
+            await self._run(
+                handle_set_reading_goal, {"id": 7, "archived": True}, {"data": {"goals": []}}
+            )
 
-        assert "no reading goal of yours" in text
+        assert "no reading goal of yours" in str(exc.value)
 
     async def test_archived_without_id_is_an_error(self):
-        text, mock_exec = await self._run(
-            handle_set_reading_goal,
-            {
-                "goal": 5,
-                "metric": "book",
-                "start_date": "2026-01-01",
-                "end_date": "2026-12-31",
-                "archived": True,
-            },
-        )
+        with pytest.raises(ToolError) as exc:
+            await self._run(
+                handle_set_reading_goal,
+                {
+                    "goal": 5,
+                    "metric": "book",
+                    "start_date": "2026-01-01",
+                    "end_date": "2026-12-31",
+                    "archived": True,
+                },
+            )
 
-        assert "'archived' needs the goal's id" in text
-        mock_exec.assert_not_awaited()
+        assert "'archived' needs the goal's id" in str(exc.value)
+        self.mock_exec.assert_not_awaited()
 
     async def test_delete_own_goal(self):
         text, mock_exec = await self._run(
@@ -306,9 +318,8 @@ class TestGoalEditAndDelete:
         assert mock_exec.call_args_list[1][0][1] == {"id": 7}
 
     async def test_delete_someone_elses_goal_is_not_found(self):
-        text, mock_exec = await self._run(
-            handle_delete_reading_goal, {"id": 7}, {"data": {"goals": []}}
-        )
+        with pytest.raises(ToolError) as exc:
+            await self._run(handle_delete_reading_goal, {"id": 7}, {"data": {"goals": []}})
 
-        assert "no reading goal of yours" in text
-        assert mock_exec.call_count == 1
+        assert "no reading goal of yours" in str(exc.value)
+        assert self.mock_exec.call_count == 1

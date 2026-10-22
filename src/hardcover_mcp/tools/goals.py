@@ -7,7 +7,7 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import DELETE, READ, UPDATE, ToolSpec
-from hardcover_mcp.tools._validation import _require_int, _require_iso_date
+from hardcover_mcp.tools._validation import ToolError, _require_int, _require_iso_date
 from hardcover_mcp.tools.user import get_current_user
 
 VALID_GOAL_METRICS = {"book", "page"}
@@ -139,10 +139,10 @@ def _format_reading_goal(goal: dict[str, Any]) -> dict[str, Any]:
 def _require_metric(value: Any) -> str:
     """Validate and normalize goal metric values."""
     if not isinstance(value, str) or not value.strip():
-        raise ValueError("'metric' must be a non-empty string ('book' or 'page')")
+        raise ToolError("'metric' must be a non-empty string ('book' or 'page')")
     metric = value.strip().lower()
     if metric not in VALID_GOAL_METRICS:
-        raise ValueError("'metric' must be either 'book' or 'page'")
+        raise ToolError("'metric' must be either 'book' or 'page'")
     return metric
 
 
@@ -160,13 +160,10 @@ async def handle_get_reading_goal(arguments: dict[str, Any]) -> list[TextContent
         JSON payload with ``goals`` and ``returned``.
     """
     # --- 1. Validate input
-    try:
-        limit = _require_int(arguments.get("limit", 10), "limit")
-    except ValueError as exc:
-        return [TextContent(type="text", text=f"Error: {exc}")]
+    limit = _require_int(arguments.get("limit", 10), "limit")
 
     if limit <= 0:
-        return [TextContent(type="text", text="Error: 'limit' must be greater than 0.")]
+        raise ToolError("'limit' must be greater than 0.")
 
     # --- 2. Resolve user and query active goals
     user = await get_current_user()
@@ -200,41 +197,33 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
     if arguments.get("id") is not None:
         return await _edit_reading_goal(arguments)
     if arguments.get("archived") is not None:
-        return [
-            TextContent(
-                type="text",
-                text="Error: 'archived' needs the goal's id (from get_reading_goal).",
-            )
-        ]
+        raise ToolError("'archived' needs the goal's id (from get_reading_goal).")
 
     # --- 1. Validate required arguments
     for required in ("goal", "metric", "start_date", "end_date"):
         if required not in arguments:
-            return [TextContent(type="text", text=f"Error: '{required}' is required.")]
+            raise ToolError(f"'{required}' is required.")
 
-    try:
-        goal = _require_int(arguments["goal"], "goal")
-        if goal <= 0:
-            raise ValueError("'goal' must be greater than 0")
-        metric = _require_metric(arguments["metric"])
-        start_date = _require_iso_date(arguments["start_date"], "start_date")
-        end_date = _require_iso_date(arguments["end_date"], "end_date")
-        if end_date < start_date:
-            raise ValueError("'end_date' must be on or after 'start_date'")
+    goal = _require_int(arguments["goal"], "goal")
+    if goal <= 0:
+        raise ToolError("'goal' must be greater than 0")
+    metric = _require_metric(arguments["metric"])
+    start_date = _require_iso_date(arguments["start_date"], "start_date")
+    end_date = _require_iso_date(arguments["end_date"], "end_date")
+    if end_date < start_date:
+        raise ToolError("'end_date' must be on or after 'start_date'")
 
-        description_raw = arguments.get("description")
-        if description_raw is not None and not isinstance(description_raw, str):
-            raise ValueError("'description' must be a string")
-        description = description_raw if description_raw else f"{goal} {metric}s"
+    description_raw = arguments.get("description")
+    if description_raw is not None and not isinstance(description_raw, str):
+        raise ToolError("'description' must be a string")
+    description = description_raw if description_raw else f"{goal} {metric}s"
 
-        privacy_setting_id = None
-        if "privacy_setting_id" in arguments and arguments["privacy_setting_id"] is not None:
-            privacy_setting_id = _require_int(
-                arguments["privacy_setting_id"],
-                "privacy_setting_id",
-            )
-    except ValueError as exc:
-        return [TextContent(type="text", text=f"Error: {exc}")]
+    privacy_setting_id = None
+    if "privacy_setting_id" in arguments and arguments["privacy_setting_id"] is not None:
+        privacy_setting_id = _require_int(
+            arguments["privacy_setting_id"],
+            "privacy_setting_id",
+        )
 
     # --- 2. Build mutation input
     user = await get_current_user()
@@ -269,7 +258,7 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
         update_payload = mutation_result["data"]["update_goal"]
         if update_payload.get("errors"):
             errors = "; ".join(update_payload["errors"])
-            return [TextContent(type="text", text=f"Error: {errors}")]
+            raise ToolError(errors)
         raw_goal = update_payload.get("goal") or {
             **goal_input,
             "id": existing_goals[0]["id"],
@@ -281,7 +270,7 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
         insert_payload = mutation_result["data"]["insert_goal"]
         if insert_payload.get("errors"):
             errors = "; ".join(insert_payload["errors"])
-            return [TextContent(type="text", text=f"Error: {errors}")]
+            raise ToolError(errors)
         raw_goal = insert_payload.get("goal") or {
             **goal_input,
             "id": insert_payload.get("id"),
@@ -293,17 +282,14 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
     return [TextContent(type="text", text=json.dumps(_format_reading_goal(raw_goal), indent=2))]
 
 
-async def _find_own_goal(goal_id: Any) -> dict[str, Any] | str:
-    """Your goal with ``goal_id`` (any archived state), or an error message."""
-    try:
-        goal_id = _require_int(goal_id, "id")
-    except ValueError as exc:
-        return f"Error: {exc}"
+async def _find_own_goal(goal_id: Any) -> dict[str, Any]:
+    """Your goal with ``goal_id`` (any archived state); ``ToolError`` if there is none."""
+    goal_id = _require_int(goal_id, "id")
     user = await get_current_user()
     found = await execute(GET_OWN_GOAL_QUERY, {"id": goal_id, "user_id": user["id"]})
     goals = found["data"]["goals"]
     if not goals:
-        return "Error: no reading goal of yours with that id."
+        raise ToolError("no reading goal of yours with that id.")
     return goals[0]
 
 
@@ -331,37 +317,27 @@ async def _edit_reading_goal(arguments: dict[str, Any]) -> list[TextContent]:
         "archived",
     )
     if all(arguments.get(key) is None for key in editable):
-        return [
-            TextContent(
-                type="text",
-                text=f"Error: provide at least one of {', '.join(repr(k) for k in editable)}.",
-            )
-        ]
+        raise ToolError(f"provide at least one of {', '.join(repr(k) for k in editable)}.")
 
     current = await _find_own_goal(arguments["id"])
-    if isinstance(current, str):
-        return [TextContent(type="text", text=current)]
 
     def pick(key: str) -> Any:
         return arguments[key] if arguments.get(key) is not None else current.get(key)
 
-    try:
-        goal = _require_int(pick("goal"), "goal")
-        if goal <= 0:
-            raise ValueError("'goal' must be greater than 0")
-        metric = _require_metric(pick("metric"))
-        start_date = _require_iso_date(pick("start_date"), "start_date")
-        end_date = _require_iso_date(pick("end_date"), "end_date")
-        if end_date < start_date:
-            raise ValueError("'end_date' must be on or after 'start_date'")
-        archived = pick("archived")
-        if not isinstance(archived, bool):
-            raise ValueError("'archived' must be true or false")
-        description = pick("description") or f"{goal} {metric}s"
-        if not isinstance(description, str):
-            raise ValueError("'description' must be a string")
-    except ValueError as exc:
-        return [TextContent(type="text", text=f"Error: {exc}")]
+    goal = _require_int(pick("goal"), "goal")
+    if goal <= 0:
+        raise ToolError("'goal' must be greater than 0")
+    metric = _require_metric(pick("metric"))
+    start_date = _require_iso_date(pick("start_date"), "start_date")
+    end_date = _require_iso_date(pick("end_date"), "end_date")
+    if end_date < start_date:
+        raise ToolError("'end_date' must be on or after 'start_date'")
+    archived = pick("archived")
+    if not isinstance(archived, bool):
+        raise ToolError("'archived' must be true or false")
+    description = pick("description") or f"{goal} {metric}s"
+    if not isinstance(description, str):
+        raise ToolError("'description' must be a string")
 
     goal_input: dict[str, Any] = {
         "goal": goal,
@@ -375,17 +351,14 @@ async def _edit_reading_goal(arguments: dict[str, Any]) -> list[TextContent]:
     }
     privacy = pick("privacy_setting_id")
     if privacy is not None:
-        try:
-            goal_input["privacy_setting_id"] = _require_int(privacy, "privacy_setting_id")
-        except ValueError as exc:
-            return [TextContent(type="text", text=f"Error: {exc}")]
+        goal_input["privacy_setting_id"] = _require_int(privacy, "privacy_setting_id")
 
     result = await execute(
         UPDATE_READING_GOAL_MUTATION, {"id": current["id"], "object": goal_input}
     )
     payload = result["data"]["update_goal"]
     if payload.get("errors"):
-        return [TextContent(type="text", text=f"Error: {'; '.join(payload['errors'])}")]
+        raise ToolError("; ".join(payload["errors"]))
     raw_goal = payload.get("goal") or {**current, **goal_input}
     return [TextContent(type="text", text=json.dumps(_format_reading_goal(raw_goal), indent=2))]
 
@@ -404,15 +377,13 @@ async def handle_delete_reading_goal(arguments: dict[str, Any]) -> list[TextCont
         JSON confirmation ``{deleted: true, id}``.
     """
     if arguments.get("id") is None:
-        return [TextContent(type="text", text="Error: 'id' is required.")]
+        raise ToolError("'id' is required.")
     current = await _find_own_goal(arguments["id"])
-    if isinstance(current, str):
-        return [TextContent(type="text", text=current)]
 
     result = await execute(DELETE_READING_GOAL_MUTATION, {"id": current["id"]})
     payload = result["data"]["delete_goal"] or {}
     if payload.get("errors"):
-        return [TextContent(type="text", text=f"Error: {'; '.join(payload['errors'])}")]
+        raise ToolError("; ".join(payload["errors"]))
     return [TextContent(type="text", text=json.dumps({"deleted": True, "id": current["id"]}))]
 
 

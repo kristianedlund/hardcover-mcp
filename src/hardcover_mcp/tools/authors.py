@@ -7,7 +7,7 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
-from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools._validation import ToolError, _require_int
 from hardcover_mcp.tools.books import resolve_id_by_name
 
 # ── Read: get_author by id, slug, or name ──
@@ -120,22 +120,16 @@ async def handle_get_author(arguments: dict[str, Any]) -> list[TextContent]:
     name = arguments.get("name")
 
     if not author_id and not slug and not name:
-        return [TextContent(type="text", text="Error: provide 'id', 'slug', or 'name'.")]
+        raise ToolError("provide 'id', 'slug', or 'name'.")
 
-    try:
-        books_limit = min(
-            _require_int(arguments.get("books_limit", _DEFAULT_BOOKS_LIMIT), "books_limit"),
-            _MAX_BOOKS_LIMIT,
-        )
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    books_limit = min(
+        _require_int(arguments.get("books_limit", _DEFAULT_BOOKS_LIMIT), "books_limit"),
+        _MAX_BOOKS_LIMIT,
+    )
 
     vars: dict[str, Any] = {"books_limit": books_limit}
     if author_id:
-        try:
-            vars["id"] = _require_int(author_id, "id")
-        except ValueError as e:
-            return [TextContent(type="text", text=f"Error: {e}")]
+        vars["id"] = _require_int(author_id, "id")
         result = await execute(GET_AUTHOR_BY_ID_QUERY, vars)
     elif slug:
         vars["slug"] = slug

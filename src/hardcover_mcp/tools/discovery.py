@@ -7,7 +7,7 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
-from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools._validation import ToolError, _require_int
 from hardcover_mcp.tools.books import fetch_books_by_ids
 
 # ── Trending ──
@@ -44,27 +44,20 @@ async def handle_get_trending_books(arguments: dict[str, Any]) -> list[TextConte
     duration = arguments.get("duration", "week")
     if duration not in _TRENDING_DURATIONS:
         valid = ", ".join(sorted(_TRENDING_DURATIONS))
-        return [
-            TextContent(
-                type="text", text=f"Error: invalid duration '{duration}'. Must be one of: {valid}."
-            )
-        ]
+        raise ToolError(f"invalid duration '{duration}'. Must be one of: {valid}.")
 
-    try:
-        limit = min(
-            _require_int(arguments.get("limit", _DEFAULT_TRENDING_LIMIT), "limit"),
-            _MAX_TRENDING_LIMIT,
-        )
-        offset = _require_int(arguments.get("offset", 0), "offset")
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    limit = min(
+        _require_int(arguments.get("limit", _DEFAULT_TRENDING_LIMIT), "limit"),
+        _MAX_TRENDING_LIMIT,
+    )
+    offset = _require_int(arguments.get("offset", 0), "offset")
 
     result = await execute(
         BOOKS_TRENDING_QUERY, {"duration": duration, "limit": limit, "offset": offset}
     )
     trending = result["data"]["books_trending"]
     if trending.get("error"):
-        return [TextContent(type="text", text=f"Error: {trending['error']}")]
+        raise ToolError(str(trending["error"]))
 
     books = await fetch_books_by_ids(trending.get("ids") or [])
     return [TextContent(type="text", text=json.dumps(books, indent=2))]
@@ -117,18 +110,15 @@ async def handle_get_vibes(arguments: dict[str, Any]) -> list[TextContent]:
         JSON array of vibes, each with metadata and a ``books`` array.
     """
     featured = arguments.get("featured", True)
-    try:
-        limit = min(
-            _require_int(arguments.get("limit", _DEFAULT_VIBES_LIMIT), "limit"), _MAX_VIBES_LIMIT
-        )
-        offset = _require_int(arguments.get("offset", 0), "offset")
-        requested_bpv = arguments.get("books_per_vibe", _DEFAULT_BOOKS_PER_VIBE)
-        books_per_vibe = min(
-            _require_int(requested_bpv, "books_per_vibe"),
-            _MAX_BOOKS_PER_VIBE,
-        )
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    limit = min(
+        _require_int(arguments.get("limit", _DEFAULT_VIBES_LIMIT), "limit"), _MAX_VIBES_LIMIT
+    )
+    offset = _require_int(arguments.get("offset", 0), "offset")
+    requested_bpv = arguments.get("books_per_vibe", _DEFAULT_BOOKS_PER_VIBE)
+    books_per_vibe = min(
+        _require_int(requested_bpv, "books_per_vibe"),
+        _MAX_BOOKS_PER_VIBE,
+    )
 
     result = await execute(_render_vibes_query(bool(featured)), {"limit": limit, "offset": offset})
     vibes = result["data"]["vibes"]

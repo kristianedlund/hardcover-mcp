@@ -7,7 +7,7 @@ from mcp.types import TextContent, Tool, ToolAnnotations
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import DELETE, READ, UPDATE, ToolSpec
-from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools._validation import ToolError, _require_int
 from hardcover_mcp.tools.books import author_names
 from hardcover_mcp.tools.user import get_current_user
 
@@ -142,17 +142,14 @@ async def handle_get_list(arguments: dict[str, Any]) -> list[TextContent]:
     book_limit = min(arguments.get("book_limit", 25), 100)
     book_offset = arguments.get("book_offset", 0)
 
-    try:
-        result = await execute(
-            GET_LIST_BY_ID_QUERY,
-            {
-                "id": _require_int(list_id, "id"),
-                "book_limit": book_limit,
-                "book_offset": book_offset,
-            },
-        )
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    result = await execute(
+        GET_LIST_BY_ID_QUERY,
+        {
+            "id": _require_int(list_id, "id"),
+            "book_limit": book_limit,
+            "book_offset": book_offset,
+        },
+    )
 
     lists = result["data"]["lists"]
     if not lists:
@@ -228,7 +225,7 @@ def _build_list_input(arguments: dict[str, Any]) -> dict[str, Any]:
         else:
             pid = PRIVACY_NAME_TO_ID.get(str(privacy).lower())
             if pid is None:
-                raise ValueError(
+                raise ToolError(
                     f"Unknown privacy '{privacy}'. Valid: {', '.join(PRIVACY_MAP.values())}"
                 )
             obj["privacy_setting_id"] = pid
@@ -251,12 +248,9 @@ async def _create_list(arguments: dict[str, Any]) -> list[TextContent]:
     """
     name = arguments.get("name")
     if not name:
-        return [TextContent(type="text", text="Error: 'name' is required.")]
+        raise ToolError("'name' is required.")
 
-    try:
-        obj = _build_list_input(arguments)
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    obj = _build_list_input(arguments)
 
     result = await execute(CREATE_LIST_MUTATION, {"object": obj})
     mutation_result = result["data"]["insert_list"]
@@ -288,26 +282,15 @@ async def _update_list(arguments: dict[str, Any]) -> list[TextContent]:
     """
     list_id = arguments.get("id")
     if not list_id:
-        return [TextContent(type="text", text="Error: 'id' is required.")]
+        raise ToolError("'id' is required.")
 
-    try:
-        obj = _build_list_input(arguments)
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    obj = _build_list_input(arguments)
     if not obj:
-        return [
-            TextContent(
-                type="text",
-                text="Error: provide at least one of 'name', 'description', 'privacy'.",
-            )
-        ]
+        raise ToolError("provide at least one of 'name', 'description', 'privacy'.")
 
-    try:
-        result = await execute(
-            UPDATE_LIST_MUTATION, {"id": _require_int(list_id, "id"), "object": obj}
-        )
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    result = await execute(
+        UPDATE_LIST_MUTATION, {"id": _require_int(list_id, "id"), "object": obj}
+    )
     mutation_result = result["data"]["update_list"]
 
     lst = mutation_result.get("list", {})
@@ -343,12 +326,9 @@ async def handle_delete_list(arguments: dict[str, Any]) -> list[TextContent]:
     """
     list_id = arguments.get("id")
     if not list_id:
-        return [TextContent(type="text", text="Error: 'id' is required.")]
+        raise ToolError("'id' is required.")
 
-    try:
-        list_id_int = _require_int(list_id, "id")
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    list_id_int = _require_int(list_id, "id")
 
     await execute(DELETE_LIST_MUTATION, {"id": list_id_int})
 
@@ -410,20 +390,17 @@ async def handle_set_list_book(arguments: dict[str, Any]) -> list[TextContent]:
     """
     on_list = arguments.get("on_list")
     if not isinstance(on_list, bool):
-        return [TextContent(type="text", text="Error: 'on_list' (true/false) is required.")]
+        raise ToolError("'on_list' (true/false) is required.")
     if not arguments.get("list_id") or not arguments.get("book_id"):
-        return [TextContent(type="text", text="Error: 'list_id' and 'book_id' are required.")]
+        raise ToolError("'list_id' and 'book_id' are required.")
 
-    try:
-        list_id = _require_int(arguments["list_id"], "list_id")
-        book_id = _require_int(arguments["book_id"], "book_id")
-        position = (
-            _require_int(arguments["position"], "position")
-            if arguments.get("position") is not None
-            else None
-        )
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    list_id = _require_int(arguments["list_id"], "list_id")
+    book_id = _require_int(arguments["book_id"], "book_id")
+    position = (
+        _require_int(arguments["position"], "position")
+        if arguments.get("position") is not None
+        else None
+    )
 
     found = await execute(FIND_LIST_BOOK_QUERY, {"list_id": list_id, "book_id": book_id})
     existing = found["data"]["list_books"]
