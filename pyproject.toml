@@ -12,15 +12,13 @@ keywords = ["mcp", "hardcover", "graphql", "books", "reading"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    "mcp>=2.0.0",
-    "httpx>=0.27",
-    "python-dotenv>=1.0",
+    "mcp>=2.0.0,<3",
+    "httpx>=0.27,<1",
 ]
 
 [project.urls]
@@ -40,7 +38,8 @@ dev = [
     "graphql-core>=3.3.0",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
-    "ruff>=0.11",
+    "python-dotenv>=1.0",
+    "ruff>=0.12",
 ]
 
 [tool.pytest.ini_options]

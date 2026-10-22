@@ -9,11 +9,8 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
-from dotenv import load_dotenv
 
-load_dotenv()
-
-API_URL = os.environ.get("HARDCOVER_API_URL", "https://api.hardcover.app/v1/graphql")
+DEFAULT_API_URL = "https://api.hardcover.app/v1/graphql"
 API_KEYS_URL = "https://hardcover.app/account/api"
 NEW_API_KEY_URL = "https://hardcover.app/account/api/keys/new"
 
@@ -183,6 +180,17 @@ async def aclose() -> None:
     _client_loop = None
 
 
+def _api_url() -> str:
+    """The GraphQL endpoint: ``HARDCOVER_API_URL`` if set, else Hardcover's API.
+
+    Only ``https://`` URLs are accepted, since every request carries the API token.
+    """
+    url = os.environ.get("HARDCOVER_API_URL", "").strip() or DEFAULT_API_URL
+    if not url.startswith("https://"):
+        raise HardcoverAPIError(f"HARDCOVER_API_URL must be an https:// URL, got: {url!r}")
+    return url
+
+
 def _get_token() -> str:
     """Read the API token from the environment."""
     token = os.environ.get("HARDCOVER_API_TOKEN", "").strip()
@@ -223,6 +231,7 @@ async def execute(
     """
     await _wait_for_rate_limit()
 
+    url = _api_url()
     token = _get_token()
     if not token.startswith("Bearer "):
         token = f"Bearer {token}"
@@ -238,7 +247,7 @@ async def execute(
     backoff = _RETRY_BACKOFF
 
     for attempt in range(_MAX_RETRIES + 1):
-        response = await _http_client().post(API_URL, json=payload, headers=headers)
+        response = await _http_client().post(url, json=payload, headers=headers)
 
         _record_rate_limit(response.headers)
 
