@@ -9,7 +9,6 @@ from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import DELETE, READ, ToolSpec
 from hardcover_mcp.tools._validation import (
     PRIVACY_DESCRIPTION,
-    PRIVACY_SETTING_ID_DESCRIPTION,
     ToolError,
     _privacy_argument,
     _require_int,
@@ -261,8 +260,7 @@ async def _create_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
     ----------
     arguments : dict[str, Any]
         Required: ``book_id`` (int), ``entry`` (str), ``event`` (``"note"`` or ``"quote"``).
-        Optional: ``edition_id`` (int), ``privacy`` (public/followers/private or 1/2/3;
-        ``privacy_setting_id`` is a deprecated alias).
+        Optional: ``edition_id`` (int), ``privacy`` (public/followers/private or 1/2/3).
 
     Returns
     -------
@@ -308,8 +306,7 @@ async def _update_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
     ----------
     arguments : dict[str, Any]
         Required: ``id`` (int). Optional: ``entry`` (str), ``event`` (note/quote),
-        ``edition_id`` (int), ``privacy`` (or deprecated ``privacy_setting_id``).
-        ``book_id`` is ignored.
+        ``edition_id`` (int), ``privacy``. ``book_id`` is ignored.
 
     Returns
     -------
@@ -477,10 +474,6 @@ TOOLS: list[ToolSpec] = [
                     "privacy": {
                         "type": "string",
                         "description": PRIVACY_DESCRIPTION + " Default when creating: public.",
-                    },
-                    "privacy_setting_id": {
-                        "type": "integer",
-                        "description": PRIVACY_SETTING_ID_DESCRIPTION,
                     },
                 },
             },

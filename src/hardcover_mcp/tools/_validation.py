@@ -54,8 +54,6 @@ _PRIVACY_IDS: dict[str, int] = {
 }
 # Shared JSON-schema description for every tool's ``privacy`` argument.
 PRIVACY_DESCRIPTION = "Who can see it: 'public', 'followers', or 'private' (or 1, 2, 3)."
-# Kept on set_journal_entry and set_reading_goal so existing callers keep working.
-PRIVACY_SETTING_ID_DESCRIPTION = "Deprecated: use privacy. 1 public, 2 followers, 3 private."
 
 
 def _require_privacy(value: Any, name: str = "privacy") -> int:
@@ -74,15 +72,15 @@ def _require_privacy(value: Any, name: str = "privacy") -> int:
 
 
 def _privacy_argument(arguments: dict[str, Any]) -> int | None:
-    """The privacy id from ``privacy``, or from the deprecated ``privacy_setting_id`` alias."""
+    """The privacy id from a tool's ``privacy`` argument, or None if it wasn't passed.
+
+    Rejects the removed ``privacy_setting_id`` argument rather than ignoring it, so an old
+    call asking for a private entry doesn't quietly get a public one.
+    """
+    if arguments.get("privacy_setting_id") is not None:
+        raise ToolError("'privacy_setting_id' was removed; use 'privacy'.")
     privacy = arguments.get("privacy")
-    legacy = arguments.get("privacy_setting_id")
-    if privacy is None:
-        return None if legacy is None else _require_privacy(legacy, "privacy_setting_id")
-    resolved = _require_privacy(privacy)
-    if legacy is not None and _require_privacy(legacy, "privacy_setting_id") != resolved:
-        raise ToolError("'privacy' and 'privacy_setting_id' disagree; pass only 'privacy'.")
-    return resolved
+    return None if privacy is None else _require_privacy(privacy)
 
 
 def privacy_label(privacy_id: int | None) -> str | None:

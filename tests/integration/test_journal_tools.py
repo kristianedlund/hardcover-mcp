@@ -58,7 +58,7 @@ class TestJournalEntryLifecycle:
             # Edit: change the text and privacy; the event must be preserved.
             edited_note = f"{unique_note}_edited"
             edit_result = await handle_set_journal_entry(
-                {"id": entry_id, "entry": edited_note, "privacy_setting_id": 3}
+                {"id": entry_id, "entry": edited_note, "privacy": "private"}
             )
             edited = json.loads(edit_result[0].text)
             assert edited["id"] == entry_id
