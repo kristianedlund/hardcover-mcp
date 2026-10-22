@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from hardcover_mcp.tools._validation import ToolError
 from hardcover_mcp.tools.library import (
     LIBRARY_SORT_FIELDS,
     _build_read_input,
@@ -130,7 +131,7 @@ class TestBuildReadInput:
         assert _build_read_input({"book_id": 42}) == {}
 
     def test_raises_on_non_numeric_progress_pages(self):
-        with pytest.raises(ValueError, match="'progress_pages' must be an integer"):
+        with pytest.raises(ToolError, match="'progress_pages' must be an integer"):
             _build_read_input({"progress_pages": "abc"})
 
     def test_extracts_progress_seconds(self):
@@ -140,7 +141,7 @@ class TestBuildReadInput:
         assert result == {"progress_seconds": 3600}
 
     def test_raises_on_non_numeric_progress_seconds(self):
-        with pytest.raises(ValueError, match="'progress_seconds' must be an integer"):
+        with pytest.raises(ToolError, match="'progress_seconds' must be an integer"):
             _build_read_input({"progress_seconds": "abc"})
 
     def test_extracts_all_fields(self):
@@ -963,14 +964,16 @@ class TestHandleSetUserBookPrivacy:
     async def test_invalid_privacy_returns_error(self):
         mock_user = {"id": 1}
 
-        with patch(
-            "hardcover_mcp.tools.library.get_current_user",
-            new=AsyncMock(return_value=mock_user),
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value=mock_user),
+            ),
+            pytest.raises(ToolError) as exc,
         ):
-            result = await handle_set_user_book({"book_id": 42, "privacy": "secret"})
+            await handle_set_user_book({"book_id": 42, "privacy": "secret"})
 
-        assert "Error" in result[0].text
-        assert "secret" in result[0].text
+        assert "secret" in str(exc.value)
 
 
 class TestSetEditionOwnedHelper:
@@ -986,6 +989,7 @@ class TestSetEditionOwnedHelper:
 
     async def _run(self, owned: bool, *responses: dict) -> tuple[bool, AsyncMock]:
         mock_exec = AsyncMock(side_effect=list(responses))
+        self.mock_exec = mock_exec
         with (
             patch(
                 "hardcover_mcp.tools.library.get_current_user",
@@ -1037,6 +1041,7 @@ _UPDATED = {
 class TestHandleSetUserBookOwned:
     async def _run(self, arguments: dict, *responses: dict) -> tuple[str, AsyncMock]:
         mock_exec = AsyncMock(side_effect=list(responses))
+        self.mock_exec = mock_exec
         with (
             patch(
                 "hardcover_mcp.tools.library.get_current_user",
@@ -1074,21 +1079,22 @@ class TestHandleSetUserBookOwned:
         assert mock_exec.call_args_list[2][0][1]["edition_id"] == 777
 
     async def test_owned_without_any_edition_errors_before_writing(self):
-        text, mock_exec = await self._run({"book_id": 42, "owned": True}, _existing_entry(None))
-        assert "'owned' needs an edition" in text
-        assert mock_exec.call_count == 1  # only the lookup; nothing written
+        with pytest.raises(ToolError) as exc:
+            await self._run({"book_id": 42, "owned": True}, _existing_entry(None))
+        assert "'owned' needs an edition" in str(exc.value)
+        assert self.mock_exec.call_count == 1  # only the lookup; nothing written
 
     async def test_owned_on_new_book_without_edition_errors(self):
-        text, mock_exec = await self._run(
-            {"book_id": 42, "owned": True}, {"data": {"user_books": []}}
-        )
-        assert "'owned' needs an edition" in text
-        assert mock_exec.call_count == 1
+        with pytest.raises(ToolError) as exc:
+            await self._run({"book_id": 42, "owned": True}, {"data": {"user_books": []}})
+        assert "'owned' needs an edition" in str(exc.value)
+        assert self.mock_exec.call_count == 1
 
     async def test_non_bool_owned_is_rejected(self):
-        text, mock_exec = await self._run({"book_id": 42, "owned": "yes"})
-        assert "'owned' must be true or false" in text
-        mock_exec.assert_not_awaited()
+        with pytest.raises(ToolError) as exc:
+            await self._run({"book_id": 42, "owned": "yes"})
+        assert "'owned' must be true or false" in str(exc.value)
+        self.mock_exec.assert_not_awaited()
 
     async def test_without_owned_no_ownership_fields(self):
         text, mock_exec = await self._run(
@@ -1187,14 +1193,14 @@ class TestGetUserLibrarySort:
         assert expected in mock_exec.call_args[0][0]
 
     async def test_invalid_sort_returns_error(self):
-        result = await handle_get_user_library({"sort": "banana"})
-        assert "Error" in result[0].text
-        assert "sort" in result[0].text
+        with pytest.raises(ToolError) as exc:
+            await handle_get_user_library({"sort": "banana"})
+        assert "sort" in str(exc.value)
 
     async def test_invalid_order_returns_error(self):
-        result = await handle_get_user_library({"order": "sideways"})
-        assert "Error" in result[0].text
-        assert "order" in result[0].text
+        with pytest.raises(ToolError) as exc:
+            await handle_get_user_library({"order": "sideways"})
+        assert "order" in str(exc.value)
 
 
 class TestGetUserLibraryDateRange:
@@ -1234,14 +1240,14 @@ class TestGetUserLibraryDateRange:
         assert call_vars["end_date"] == "2025-05-31"
 
     async def test_start_date_without_end_date_returns_error(self):
-        result = await handle_get_user_library({"start_date": "2025-01-01"})
-        assert "Error" in result[0].text
-        assert "end_date" in result[0].text
+        with pytest.raises(ToolError) as exc:
+            await handle_get_user_library({"start_date": "2025-01-01"})
+        assert "end_date" in str(exc.value)
 
     async def test_end_date_without_start_date_returns_error(self):
-        result = await handle_get_user_library({"end_date": "2025-12-31"})
-        assert "Error" in result[0].text
-        assert "start_date" in result[0].text
+        with pytest.raises(ToolError) as exc:
+            await handle_get_user_library({"end_date": "2025-12-31"})
+        assert "start_date" in str(exc.value)
 
     async def test_date_range_result_includes_finished_at(self):
         mock_user = {"id": 1}
@@ -1289,6 +1295,7 @@ class TestHandleGetUserLibraryHasReviewQuery:
     async def _run(self, arguments: dict) -> tuple[list, AsyncMock]:
         empty = {"data": {"user_books": [], "user_books_aggregate": {"aggregate": {"count": 0}}}}
         mock_exec = AsyncMock(return_value=empty)
+        self.mock_exec = mock_exec
         with (
             patch(
                 "hardcover_mcp.tools.library.get_current_user",
@@ -1317,11 +1324,12 @@ class TestHandleGetUserLibraryHasReviewQuery:
         assert "review_raw" not in query
 
     async def test_rejects_date_range(self):
-        result, mock_exec = await self._run(
-            {"has_review": True, "start_date": "2025-01-01", "end_date": "2025-12-31"}
-        )
-        assert "can't be combined" in result[0].text
-        mock_exec.assert_not_called()
+        with pytest.raises(ToolError) as exc:
+            await self._run(
+                {"has_review": True, "start_date": "2025-01-01", "end_date": "2025-12-31"}
+            )
+        assert "can't be combined" in str(exc.value)
+        self.mock_exec.assert_not_called()
 
 
 class TestHandleSetUserBookRead:
@@ -1339,8 +1347,9 @@ class TestHandleSetUserBookRead:
         assert merged["finished_at"] == "2025-02-01"
 
     async def test_without_id_needs_a_book(self):
-        result = await handle_set_user_book_read({"finished_at": "2025-02-01"})
-        assert "provide 'book_id' or 'user_book_id'" in result[0].text
+        with pytest.raises(ToolError) as exc:
+            await handle_set_user_book_read({"finished_at": "2025-02-01"})
+        assert "provide 'book_id' or 'user_book_id'" in str(exc.value)
 
     async def test_without_id_inserts_when_no_active_read(self):
         no_active = {"data": {"user_book_reads": []}}
@@ -1359,6 +1368,7 @@ class TestHandleGetUserLibraryOwned:
     async def _query(self, arguments: dict) -> str:
         empty = {"data": {"user_books": [], "user_books_aggregate": {"aggregate": {"count": 0}}}}
         mock_exec = AsyncMock(return_value=empty)
+        self.mock_exec = mock_exec
         with (
             patch(
                 "hardcover_mcp.tools.library.get_current_user",

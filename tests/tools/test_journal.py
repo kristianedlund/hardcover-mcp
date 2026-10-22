@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from hardcover_mcp.tools._validation import ToolError
 from hardcover_mcp.tools.journal import (
     _format_journal_entry,
     handle_delete_journal_entry,
@@ -238,15 +239,15 @@ class TestHandleGetReadingJournal:
         assert call_vars["offset"] == 2
 
     async def test_non_numeric_book_id_raises_value_error(self):
-        with pytest.raises(ValueError, match="'book_id' must be an integer"):
+        with pytest.raises(ToolError, match="'book_id' must be an integer"):
             await handle_get_reading_journal({"book_id": "not-a-number"})
 
     async def test_non_numeric_limit_raises_value_error(self):
-        with pytest.raises(ValueError, match="'limit' must be an integer"):
+        with pytest.raises(ToolError, match="'limit' must be an integer"):
             await handle_get_reading_journal({"limit": "bad"})
 
     async def test_non_numeric_offset_raises_value_error(self):
-        with pytest.raises(ValueError, match="'offset' must be an integer"):
+        with pytest.raises(ToolError, match="'offset' must be an integer"):
             await handle_get_reading_journal({"offset": "bad"})
 
     @patch("hardcover_mcp.tools.journal.get_current_user", new_callable=AsyncMock)
@@ -299,27 +300,30 @@ class TestHandleSetJournalEntryCreate:
     @patch("hardcover_mcp.tools.journal.get_current_user", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.journal.execute", new_callable=AsyncMock)
     async def test_missing_book_id_returns_error_before_api_calls(self, mock_execute, mock_user):
-        result = await handle_set_journal_entry({"entry": "x", "event": "note"})
+        with pytest.raises(ToolError) as exc:
+            await handle_set_journal_entry({"entry": "x", "event": "note"})
 
-        assert result[0].text == "Error: 'book_id' is required when creating."
+        assert str(exc.value) == "'book_id' is required when creating."
         mock_user.assert_not_awaited()
         mock_execute.assert_not_awaited()
 
     @patch("hardcover_mcp.tools.journal.get_current_user", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.journal.execute", new_callable=AsyncMock)
     async def test_invalid_event_returns_error_before_api_calls(self, mock_execute, mock_user):
-        result = await handle_set_journal_entry({"book_id": 1, "entry": "x", "event": "rating"})
+        with pytest.raises(ToolError) as exc:
+            await handle_set_journal_entry({"book_id": 1, "entry": "x", "event": "rating"})
 
-        assert result[0].text == "Error: 'event' must be one of: note, quote."
+        assert str(exc.value) == "'event' must be one of: note, quote."
         mock_user.assert_not_awaited()
         mock_execute.assert_not_awaited()
 
     @patch("hardcover_mcp.tools.journal.get_current_user", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.journal.execute", new_callable=AsyncMock)
     async def test_invalid_book_id_returns_error_before_api_calls(self, mock_execute, mock_user):
-        result = await handle_set_journal_entry({"book_id": "bad", "entry": "x", "event": "note"})
+        with pytest.raises(ToolError) as exc:
+            await handle_set_journal_entry({"book_id": "bad", "entry": "x", "event": "note"})
 
-        assert "Error: 'book_id' must be an integer" in result[0].text
+        assert "'book_id' must be an integer" in str(exc.value)
         mock_user.assert_not_awaited()
         mock_execute.assert_not_awaited()
 
@@ -344,6 +348,7 @@ def _own_entry(event: str = "note") -> dict:
 class TestHandleSetJournalEntryEdit:
     async def _run(self, arguments: dict, *responses: dict) -> tuple[str, AsyncMock]:
         mock_exec = AsyncMock(side_effect=list(responses))
+        self.mock_exec = mock_exec
         with (
             patch(
                 "hardcover_mcp.tools.journal.get_current_user",
@@ -375,31 +380,33 @@ class TestHandleSetJournalEntryEdit:
         }
 
     async def test_requires_a_field_to_change(self):
-        text, mock_exec = await self._run({"id": 101})
+        with pytest.raises(ToolError) as exc:
+            await self._run({"id": 101})
 
-        assert "at least one" in text
-        mock_exec.assert_not_awaited()
+        assert "at least one" in str(exc.value)
+        self.mock_exec.assert_not_awaited()
 
     async def test_rejects_entries_that_are_not_yours(self):
-        text, _ = await self._run({"id": 101, "entry": "x"}, {"data": {"reading_journals": []}})
+        with pytest.raises(ToolError) as exc:
+            await self._run({"id": 101, "entry": "x"}, {"data": {"reading_journals": []}})
 
-        assert "no journal entry of yours" in text
+        assert "no journal entry of yours" in str(exc.value)
 
     async def test_rejects_non_note_events(self):
-        text, mock_exec = await self._run(
-            {"id": 101, "entry": "x"}, _own_entry(event="status_read")
-        )
+        with pytest.raises(ToolError) as exc:
+            await self._run({"id": 101, "entry": "x"}, _own_entry(event="status_read"))
 
-        assert "only note and quote" in text
-        assert mock_exec.call_count == 1
+        assert "only note and quote" in str(exc.value)
+        assert self.mock_exec.call_count == 1
 
     async def test_reports_api_errors(self):
         failed = {
             "data": {"update_reading_journal": {"errors": ["nope"], "reading_journal": None}}
         }
-        text, _ = await self._run({"id": 101, "privacy_setting_id": 1}, _own_entry(), failed)
+        with pytest.raises(ToolError) as exc:
+            await self._run({"id": 101, "privacy_setting_id": 1}, _own_entry(), failed)
 
-        assert text == "Error: nope"
+        assert str(exc.value) == "nope"
 
 
 class TestHandleDeleteJournalEntry:
@@ -421,17 +428,19 @@ class TestHandleDeleteJournalEntry:
     @patch("hardcover_mcp.tools.journal.get_current_user", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.journal.execute", new_callable=AsyncMock)
     async def test_missing_id_returns_error_before_api_calls(self, mock_execute, mock_user):
-        result = await handle_delete_journal_entry({})
+        with pytest.raises(ToolError) as exc:
+            await handle_delete_journal_entry({})
 
-        assert result[0].text == "Error: 'id' is required."
+        assert str(exc.value) == "'id' is required."
         mock_user.assert_not_awaited()
         mock_execute.assert_not_awaited()
 
     @patch("hardcover_mcp.tools.journal.get_current_user", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.journal.execute", new_callable=AsyncMock)
     async def test_invalid_id_returns_error_before_api_calls(self, mock_execute, mock_user):
-        result = await handle_delete_journal_entry({"id": "bad"})
+        with pytest.raises(ToolError) as exc:
+            await handle_delete_journal_entry({"id": "bad"})
 
-        assert "Error: 'id' must be an integer" in result[0].text
+        assert "'id' must be an integer" in str(exc.value)
         mock_user.assert_not_awaited()
         mock_execute.assert_not_awaited()

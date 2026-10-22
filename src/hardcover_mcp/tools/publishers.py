@@ -7,7 +7,7 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
-from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools._validation import ToolError, _require_int
 from hardcover_mcp.tools.books import resolve_id_by_name
 
 _DEFAULT_EDITIONS_LIMIT = 20
@@ -105,18 +105,13 @@ async def handle_get_publisher(arguments: dict[str, Any]) -> list[TextContent]:
     name = arguments.get("name")
 
     if not publisher_id and not slug and not name:
-        return [TextContent(type="text", text="Error: provide 'id', 'slug', or 'name'.")]
+        raise ToolError("provide 'id', 'slug', or 'name'.")
 
-    try:
-        editions_limit = min(
-            _require_int(
-                arguments.get("editions_limit", _DEFAULT_EDITIONS_LIMIT), "editions_limit"
-            ),
-            _MAX_EDITIONS_LIMIT,
-        )
-        editions_offset = _require_int(arguments.get("editions_offset", 0), "editions_offset")
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    editions_limit = min(
+        _require_int(arguments.get("editions_limit", _DEFAULT_EDITIONS_LIMIT), "editions_limit"),
+        _MAX_EDITIONS_LIMIT,
+    )
+    editions_offset = _require_int(arguments.get("editions_offset", 0), "editions_offset")
 
     variables: dict[str, Any] = {
         "editions_limit": editions_limit,
@@ -124,10 +119,7 @@ async def handle_get_publisher(arguments: dict[str, Any]) -> list[TextContent]:
     }
 
     if publisher_id:
-        try:
-            variables["id"] = _require_int(publisher_id, "id")
-        except ValueError as e:
-            return [TextContent(type="text", text=f"Error: {e}")]
+        variables["id"] = _require_int(publisher_id, "id")
         result = await execute(GET_PUBLISHER_BY_ID_QUERY, variables)
     elif slug:
         variables["slug"] = slug

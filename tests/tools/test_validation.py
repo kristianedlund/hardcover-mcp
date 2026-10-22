@@ -2,7 +2,7 @@
 
 import pytest
 
-from hardcover_mcp.tools._validation import _require_float, _require_int
+from hardcover_mcp.tools._validation import ToolError, _require_float, _require_int
 
 
 class TestRequireInt:
@@ -13,15 +13,15 @@ class TestRequireInt:
         assert _require_int("42", "x") == 42
 
     def test_raises_on_non_numeric_string(self):
-        with pytest.raises(ValueError, match="'book_id' must be an integer"):
+        with pytest.raises(ToolError, match="'book_id' must be an integer"):
             _require_int("abc", "book_id")
 
     def test_raises_on_none(self):
-        with pytest.raises(ValueError, match="must be an integer"):
+        with pytest.raises(ToolError, match="must be an integer"):
             _require_int(None, "id")
 
     def test_raises_on_float_string(self):
-        with pytest.raises(ValueError, match="must be an integer"):
+        with pytest.raises(ToolError, match="must be an integer"):
             _require_int("3.5", "id")
 
 
@@ -36,9 +36,9 @@ class TestRequireFloat:
         assert _require_float("3.5", "x") == 3.5
 
     def test_raises_on_non_numeric_string(self):
-        with pytest.raises(ValueError, match="'rating' must be a number"):
+        with pytest.raises(ToolError, match="'rating' must be a number"):
             _require_float("abc", "rating")
 
     def test_raises_on_none(self):
-        with pytest.raises(ValueError, match="must be a number"):
+        with pytest.raises(ToolError, match="must be a number"):
             _require_float(None, "rating")

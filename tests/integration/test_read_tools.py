@@ -11,6 +11,8 @@ import json
 
 import pytest
 
+from hardcover_mcp.tools._validation import ToolError
+
 pytestmark = pytest.mark.integration
 
 
@@ -254,9 +256,8 @@ class TestGetSeries:
     async def test_get_series_returns_error_without_args(self):
         from hardcover_mcp.tools.series import handle_get_series
 
-        result = await handle_get_series({})
-
-        assert "Error" in result[0].text
+        with pytest.raises(ToolError):
+            await handle_get_series({})
 
 
 class TestGetEdition:
@@ -283,16 +284,14 @@ class TestGetEdition:
     async def test_get_edition_error_on_no_args(self):
         from hardcover_mcp.tools.editions import handle_get_edition
 
-        result = await handle_get_edition({})
-
-        assert "Error" in result[0].text
+        with pytest.raises(ToolError):
+            await handle_get_edition({})
 
     async def test_get_edition_error_on_multiple_args(self):
         from hardcover_mcp.tools.editions import handle_get_edition
 
-        result = await handle_get_edition({"isbn_13": "9780547928227", "asin": "B007978NPG"})
-
-        assert "Error" in result[0].text
+        with pytest.raises(ToolError):
+            await handle_get_edition({"isbn_13": "9780547928227", "asin": "B007978NPG"})
 
 
 class TestSearchEntities:

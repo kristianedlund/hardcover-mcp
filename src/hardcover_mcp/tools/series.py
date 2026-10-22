@@ -7,7 +7,7 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
-from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools._validation import ToolError, _require_int
 from hardcover_mcp.tools.books import resolve_id_by_name
 
 # ── Read: get_series by id or slug ──
@@ -99,13 +99,10 @@ async def handle_get_series(arguments: dict[str, Any]) -> list[TextContent]:
     name = arguments.get("name")
 
     if not series_id and not slug and not name:
-        return [TextContent(type="text", text="Error: provide 'id', 'slug', or 'name'.")]
+        raise ToolError("provide 'id', 'slug', or 'name'.")
 
     if series_id:
-        try:
-            result = await execute(GET_SERIES_BY_ID_QUERY, {"id": _require_int(series_id, "id")})
-        except ValueError as e:
-            return [TextContent(type="text", text=f"Error: {e}")]
+        result = await execute(GET_SERIES_BY_ID_QUERY, {"id": _require_int(series_id, "id")})
         series_list = result["data"]["series"]
     elif slug:
         result = await execute(GET_SERIES_BY_SLUG_QUERY, {"slug": slug})

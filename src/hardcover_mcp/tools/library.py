@@ -7,7 +7,7 @@ from mcp.types import TextContent, Tool, ToolAnnotations
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import DELETE, READ, UPDATE, ToolSpec
-from hardcover_mcp.tools._validation import _require_float, _require_int
+from hardcover_mcp.tools._validation import ToolError, _require_float, _require_int
 from hardcover_mcp.tools.books import author_names
 from hardcover_mcp.tools.user import get_current_user
 
@@ -307,23 +307,13 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
 
     if sort not in LIBRARY_SORT_FIELDS:
         valid = ", ".join(LIBRARY_SORT_FIELDS)
-        return [TextContent(type="text", text=f"Error: unknown sort '{sort}'. Valid: {valid}")]
+        raise ToolError(f"unknown sort '{sort}'. Valid: {valid}")
     if order not in ("asc", "desc"):
-        return [TextContent(type="text", text="Error: order must be 'asc' or 'desc'.")]
+        raise ToolError("order must be 'asc' or 'desc'.")
     if has_review and start_date is not None:
-        return [
-            TextContent(
-                type="text",
-                text="Error: has_review can't be combined with start_date/end_date.",
-            )
-        ]
+        raise ToolError("has_review can't be combined with start_date/end_date.")
     if (start_date is None) != (end_date is None):
-        return [
-            TextContent(
-                type="text",
-                text="Error: start_date and end_date must both be provided.",
-            )
-        ]
+        raise ToolError("start_date and end_date must both be provided.")
 
     user = await get_current_user()
     user_id = user["id"]
@@ -346,9 +336,7 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
         status_id = _resolve_status_id(status)
         if status is not None and status_id is None:
             valid = ", ".join(STATUS_MAP.values())
-            return [
-                TextContent(type="text", text=f"Error: unknown status '{status}'. Valid: {valid}")
-            ]
+            raise ToolError(f"unknown status '{status}'. Valid: {valid}")
 
         query = _render_library_query(
             with_status=status_id is not None,
@@ -388,7 +376,7 @@ async def handle_get_user_book(arguments: dict[str, Any]) -> list[TextContent]:
     slug = arguments.get("slug")
 
     if not book_id and not slug:
-        return [TextContent(type="text", text="Error: provide 'book_id' or 'slug'.")]
+        raise ToolError("provide 'book_id' or 'slug'.")
 
     # Resolve slug to book_id if needed
     if not book_id:
@@ -399,16 +387,13 @@ async def handle_get_user_book(arguments: dict[str, Any]) -> list[TextContent]:
         book_id = books[0]["id"]
 
     user = await get_current_user()
-    try:
-        result = await execute(
-            GET_USER_BOOK_QUERY,
-            {
-                "user_id": user["id"],
-                "book_id": _require_int(book_id, "book_id"),
-            },
-        )
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    result = await execute(
+        GET_USER_BOOK_QUERY,
+        {
+            "user_id": user["id"],
+            "book_id": _require_int(book_id, "book_id"),
+        },
+    )
     user_books = result["data"]["user_books"]
     if not user_books:
         return [TextContent(type="text", text="Book not in your library.")]
@@ -585,7 +570,7 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
     """
     book_id = arguments.get("book_id")
     if not book_id:
-        return [TextContent(type="text", text="Error: 'book_id' is required.")]
+        raise ToolError("'book_id' is required.")
 
     user = await get_current_user()
     user_id = user["id"]
@@ -594,18 +579,13 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
     status_id = _resolve_status_id(status)
     if status is not None and status_id is None:
         valid = ", ".join(STATUS_MAP.values())
-        return [TextContent(type="text", text=f"Error: unknown status '{status}'. Valid: {valid}")]
+        raise ToolError(f"unknown status '{status}'. Valid: {valid}")
 
     privacy = arguments.get("privacy")
     privacy_setting_id = _resolve_privacy_id(privacy)
     if privacy is not None and privacy_setting_id is None:
         valid_privacy = ", ".join(PRIVACY_MAP.values())
-        return [
-            TextContent(
-                type="text",
-                text=f"Error: unknown privacy '{privacy}'. Valid: {valid_privacy}",
-            )
-        ]
+        raise ToolError(f"unknown privacy '{privacy}'. Valid: {valid_privacy}")
 
     rating = arguments.get("rating")
     review_raw = arguments.get("review_raw")
@@ -615,19 +595,16 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
     edition_id = arguments.get("edition_id")
     owned = arguments.get("owned")
     if owned is not None and not isinstance(owned, bool):
-        return [TextContent(type="text", text="Error: 'owned' must be true or false.")]
+        raise ToolError("'owned' must be true or false.")
 
     # Convert plain-text review to Slate JSON if provided
     review_slate = _text_to_slate(review_raw) if review_raw is not None else None
 
-    try:
-        book_id_int = _require_int(book_id, "book_id")
-        if rating is not None:
-            _require_float(rating, "rating")
-        if edition_id is not None:
-            edition_id = _require_int(edition_id, "edition_id")
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    book_id_int = _require_int(book_id, "book_id")
+    if rating is not None:
+        _require_float(rating, "rating")
+    if edition_id is not None:
+        edition_id = _require_int(edition_id, "edition_id")
 
     # Check if user_book already exists
     existing = await execute(
@@ -644,15 +621,10 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
     if owned_edition_id is None and existing_books:
         owned_edition_id = existing_books[0].get("edition_id")
     if owned is not None and owned_edition_id is None:
-        return [
-            TextContent(
-                type="text",
-                text=(
-                    "Error: 'owned' needs an edition. Pass edition_id (list a book's editions "
-                    "with get_book(include_editions=true))."
-                ),
-            )
-        ]
+        raise ToolError(
+            "'owned' needs an edition. Pass edition_id (list a book's editions "
+            "with get_book(include_editions=true))."
+        )
 
     if existing_books:
         # Merge: preserve existing fields the caller didn't specify
@@ -713,7 +685,7 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
         mutation_result = result["data"]["insert_user_book"]
 
     if mutation_result.get("error"):
-        return [TextContent(type="text", text=f"Error: {mutation_result['error']}")]
+        raise ToolError(str(mutation_result["error"]))
 
     ub = mutation_result.get("user_book", {})
     privacy_id_out = ub.get("privacy_setting_id")
@@ -829,10 +801,10 @@ def _build_read_input(arguments: dict[str, Any]) -> dict[str, Any]:
     return read_input
 
 
-async def _resolve_user_book_id(arguments: dict[str, Any]) -> int | str:
+async def _resolve_user_book_id(arguments: dict[str, Any]) -> int:
     """Resolve user_book_id from arguments.
 
-    Returns int on success, str error message on failure.
+    Raises ``ToolError`` when neither id is given or the book isn't in your library.
     """
     user_book_id = arguments.get("user_book_id")
     if user_book_id:
@@ -840,7 +812,7 @@ async def _resolve_user_book_id(arguments: dict[str, Any]) -> int | str:
 
     book_id = arguments.get("book_id")
     if not book_id:
-        return "Error: provide 'book_id' or 'user_book_id'."
+        raise ToolError("provide 'book_id' or 'user_book_id'.")
 
     user = await get_current_user()
     existing = await execute(
@@ -852,7 +824,7 @@ async def _resolve_user_book_id(arguments: dict[str, Any]) -> int | str:
     )
     ubs = existing["data"]["user_books"]
     if not ubs:
-        return "Error: book not in your library. Use set_user_book first."
+        raise ToolError("book not in your library. Use set_user_book first.")
     return ubs[0]["id"]
 
 
@@ -874,25 +846,13 @@ async def _add_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
     list[TextContent]
         JSON with the created or updated read entry.
     """
-    resolved = await _resolve_user_book_id(arguments)
-    if isinstance(resolved, str):
-        return [TextContent(type="text", text=resolved)]
-    user_book_id = resolved
+    user_book_id = await _resolve_user_book_id(arguments)
 
-    try:
-        read_input = _build_read_input(arguments)
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    read_input = _build_read_input(arguments)
     if not read_input:
-        return [
-            TextContent(
-                type="text",
-                text=(
-                    "Error: provide 'started_at', 'finished_at', 'progress_pages',"
-                    " or 'progress_seconds'."
-                ),
-            )
-        ]
+        raise ToolError(
+            "provide 'started_at', 'finished_at', 'progress_pages', or 'progress_seconds'."
+        )
 
     # Check for an active (unfinished) read entry — update it instead of creating a duplicate
     active = await execute(FIND_ACTIVE_READ_QUERY, {"user_book_id": user_book_id})
@@ -920,7 +880,7 @@ async def _add_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
         mutation_result = result["data"]["insert_user_book_read"]
 
     if mutation_result.get("error"):
-        return [TextContent(type="text", text=f"Error: {mutation_result['error']}")]
+        raise ToolError(str(mutation_result["error"]))
 
     return [
         TextContent(
@@ -947,33 +907,21 @@ async def _update_user_book_read(arguments: dict[str, Any]) -> list[TextContent]
     """
     read_id = arguments.get("id")
     if not read_id:
-        return [TextContent(type="text", text="Error: 'id' (user_book_read id) is required.")]
+        raise ToolError("'id' (user_book_read id) is required.")
 
-    try:
-        read_input = _build_read_input(arguments)
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    read_input = _build_read_input(arguments)
     if not read_input:
-        return [
-            TextContent(
-                type="text",
-                text=(
-                    "Error: provide 'started_at', 'finished_at', 'progress_pages',"
-                    " or 'progress_seconds'."
-                ),
-            )
-        ]
+        raise ToolError(
+            "provide 'started_at', 'finished_at', 'progress_pages', or 'progress_seconds'."
+        )
 
     # Fetch current values and merge so unchanged fields aren't nulled out
-    try:
-        read_id_int = _require_int(read_id, "id")
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    read_id_int = _require_int(read_id, "id")
 
     current = await execute(GET_USER_BOOK_READ_QUERY, {"id": read_id_int})
     current_reads = current["data"]["user_book_reads"]
     if not current_reads:
-        return [TextContent(type="text", text="Error: no read entry found with that ID.")]
+        raise ToolError("no read entry found with that ID.")
     merged = _merge_read_input(current_reads[0], read_input)
 
     result = await execute(
@@ -986,7 +934,7 @@ async def _update_user_book_read(arguments: dict[str, Any]) -> list[TextContent]
     mutation_result = result["data"]["update_user_book_read"]
 
     if mutation_result.get("error"):
-        return [TextContent(type="text", text=f"Error: {mutation_result['error']}")]
+        raise ToolError(str(mutation_result["error"]))
 
     return [
         TextContent(
@@ -1037,12 +985,9 @@ async def handle_delete_user_book_read(arguments: dict[str, Any]) -> list[TextCo
     """
     read_id = arguments.get("id")
     if not read_id:
-        return [TextContent(type="text", text="Error: 'id' (user_book_read id) is required.")]
+        raise ToolError("'id' (user_book_read id) is required.")
 
-    try:
-        read_id_int = _require_int(read_id, "id")
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    read_id_int = _require_int(read_id, "id")
 
     await execute(DELETE_USER_BOOK_READ_MUTATION, {"id": read_id_int})
     return [TextContent(type="text", text=json.dumps({"deleted": True, "id": read_id_int}))]
@@ -1062,8 +1007,6 @@ async def handle_delete_user_book(arguments: dict[str, Any]) -> list[TextContent
         JSON confirmation with ``deleted: true`` and the ``user_book_id``.
     """
     resolved = await _resolve_user_book_id(arguments)
-    if isinstance(resolved, str):
-        return [TextContent(type="text", text=resolved)]
 
     await execute(DELETE_USER_BOOK_MUTATION, {"id": resolved})
     return [TextContent(type="text", text=json.dumps({"deleted": True, "user_book_id": resolved}))]

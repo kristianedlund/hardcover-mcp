@@ -3,6 +3,9 @@
 import json
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
+from hardcover_mcp.tools._validation import ToolError
 from hardcover_mcp.tools.follow import handle_set_following
 
 
@@ -12,20 +15,23 @@ def _followed(*ids: int) -> dict:
 
 class TestSetFollowingValidation:
     async def test_rejects_missing_following(self):
-        result = await handle_set_following({"user_id": 1})
-        assert "'following'" in result[0].text
+        with pytest.raises(ToolError) as exc:
+            await handle_set_following({"user_id": 1})
+        assert "'following'" in str(exc.value)
 
     async def test_rejects_non_bool_following(self):
-        result = await handle_set_following({"user_id": 1, "following": "yes"})
-        assert "'following'" in result[0].text
+        with pytest.raises(ToolError) as exc:
+            await handle_set_following({"user_id": 1, "following": "yes"})
+        assert "'following'" in str(exc.value)
 
     async def test_rejects_missing_user(self):
-        result = await handle_set_following({"following": True})
-        assert "provide either" in result[0].text
+        with pytest.raises(ToolError) as exc:
+            await handle_set_following({"following": True})
+        assert "provide either" in str(exc.value)
 
     async def test_rejects_non_int_user_id(self):
-        result = await handle_set_following({"user_id": "abc", "following": True})
-        assert "Error" in result[0].text
+        with pytest.raises(ToolError):
+            await handle_set_following({"user_id": "abc", "following": True})
 
 
 class TestSetFollowingState:
@@ -77,7 +83,10 @@ class TestSetFollowingState:
                 {"data": {"insert_followed_user": {"followed_user_id": None, "error": "nope"}}},
             ]
         )
-        with patch("hardcover_mcp.tools.follow.execute", new=mock):
-            result = await handle_set_following({"user_id": 7, "following": True})
+        with (
+            patch("hardcover_mcp.tools.follow.execute", new=mock),
+            pytest.raises(ToolError) as exc,
+        ):
+            await handle_set_following({"user_id": 7, "following": True})
 
-        assert result[0].text == "Error: nope"
+        assert str(exc.value) == "nope"

@@ -3,6 +3,9 @@
 import json
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
+from hardcover_mcp.tools._validation import ToolError
 from hardcover_mcp.tools.user import _format_user, _render_user_query, handle_get_user
 
 
@@ -90,6 +93,7 @@ def _profile(user_id: int = 1, **extra) -> dict:
 class TestHandleGetUserSections:
     async def _run(self, arguments: dict, *responses: dict) -> tuple[str, AsyncMock]:
         mock_exec = AsyncMock(side_effect=list(responses))
+        self.mock_exec = mock_exec
         with (
             patch(
                 "hardcover_mcp.tools.user.get_current_user",
@@ -101,8 +105,8 @@ class TestHandleGetUserSections:
                 new=AsyncMock(return_value={"total_books": 3}),
             ) as mock_stats,
         ):
+            self.mock_stats = mock_stats
             result = await handle_get_user(arguments)
-        self.mock_stats = mock_stats
         return result[0].text, mock_exec
 
     async def test_include_stats_for_yourself(self):
@@ -112,16 +116,18 @@ class TestHandleGetUserSections:
         self.mock_stats.assert_awaited_once_with(1, 2022)
 
     async def test_include_stats_for_someone_else_is_an_error(self):
-        text, _ = await self._run({"id": 99, "include_stats": True}, _profile(99))
+        with pytest.raises(ToolError) as exc:
+            await self._run({"id": 99, "include_stats": True}, _profile(99))
 
-        assert "only available for your own profile" in text
+        assert "only available for your own profile" in str(exc.value)
         self.mock_stats.assert_not_awaited()
 
     async def test_rejects_non_integer_stats_year(self):
-        text, mock_exec = await self._run({"include_stats": True, "stats_year": "soon"})
+        with pytest.raises(ToolError) as exc:
+            await self._run({"include_stats": True, "stats_year": "soon"})
 
-        assert "must be an integer" in text
-        mock_exec.assert_not_awaited()
+        assert "must be an integer" in str(exc.value)
+        self.mock_exec.assert_not_awaited()
 
     async def test_follow_lists_are_flattened(self):
         raw = _profile(

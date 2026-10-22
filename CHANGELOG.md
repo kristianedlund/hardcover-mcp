@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Tool errors (bad input, or an action Hardcover rejected) now set MCP's `isError` flag,
+  so clients and models can tell a failed call from a successful one. The message text is
+  unchanged (`Error: …`). Answers like `No book found.` or `Book not in your library.` are
+  still normal results. Invalid input that used to come back as a traceback (e.g. a
+  non-numeric `book_id` on `get_reading_journal`) now gets the same short error as other
+  tools (#62).
 - `authors` lists only the book's authors. It used to include every contributor (narrators,
   translators, illustrators, foreword writers…). This applies everywhere `authors` appears:
   search results, `get_book`, library rows, `get_user_book`, list books, journal entries,

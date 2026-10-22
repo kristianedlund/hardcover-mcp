@@ -8,7 +8,7 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import NEW_API_KEY_URL, HardcoverAPIError, execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
-from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools._validation import ToolError, _require_int
 from hardcover_mcp.tools.books import resolve_id_by_name
 from hardcover_mcp.tools.stats import fetch_reading_stats
 
@@ -238,41 +238,28 @@ async def handle_get_user(arguments: dict[str, Any]) -> list[TextContent]:
     status_id = _resolve_status_id(library_status)
     if library_status is not None and status_id is None:
         valid = ", ".join(STATUS_MAP.values())
-        return [
-            TextContent(
-                type="text",
-                text=f"Error: unknown status '{library_status}'. Valid: {valid}",
-            )
-        ]
+        raise ToolError(f"unknown status '{library_status}'. Valid: {valid}")
 
     include_following = bool(arguments.get("include_following"))
     include_followers = bool(arguments.get("include_followers"))
     include_stats = bool(arguments.get("include_stats"))
 
     variables: dict[str, Any] = {}
-    try:
-        if include_following or include_followers:
-            requested = arguments.get("follow_limit", _DEFAULT_FOLLOW_LIMIT)
-            variables["follow_limit"] = min(
-                _require_int(requested, "follow_limit"), _MAX_FOLLOW_LIMIT
-            )
-        stats_year = (
-            _require_int(arguments["stats_year"], "stats_year")
-            if arguments.get("stats_year") is not None
-            else None
-        )
-    except ValueError as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+    if include_following or include_followers:
+        requested = arguments.get("follow_limit", _DEFAULT_FOLLOW_LIMIT)
+        variables["follow_limit"] = min(_require_int(requested, "follow_limit"), _MAX_FOLLOW_LIMIT)
+    stats_year = (
+        _require_int(arguments["stats_year"], "stats_year")
+        if arguments.get("stats_year") is not None
+        else None
+    )
 
     if include_library:
-        try:
-            requested = arguments.get("library_limit", _DEFAULT_LIBRARY_LIMIT)
-            variables["library_limit"] = min(
-                _require_int(requested, "library_limit"),
-                _MAX_LIBRARY_LIMIT,
-            )
-        except ValueError as e:
-            return [TextContent(type="text", text=f"Error: {e}")]
+        requested = arguments.get("library_limit", _DEFAULT_LIBRARY_LIMIT)
+        variables["library_limit"] = min(
+            _require_int(requested, "library_limit"),
+            _MAX_LIBRARY_LIMIT,
+        )
         if status_id is not None:
             variables["status_id"] = status_id
 
@@ -283,10 +270,7 @@ async def handle_get_user(arguments: dict[str, Any]) -> list[TextContent]:
             return [TextContent(type="text", text="No user found.")]
 
     if user_id:
-        try:
-            variables["id"] = _require_int(user_id, "id")
-        except ValueError as e:
-            return [TextContent(type="text", text=f"Error: {e}")]
+        variables["id"] = _require_int(user_id, "id")
         by = "id"
     else:
         variables["username"] = username
@@ -308,12 +292,7 @@ async def handle_get_user(arguments: dict[str, Any]) -> list[TextContent]:
     if include_stats:
         # Stats aggregate a library; Hardcover only lets you aggregate your own.
         if output["id"] != (await get_current_user())["id"]:
-            return [
-                TextContent(
-                    type="text",
-                    text="Error: include_stats is only available for your own profile.",
-                )
-            ]
+            raise ToolError("include_stats is only available for your own profile.")
         output["stats"] = await fetch_reading_stats(output["id"], stats_year)
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
 

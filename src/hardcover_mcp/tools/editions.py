@@ -6,7 +6,7 @@ from typing import Any
 from mcp.types import TextContent
 
 from hardcover_mcp.client import execute
-from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools._validation import ToolError, _require_int
 
 # ── Edition field fragment, shared across lookup queries ──
 
@@ -152,25 +152,12 @@ async def handle_get_edition(arguments: dict[str, Any]) -> list[TextContent]:
     # Exactly one selector must be supplied
     provided = [x for x in (edition_id, isbn_13, asin) if x is not None]
     if len(provided) == 0:
-        return [
-            TextContent(
-                type="text",
-                text="Error: provide exactly one of 'id', 'isbn_13', or 'asin'.",
-            )
-        ]
+        raise ToolError("provide exactly one of 'id', 'isbn_13', or 'asin'.")
     if len(provided) > 1:
-        return [
-            TextContent(
-                type="text",
-                text="Error: provide exactly one of 'id', 'isbn_13', or 'asin' — not multiple.",
-            )
-        ]
+        raise ToolError("provide exactly one of 'id', 'isbn_13', or 'asin' — not multiple.")
 
     if edition_id is not None:
-        try:
-            result = await execute(EDITION_BY_ID_QUERY, {"id": _require_int(edition_id, "id")})
-        except ValueError as e:
-            return [TextContent(type="text", text=f"Error: {e}")]
+        result = await execute(EDITION_BY_ID_QUERY, {"id": _require_int(edition_id, "id")})
     elif isbn_13 is not None:
         result = await execute(EDITION_BY_ISBN13_QUERY, {"isbn_13": str(isbn_13)})
     else:

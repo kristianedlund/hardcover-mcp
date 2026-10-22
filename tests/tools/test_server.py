@@ -7,6 +7,7 @@ exercise the registration path.
 
 import dataclasses
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -105,6 +106,42 @@ async def test_call_tool_api_error_has_no_traceback(monkeypatch):
 
     assert result.is_error
     assert result.content[0].text == "Error in get_book: Token is missing scope write:lists"
+
+
+async def test_call_tool_tool_error_is_error_without_traceback(monkeypatch):
+    from hardcover_mcp.tools._validation import ToolError
+
+    async def failing(arguments):
+        raise ToolError("'book_id' is required.")
+
+    monkeypatch.setitem(server._dispatch, "get_book", failing)
+    result = await server.call_tool(None, SimpleNamespace(name="get_book", arguments={}))
+
+    assert result.is_error
+    assert result.content[0].text == "Error: 'book_id' is required."
+
+
+async def test_call_tool_invalid_input_is_error_without_traceback():
+    # get_reading_journal used to let _require_int's error escape with a traceback.
+    params = SimpleNamespace(name="get_reading_journal", arguments={"book_id": "abc"})
+    with patch(
+        "hardcover_mcp.tools.journal.get_current_user", new=AsyncMock(return_value={"id": 1})
+    ):
+        result = await server.call_tool(None, params)
+
+    assert result.is_error
+    assert result.content[0].text == "Error: 'book_id' must be an integer, got: 'abc'"
+
+
+async def test_call_tool_not_found_is_a_normal_result():
+    empty = AsyncMock(return_value={"data": {"books": []}})
+    with patch("hardcover_mcp.tools.books.execute", new=empty):
+        result = await server.call_tool(
+            None, SimpleNamespace(name="get_book", arguments={"id": 1})
+        )
+
+    assert not result.is_error
+    assert result.content[0].text == "No book found."
 
 
 async def test_call_tool_unexpected_error_keeps_traceback(monkeypatch):

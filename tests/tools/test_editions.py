@@ -3,6 +3,9 @@
 import json
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
+from hardcover_mcp.tools._validation import ToolError
 from hardcover_mcp.tools.editions import _format_edition, handle_get_edition
 
 
@@ -103,19 +106,22 @@ class TestFormatEdition:
 
 class TestHandleGetEdition:
     async def test_returns_error_when_no_args(self):
-        result = await handle_get_edition({})
+        with pytest.raises(ToolError) as exc:
+            await handle_get_edition({})
 
-        assert "exactly one" in result[0].text.lower()
+        assert "exactly one" in str(exc.value)
 
     async def test_returns_error_when_multiple_args(self):
-        result = await handle_get_edition({"isbn_13": "9780547928227", "asin": "B007978NPG"})
+        with pytest.raises(ToolError) as exc:
+            await handle_get_edition({"isbn_13": "9780547928227", "asin": "B007978NPG"})
 
-        assert "exactly one" in result[0].text.lower()
+        assert "exactly one" in str(exc.value)
 
     async def test_returns_error_on_non_numeric_id(self):
-        result = await handle_get_edition({"id": "not-a-number"})
+        with pytest.raises(ToolError) as exc:
+            await handle_get_edition({"id": "not-a-number"})
 
-        assert "must be an integer" in result[0].text
+        assert "must be an integer" in str(exc.value)
 
     @patch("hardcover_mcp.tools.editions.execute", new_callable=AsyncMock)
     async def test_lookup_by_isbn13(self, mock_execute):

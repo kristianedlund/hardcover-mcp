@@ -3,6 +3,9 @@
 import json
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
+from hardcover_mcp.tools._validation import ToolError
 from hardcover_mcp.tools.publishers import _format_publisher, handle_get_publisher
 
 
@@ -72,14 +75,14 @@ class TestFormatPublisher:
 
 class TestHandleGetPublisher:
     async def test_returns_error_on_missing_args(self):
-        result = await handle_get_publisher({})
-
-        assert "Error" in result[0].text
+        with pytest.raises(ToolError):
+            await handle_get_publisher({})
 
     async def test_returns_error_on_non_numeric_id(self):
-        result = await handle_get_publisher({"id": "not-a-number"})
+        with pytest.raises(ToolError) as exc:
+            await handle_get_publisher({"id": "not-a-number"})
 
-        assert "must be an integer" in result[0].text
+        assert "must be an integer" in str(exc.value)
 
     @patch("hardcover_mcp.tools.publishers.execute", new_callable=AsyncMock)
     async def test_returns_not_found(self, mock_execute):
