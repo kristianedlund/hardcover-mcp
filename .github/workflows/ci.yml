@@ -5,10 +5,16 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # The publish workflow runs these same checks before it uploads.
+  workflow_call:
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # "lowest-direct" checks that the lower bounds in pyproject.toml still work.
+        resolution: [highest, lowest-direct]
 
     steps:
       - name: Checkout code
@@ -21,15 +27,22 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: |
+          if [ "${{ matrix.resolution }}" = "highest" ]; then
+            uv sync --group dev --locked
+          else
+            uv sync --group dev --resolution lowest-direct
+          fi
 
       - name: Lint with ruff
-        run: uv run ruff check src/
+        run: uv run --no-sync ruff check .
 
       - name: Check formatting
-        run: uv run ruff format --check src/
+        run: uv run --no-sync ruff format --check .
 
       - name: Run tests
-        run: uv run pytest tests/ -v -m "not integration"
+        run: uv run --no-sync pytest tests/ -v -m "not integration"

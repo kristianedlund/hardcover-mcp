@@ -1,5 +1,8 @@
 """Tests for the GraphQL client: request construction, errors, and rate limiting."""
 
+import subprocess
+import sys
+
 import httpx
 import pytest
 
@@ -19,6 +22,7 @@ class _FakeAsyncClient:
 
     responses: list[httpx.Response] = []  # noqa: RUF012 - reset per test by the fixture
     captured_headers: list[dict] = []  # noqa: RUF012
+    captured_urls: list[str] = []  # noqa: RUF012
     instances: int = 0
 
     def __init__(self, *args, **kwargs):
@@ -30,6 +34,7 @@ class _FakeAsyncClient:
 
     async def post(self, url, json=None, headers=None):
         _FakeAsyncClient.captured_headers.append(headers)
+        _FakeAsyncClient.captured_urls.append(url)
         return _FakeAsyncClient.responses.pop(0)
 
 
@@ -43,6 +48,7 @@ def sleeps(monkeypatch) -> list[float]:
     monkeypatch.setattr(client, "_client", None)
     monkeypatch.setattr(client, "_client_loop", None)
     monkeypatch.setenv("HARDCOVER_API_TOKEN", "test-token-not-real")
+    monkeypatch.delenv("HARDCOVER_API_URL", raising=False)
     recorded: list[float] = []
 
     async def fake_sleep(seconds):
@@ -51,6 +57,7 @@ def sleeps(monkeypatch) -> list[float]:
     monkeypatch.setattr(client.asyncio, "sleep", fake_sleep)
     _FakeAsyncClient.responses = []
     _FakeAsyncClient.captured_headers = []
+    _FakeAsyncClient.captured_urls = []
     _FakeAsyncClient.instances = 0
     yield recorded
     client._request_timestamps.clear()
@@ -258,3 +265,42 @@ async def test_aclose_closes_and_the_next_request_reopens():
 async def test_aclose_without_a_client_is_a_no_op():
     await client.aclose()
     assert client._client is None
+
+
+# ── Endpoint and environment ──
+
+
+async def test_default_api_url():
+    _FakeAsyncClient.responses = [_response()]
+
+    await client.execute("query { me { id } }")
+
+    assert _FakeAsyncClient.captured_urls == [client.DEFAULT_API_URL]
+
+
+async def test_custom_https_api_url_is_used(monkeypatch):
+    monkeypatch.setenv("HARDCOVER_API_URL", "https://proxy.example/v1/graphql")
+    _FakeAsyncClient.responses = [_response()]
+
+    await client.execute("query { me { id } }")
+
+    assert _FakeAsyncClient.captured_urls == ["https://proxy.example/v1/graphql"]
+
+
+@pytest.mark.parametrize("url", ["http://evil.example/graphql", "ftp://x", "api.hardcover.app"])
+async def test_non_https_api_url_is_refused_before_sending(monkeypatch, url):
+    monkeypatch.setenv("HARDCOVER_API_URL", url)
+
+    with pytest.raises(client.HardcoverAPIError, match="must be an https:// URL"):
+        await client.execute("query { me { id } }")
+
+    assert _FakeAsyncClient.captured_urls == []
+
+
+def test_importing_the_package_does_not_load_dotenv():
+    # A stray .env above the install directory must not configure the server.
+    code = "import sys, hardcover_mcp.server; print('dotenv' in sys.modules)"
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "False"

@@ -59,6 +59,14 @@ old call can't quietly create a public entry it meant to keep private.
 
 ### Changed
 
+- The server no longer loads a `.env` file. It used to search upward from its install
+  directory, so a stray `.env` (for example in your home directory) could change its settings.
+  Set variables in your MCP client's `env` block, or name the file explicitly with
+  `uvx --env-file /path/to/hardcover.env hardcover-mcp`.
+- `HARDCOVER_API_URL` is documented, and only `https://` URLs are accepted, since every
+  request carries your token.
+- Dependency versions are capped below the next major releases (`mcp<3`, `httpx<1`), so a
+  future breaking release of either can't break existing installs.
 - Every tool that sets privacy (`set_user_book`, `set_list`, `set_journal_entry`,
   `set_reading_goal`) accepts the same values: `public`, `followers` (or `followers_only`),
   or `private`, in any case, or `1`/`2`/`3`. Other values are an error listing the valid

@@ -96,6 +96,14 @@ Add to `claude_desktop_config.json`:
 `HARDCOVER_TOOLSETS` and `HARDCOVER_READ_ONLY` are optional and shown with their defaults; see
 [Configuration](#configuration).
 
+To keep the token out of the client config, put the variables in a `.env` file and point uvx at
+it. The server only reads the file you name:
+
+```json
+"command": "uvx",
+"args": ["--env-file", "/path/to/hardcover.env", "hardcover-mcp"]
+```
+
 ## API key and scopes
 
 Hardcover API keys carry **scopes** that limit what the key can do. Create a key with only the
@@ -134,6 +142,7 @@ Optional environment variables, set in the same `env` block as your token:
 |----------|---------|--------|
 | `HARDCOVER_TOOLSETS` | `all` | Comma-separated toolsets to load. Fewer tools means less context used and fewer wrong tool picks. |
 | `HARDCOVER_READ_ONLY` | `false` | `true` hides every tool that creates, changes, or deletes anything. |
+| `HARDCOVER_API_URL` | Hardcover's API | GraphQL endpoint to call instead, e.g. a proxy. Must be `https://`, since every request carries your token. |
 
 | Toolset | What it covers |
 |---------|----------------|
@@ -229,8 +238,8 @@ uv sync
 Lint and format checks (using [Ruff](https://docs.astral.sh/ruff/)):
 
 ```bash
-uv run ruff check src/
-uv run ruff format --check src/
+uv run ruff check .
+uv run ruff format --check .
 ```
 
 Run tests:
@@ -244,7 +253,8 @@ uv run pytest tests/ -v
 Integration tests hit the live Hardcover API and require a valid token. They are **skipped
 automatically** in CI and when the token is absent.
 
-To run them locally, create a `.env` file with your token:
+To run them locally, create a `.env` file in the repository with your token (the tests load
+it; the server itself reads only real environment variables):
 
 ```
 HARDCOVER_API_TOKEN=your_token_here
@@ -266,8 +276,8 @@ Contributions are welcome! Please:
 2. Fork the repo and create a branch (`feature/short-description` or `fix/short-description`).
 3. Run lint and tests before submitting:
    ```bash
-   uv run ruff check src/
-   uv run ruff format --check src/
+   uv run ruff check .
+   uv run ruff format --check .
    uv run pytest tests/ -v
    ```
 4. Keep PRs focused — one change per PR.
