@@ -14,7 +14,7 @@ GET_PROMPTS_QUERY = """
 query GetPrompts($limit: Int!, $offset: Int!, $where: prompts_bool_exp) {
     prompts(
         where: $where,
-        order_by: {answers_count: desc},
+        order_by: [{answers_count: desc}, {id: desc}],
         limit: $limit,
         offset: $offset
     ) {

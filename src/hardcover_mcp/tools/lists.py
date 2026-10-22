@@ -21,7 +21,7 @@ GET_MY_LISTS_QUERY = """
 query GetMyLists($user_id: Int!, $limit: Int!, $offset: Int!) {
     lists(
         where: {user_id: {_eq: $user_id}},
-        order_by: {updated_at: desc},
+        order_by: [{updated_at: desc}, {id: desc}],
         limit: $limit,
         offset: $offset
     ) {
@@ -46,7 +46,11 @@ query GetListById($id: Int!, $book_limit: Int!, $book_offset: Int!) {
         books_count
         privacy_setting_id
         updated_at
-        list_books(order_by: {position: asc}, limit: $book_limit, offset: $book_offset) {
+        list_books(
+            order_by: [{position: asc}, {id: asc}],
+            limit: $book_limit,
+            offset: $book_offset
+        ) {
             position
             book {
                 id

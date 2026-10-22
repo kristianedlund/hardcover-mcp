@@ -45,7 +45,7 @@ FEED_QUERY = (
 query ActivityFeed($ids: [Int!], $limit: Int!, $offset: Int!) {
     activities(
         where: {user_id: {_in: $ids}},
-        order_by: {created_at: desc},
+        order_by: [{created_at: desc}, {id: desc}],
         limit: $limit,
         offset: $offset
     ) {"""
@@ -60,7 +60,7 @@ USER_ACTIVITY_QUERY = (
 query UserActivity($user_id: Int!, $limit: Int!, $offset: Int!) {
     activities(
         where: {user_id: {_eq: $user_id}},
-        order_by: {created_at: desc},
+        order_by: [{created_at: desc}, {id: desc}],
         limit: $limit,
         offset: $offset
     ) {"""

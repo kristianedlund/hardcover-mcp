@@ -84,7 +84,7 @@ def _render_vibes_query(featured_only: bool) -> str:
     return f"""
 query GetVibes($limit: Int!, $offset: Int!) {{
     vibes(
-        {where}order_by: {{likes_count: desc}},
+        {where}order_by: [{{likes_count: desc}}, {{id: desc}}],
         limit: $limit,
         offset: $offset
     ) {{
