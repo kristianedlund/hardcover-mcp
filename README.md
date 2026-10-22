@@ -73,6 +73,18 @@ Add to `.vscode/mcp.json`:
 }
 ```
 
+### Claude Code
+
+From your project directory, register the local stdio server:
+
+```bash
+claude mcp add --env "HARDCOVER_API_TOKEN=<your token>" --transport stdio hardcover -- uvx hardcover-mcp
+```
+
+Replace `<your token>` with your Hardcover API key. Optional settings such as
+`HARDCOVER_READ_ONLY=true` can also be passed with `--env`; see [Configuration](#configuration).
+See the [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp) for configuration scopes.
+
 ### Claude Desktop
 
 Add to `claude_desktop_config.json`:
@@ -172,7 +184,7 @@ account and are hidden in read-only mode.
 
 | What you can do | Tool |
 |-----------------|------|
-| Look up a book by ID or slug (optionally with its characters and editions), or a specific edition by ISBN, ASIN, or edition ID | `get_book` |
+| Look up a book by ID or slug, including contributors and their roles (optionally with characters and editions), or a specific edition by ISBN, ASIN, or edition ID | `get_book` |
 | Browse an author's catalogue | `get_author` |
 | Explore a series in reading order | `get_series` |
 | Look up a publisher and its editions | `get_publisher` |
@@ -184,7 +196,7 @@ account and are hidden in read-only mode.
 | What you can do | Tool |
 |-----------------|------|
 | Browse your library: filter by status, date range, reviewed or owned books; sort by rating/date | `get_user_library` |
-| Check your status, rating, review, and reads for one book | `get_user_book` |
+| Check your status, rating, review, reads, and list memberships for one book (excluding the internal Owned list) | `get_user_book` |
 | Get your active reading goals and progress | `get_reading_goal` |
 | ✏️ Add a book or update its status, rating, review, notes, privacy, edition, and ownership | `set_user_book` |
 | ✏️ Log or edit reading dates and progress (pages, audiobook time) | `set_user_book_read` |
@@ -198,7 +210,7 @@ account and are hidden in read-only mode.
 |-----------------|------|
 | View your lists, or one list with its books | `get_list` |
 | ✏️ Create or rename a list, or change its privacy | `set_list` |
-| ✏️ Add or remove a book on a list | `set_list_book` |
+| ✏️ Add or remove a book on one list (`list_id`) or up to 20 lists (`list_ids`) | `set_list_book` |
 | ✏️ Delete a list | `delete_list` |
 
 ### journal
