@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `get_book` returns `contributors`: everyone credited on the book as `{name, role}`
+  (e.g. `{"name": "Julia Whelan", "role": "Narrator"}`), so narrators, translators, and
+  illustrators are still available now that `authors` leaves them out.
+
 ### Fixed
+
+- `authors` lists only the book's authors. It used to include every contributor (narrators,
+  translators, illustrators, foreword writers…). This applies everywhere `authors` appears:
+  search results, `get_book`, library rows, `get_user_book`, list books, journal entries,
+  and trending/vibe books. A book whose contributors have no author role shows its first
+  contributor (#66).
 
 - `get_user_library` paging no longer repeats or skips books when several share the sort
   value (e.g. the same rating). Every sort now breaks ties by entry id. Books with no value

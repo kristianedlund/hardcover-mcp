@@ -38,6 +38,7 @@ query GetReadingJournal(
             title
             slug
             contributions {
+                contribution
                 author {
                     name
                 }

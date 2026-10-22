@@ -69,6 +69,18 @@ class TestGetBook:
         data = json.loads(result[0].text)
         assert data["title"] == "Project Hail Mary"
 
+    async def test_authors_leave_out_narrator(self):
+        from hardcover_mcp.tools.books import handle_get_book, handle_search_books
+
+        # Educated (44186) lists narrator Julia Whelan alongside Tara Westover.
+        book = json.loads((await handle_get_book({"id": 44186}))[0].text)
+        assert book["authors"] == ["Tara Westover"]
+        assert {"name": "Julia Whelan", "role": "Narrator"} in book["contributors"]
+
+        search = json.loads((await handle_search_books({"query": "Educated: A Memoir"}))[0].text)
+        hit = next(b for b in search["books"] if str(b["id"]) == "44186")
+        assert hit["authors"] == ["Tara Westover"]
+
     async def test_edition_key_returns_that_edition(self):
         from hardcover_mcp.tools.books import handle_get_book
 

@@ -7,6 +7,7 @@ from hardcover_mcp.tools.books import (
     _format_character,
     _format_search_hit,
     author_names,
+    contributors,
     handle_get_book,
     handle_search_books,
 )
@@ -33,6 +34,20 @@ class TestFormatSearchHit:
         assert result["authors"] == ["Andy Weir"]
         assert result["pages"] == 476
         assert result["series"] == "Standalone"
+
+    def test_book_authors_leave_out_narrators(self):
+        hit = {
+            "document": {
+                "id": 44186,
+                "title": "Educated",
+                "author_names": ["Tara Westover", "Julia Whelan"],
+                "contributions": [
+                    {"author": {"name": "Tara Westover"}, "contribution": "Author"},
+                    {"author": {"name": "Julia Whelan"}, "contribution": "Narrator"},
+                ],
+            }
+        }
+        assert _format_search_hit(hit)["authors"] == ["Tara Westover"]
 
     def test_author_extracts_fields_from_document(self):
         hit = {
@@ -312,9 +327,13 @@ class TestHandleGetBookIncludeCharacters:
         assert data["characters"] == []
 
 
+def _c(name: str, role: str | None) -> dict:
+    return {"author": {"name": name}, "contribution": role}
+
+
 class TestAuthorNames:
     def test_reads_contributions_relation(self):
-        book = {"contributions": [{"author": {"name": "A"}}, {"author": None}, {}]}
+        book = {"contributions": [_c("A", "Author"), {"author": None}, {}]}
         assert author_names(book) == ["A"]
 
     def test_prefers_cached_contributors(self):
@@ -323,15 +342,72 @@ class TestAuthorNames:
                 {"author": {"id": 1, "name": "Neil Gaiman"}, "contribution": "Author"},
                 {"author": {"id": 2, "name": "Terry Pratchett"}, "contribution": "Author"},
             ],
-            "contributions": [{"author": {"name": "ignored"}}],
+            "contributions": [_c("ignored", "Author")],
         }
         assert author_names(book) == ["Neil Gaiman", "Terry Pratchett"]
+
+    def test_leaves_out_other_roles(self):
+        book = {
+            "cached_contributors": [
+                _c("John Mackey", "Author"),
+                _c("Bill George", "Foreword"),
+                _c("Ray Porter", "Narrator"),
+                _c("Raj Sisodia", "Author"),
+                _c("Joel Martinsen", "Translator"),
+            ]
+        }
+        assert author_names(book) == ["John Mackey", "Raj Sisodia"]
+
+    def test_empty_role_counts_as_author(self):
+        book = {"cached_contributors": [_c("Old Record", None), _c("N", "Narrator")]}
+        assert author_names(book) == ["Old Record"]
+
+    def test_missing_role_key_counts_as_author(self):
+        assert author_names({"contributions": [{"author": {"name": "A"}}]}) == ["A"]
+
+    def test_no_author_role_falls_back_to_first_contributor(self):
+        book = {"contributions": [_c("Ed One", "Editor"), _c("Ed Two", "Editor")]}
+        assert author_names(book) == ["Ed One"]
 
     def test_empty_cached_contributors_is_empty(self):
         assert author_names({"cached_contributors": []}) == []
 
     def test_no_contributors(self):
         assert author_names({}) == []
+
+
+class TestContributors:
+    def test_lists_every_contributor_with_role(self):
+        book = {"contributions": [_c("Tara Westover", "Author"), _c("Julia Whelan", "Narrator")]}
+        assert contributors(book) == [
+            {"name": "Tara Westover", "role": "Author"},
+            {"name": "Julia Whelan", "role": "Narrator"},
+        ]
+
+    def test_empty_role_reported_as_author(self):
+        assert contributors({"cached_contributors": [_c("A", None)]}) == [
+            {"name": "A", "role": "Author"}
+        ]
+
+    def test_skips_entries_without_a_name(self):
+        assert contributors({"contributions": [{"author": None}, {}]}) == []
+
+
+class TestHandleGetBookContributors:
+    @patch("hardcover_mcp.tools.books.execute", new_callable=AsyncMock)
+    async def test_authors_and_contributors(self, mock_execute):
+        book = {"id": 1, "title": "Educated"}
+        book["contributions"] = [_c("Tara Westover", "Author"), _c("Julia Whelan", "Narrator")]
+        mock_execute.return_value = {"data": {"books": [book]}}
+
+        data = json.loads((await handle_get_book({"id": 1}))[0].text)
+
+        assert data["authors"] == ["Tara Westover"]
+        assert data["contributors"] == [
+            {"name": "Tara Westover", "role": "Author"},
+            {"name": "Julia Whelan", "role": "Narrator"},
+        ]
+        assert "contributions" not in data
 
 
 def _editions() -> dict:
