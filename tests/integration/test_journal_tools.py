@@ -1,10 +1,11 @@
 """Integration tests for journal write tools."""
 
-import asyncio
 import json
 import uuid
 
 import pytest
+
+from tests.integration._eventually import eventually
 
 pytestmark = pytest.mark.integration
 
@@ -43,15 +44,17 @@ class TestJournalEntryLifecycle:
             assert created["book_id"] == book_id
             assert created["event"] == "note"
 
-            read_result = await handle_get_reading_journal(
-                {
-                    "book_id": book_id,
-                    "event": "note",
-                    "limit": 100,
-                }
-            )
-            entries = json.loads(read_result[0].text)
-            matching = [e for e in entries if e["id"] == entry_id]
+            async def notes() -> list[dict]:
+                read_result = await handle_get_reading_journal(
+                    {"book_id": book_id, "event": "note", "limit": 100}
+                )
+                return json.loads(read_result[0].text)
+
+            async def find(target: int) -> list[dict]:
+                return [e for e in await notes() if e["id"] == target]
+
+            # Wait until it's readable: the edit below looks the entry up first.
+            matching = await eventually(lambda: find(entry_id))
             assert len(matching) == 1
             assert matching[0]["entry"] == unique_note
 
@@ -72,20 +75,10 @@ class TestJournalEntryLifecycle:
             deleted_id = entry_id
             entry_id = None  # Prevent double-delete in finally
 
-            # Allow time for eventual consistency
-            for _ in range(3):
-                await asyncio.sleep(1)
-                verify_result = await handle_get_reading_journal(
-                    {
-                        "book_id": book_id,
-                        "event": "note",
-                        "limit": 100,
-                    }
-                )
-                entries_after = json.loads(verify_result[0].text)
-                if all(e["id"] != deleted_id for e in entries_after):
-                    break
-            assert all(e["id"] != deleted_id for e in entries_after)
+            async def gone() -> bool:
+                return not await find(deleted_id)
+
+            assert await eventually(gone)
 
         finally:
             if entry_id is not None:

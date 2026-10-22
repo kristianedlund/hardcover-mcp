@@ -9,8 +9,11 @@ Skipped automatically when the token is absent.
 
 import json
 import uuid
+from collections.abc import Callable
 
 import pytest
+
+from tests.integration._eventually import eventually
 
 pytestmark = pytest.mark.integration
 
@@ -41,6 +44,24 @@ async def _find_book_not_in_library() -> int:
         if "not in your library" in result[0].text.lower():
             return book_id
     pytest.skip("All candidate books already in library — cannot test without side effects")
+
+
+async def _library_entry(book_id: int, check: Callable[[dict], bool] = bool) -> dict | None:
+    """``get_user_book`` for ``book_id`` once it passes ``check``, or None if it never does.
+
+    Waits because reads lag writes, and ``set_user_book`` merges with what it reads: a
+    follow-up write before the previous one is readable would write the old values back.
+    """
+    from hardcover_mcp.tools.library import handle_get_user_book
+
+    async def read() -> dict | None:
+        result = await handle_get_user_book({"book_id": book_id})
+        if "not in your library" in result[0].text.lower():
+            return None
+        detail = json.loads(result[0].text)
+        return detail if check(detail) else None
+
+    return await eventually(read)
 
 
 class TestListLifecycle:
@@ -80,19 +101,27 @@ class TestListLifecycle:
             # 3. Add book, then repeat: second call is a no-op
             book_id = await _find_book_not_in_library()
             entry = {"list_id": list_id, "book_id": book_id}
+
+            async def books_on_list() -> list[int]:
+                listed = json.loads((await handle_get_list({"id": list_id}))[0].text)
+                return [b["book_id"] for b in listed["books"]]
+
+            async def listed_is(expected: list[int]) -> bool:
+                return await books_on_list() == expected
+
             added = json.loads((await handle_set_list_book({**entry, "on_list": True}))[0].text)
             assert added["changed"] is True
             assert added["list_book_id"] is not None
+            # Repeat only once the add is readable, or a stale lookup inserts it twice.
+            assert await eventually(lambda: listed_is([book_id]))
             again = json.loads((await handle_set_list_book({**entry, "on_list": True}))[0].text)
             assert again["changed"] is False
             assert again["list_book_id"] == added["list_book_id"]
 
-            listed = json.loads((await handle_get_list({"id": list_id}))[0].text)
-            assert [b["book_id"] for b in listed["books"]] == [book_id]
-
             # 4. Remove book, then repeat: second call is a no-op
             removed = json.loads((await handle_set_list_book({**entry, "on_list": False}))[0].text)
             assert removed["changed"] is True
+            assert await eventually(lambda: listed_is([]))
             again = json.loads((await handle_set_list_book({**entry, "on_list": False}))[0].text)
             assert again["changed"] is False
 
@@ -109,9 +138,17 @@ class TestListBookOnSeveralLists:
     async def test_add_and_remove_on_two_lists(self):
         from hardcover_mcp.tools.lists import (
             handle_delete_list,
+            handle_get_list,
             handle_set_list,
             handle_set_list_book,
         )
+
+        async def on_every_list(book_id: int, expected: bool) -> bool:
+            for list_id in list_ids:
+                listed = json.loads((await handle_get_list({"id": list_id}))[0].text)
+                if (book_id in [b["book_id"] for b in listed["books"]]) != expected:
+                    return False
+            return True
 
         unique = uuid.uuid4().hex[:8]
         list_ids = []
@@ -129,6 +166,7 @@ class TestListBookOnSeveralLists:
             assert [r["list_id"] for r in added["results"]] == list_ids
             assert all(r["changed"] and r["list_book_id"] for r in added["results"])
 
+            assert await eventually(lambda: on_every_list(book_id, True))
             again = json.loads((await handle_set_list_book({**call, "on_list": True}))[0].text)
             assert not any(r["changed"] for r in again["results"])
 
@@ -145,7 +183,6 @@ class TestUserBookLifecycle:
     async def test_full_lifecycle(self):
         from hardcover_mcp.tools.library import (
             handle_delete_user_book,
-            handle_get_user_book,
             handle_set_user_book,
         )
 
@@ -163,6 +200,8 @@ class TestUserBookLifecycle:
         assert created["status"] == "Want to Read"
 
         try:
+            assert await _library_entry(book_id)
+
             # 2. Update status to Read and set rating
             result = await handle_set_user_book(
                 {
@@ -176,10 +215,9 @@ class TestUserBookLifecycle:
             assert updated["status"] == "Read"
 
             # 3. Verify via get
-            result = await handle_get_user_book({"book_id": book_id})
-            detail = json.loads(result[0].text)
+            detail = await _library_entry(book_id, lambda d: d["rating"] == 4.0)
+            assert detail is not None
             assert detail["book_id"] == book_id
-            assert detail["rating"] == 4.0
 
         finally:
             # 4. Delete (cleanup always runs)
@@ -194,7 +232,6 @@ class TestUserBookReviewLifecycle:
     async def test_review_and_notes(self):
         from hardcover_mcp.tools.library import (
             handle_delete_user_book,
-            handle_get_user_book,
             handle_set_user_book,
         )
 
@@ -218,8 +255,8 @@ class TestUserBookReviewLifecycle:
 
         try:
             # 2. Read back and verify review fields
-            result = await handle_get_user_book({"book_id": book_id})
-            detail = json.loads(result[0].text)
+            detail = await _library_entry(book_id, lambda d: d["private_notes"] is not None)
+            assert detail is not None
             assert detail["review_has_spoilers"] is False
             assert detail["reviewed_at"].startswith("2025-06-01")
             assert detail["private_notes"] == "The quote in chapter 12 is memorable."
@@ -233,8 +270,8 @@ class TestUserBookReviewLifecycle:
                 {"book_id": book_id, "status": "Currently Reading", "rating": 3.5}
             )
             assert json.loads(result[0].text)["status"] == "Currently Reading"
-            result = await handle_get_user_book({"book_id": book_id})
-            detail = json.loads(result[0].text)
+            detail = await _library_entry(book_id, lambda d: d["status"] == "Currently Reading")
+            assert detail is not None
             assert detail["review_raw"] == original_review
             assert detail["review_has_spoilers"] is False
             assert detail["reviewed_at"].startswith("2025-06-01")
@@ -278,7 +315,6 @@ class TestEditionSelection:
     async def test_set_and_read_edition_id(self):
         from hardcover_mcp.tools.library import (
             handle_delete_user_book,
-            handle_get_user_book,
             handle_set_user_book,
         )
 
@@ -298,10 +334,10 @@ class TestEditionSelection:
 
         try:
             # 2. Verify edition info is returned by get_user_book
-            result = await handle_get_user_book({"book_id": book_id})
-            detail = json.loads(result[0].text)
-            assert detail["edition"] is not None
-            assert detail["edition"]["id"] == edition_id
+            detail = await _library_entry(
+                book_id, lambda d: (d["edition"] or {}).get("id") == edition_id
+            )
+            assert detail is not None
 
         finally:
             # 3. Clean up
@@ -317,11 +353,18 @@ class TestReadingProgress:
         from hardcover_mcp.tools.library import (
             handle_delete_user_book,
             handle_delete_user_book_read,
+            handle_get_user_book,
             handle_set_user_book,
             handle_set_user_book_read,
         )
 
         book_id = await _find_book_not_in_library()
+
+        async def read_started(read_id: int, started_at: str) -> bool:
+            detail = json.loads((await handle_get_user_book({"book_id": book_id}))[0].text)
+            return any(
+                r["id"] == read_id and r["started_at"] == started_at for r in detail["reads"]
+            )
 
         # 1. Add to library as currently reading
         result = await handle_set_user_book(
@@ -347,6 +390,8 @@ class TestReadingProgress:
             read_id = read_entry["id"]
             assert read_entry["progress_pages"] == 50
             assert read_entry["started_at"] == "2025-01-01"
+            # The update merges with the stored read, so it must see the new start date.
+            assert await eventually(lambda: read_started(read_id, "2025-01-01"))
 
             # 3. Update progress further
             result = await handle_set_user_book_read(
@@ -391,7 +436,6 @@ class TestPrivacyControls:
     async def test_set_and_read_privacy(self):
         from hardcover_mcp.tools.library import (
             handle_delete_user_book,
-            handle_get_user_book,
             handle_set_user_book,
         )
 
@@ -411,9 +455,7 @@ class TestPrivacyControls:
 
         try:
             # 2. Verify privacy is returned by get_user_book
-            result = await handle_get_user_book({"book_id": book_id})
-            detail = json.loads(result[0].text)
-            assert detail["privacy"] == "private"
+            assert await _library_entry(book_id, lambda d: d["privacy"] == "private")
 
             # 3. Update to Public — privacy_setting_id must change
             result = await handle_set_user_book(
@@ -424,6 +466,7 @@ class TestPrivacyControls:
             )
             updated = json.loads(result[0].text)
             assert updated["privacy"] == "public"
+            assert await _library_entry(book_id, lambda d: d["privacy"] == "public")
 
             # 4. Update without specifying privacy — should be preserved
             result = await handle_set_user_book(
@@ -482,8 +525,11 @@ class TestOwnedBooksLifecycle:
             assert output["edition_id"] == edition_id
             assert output["owned"] is True
 
-            # 2. Verify get_user_library(owned=true) returns it
-            assert book_id in await owned_book_ids()
+            # 2. Verify get_user_library(owned=true) returns it (before repeating the call)
+            async def owned_now() -> bool:
+                return book_id in await owned_book_ids()
+
+            assert await eventually(owned_now)
 
             # 3. Calling again with owned=True should be a no-op
             result2 = await handle_set_user_book({"book_id": book_id, "owned": True})

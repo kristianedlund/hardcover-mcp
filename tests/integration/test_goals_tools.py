@@ -5,6 +5,8 @@ from datetime import date
 
 import pytest
 
+from tests.integration._eventually import eventually
+
 pytestmark = pytest.mark.integration
 
 
@@ -26,6 +28,12 @@ class TestReadingGoalsLifecycle:
             result = await handle_get_reading_goal({"limit": 100})
             return {goal["id"] for goal in json.loads(result[0].text)["goals"]}
 
+        async def is_active(active: bool) -> bool:
+            return await eventually(lambda: _matches(active))
+
+        async def _matches(active: bool) -> bool:
+            return (goal_id in await active_goal_ids()) == active
+
         goal_id = None
         try:
             # 1. Create a short-range test goal (won't collide with real yearly goals)
@@ -43,7 +51,7 @@ class TestReadingGoalsLifecycle:
             assert saved["metric"] == "book"
 
             # 2. It appears in active goals
-            assert goal_id in await active_goal_ids()
+            assert await is_active(True)
 
             # 3. Archive by id: hidden from active goals, target unchanged
             archived = json.loads(
@@ -51,7 +59,7 @@ class TestReadingGoalsLifecycle:
             )
             assert archived["archived"] is True
             assert archived["goal"] == 99
-            assert goal_id not in await active_goal_ids()
+            assert await is_active(False)
 
             # 4. Restore and edit the target in one call
             restored = json.loads(
@@ -61,7 +69,7 @@ class TestReadingGoalsLifecycle:
             )
             assert restored["archived"] is False
             assert restored["goal"] == 98
-            assert goal_id in await active_goal_ids()
+            assert await is_active(True)
 
             # 5. Delete
             deleted = json.loads((await handle_delete_reading_goal({"id": goal_id}))[0].text)
