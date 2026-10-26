@@ -30,6 +30,8 @@ STATUS_MAP: dict[int, str] = {
 }
 
 STATUS_NAME_TO_ID: dict[str, int] = {v.lower(): k for k, v in STATUS_MAP.items()}
+# The status names, for the ``enum`` of every status argument's schema.
+STATUS_NAMES: list[str] = list(STATUS_MAP.values())
 
 # ── Shared field fragments ──
 
@@ -243,7 +245,7 @@ def _format_user_book(ub: dict[str, Any]) -> dict[str, Any]:
         "title": book.get("title"),
         "slug": book.get("slug"),
         "authors": authors,
-        "status": STATUS_MAP.get(ub["status_id"], f"Unknown ({ub['status_id']})"),
+        "status": status_label(ub["status_id"]),
         "rating": ub.get("rating"),
         "updated_at": ub.get("updated_at"),
     }
@@ -279,7 +281,7 @@ def _format_user_book_detail(ub: dict[str, Any]) -> dict[str, Any]:
         "slug": book.get("slug"),
         "pages": book.get("pages"),
         "authors": authors,
-        "status": STATUS_MAP.get(ub["status_id"], f"Unknown ({ub['status_id']})"),
+        "status": status_label(ub["status_id"]),
         "privacy": privacy_label(ub.get("privacy_setting_id")),
         "rating": ub.get("rating"),
         "updated_at": ub.get("updated_at"),
@@ -350,9 +352,6 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
         )
     else:
         status_id = _resolve_status_id(status)
-        if status is not None and status_id is None:
-            valid = ", ".join(STATUS_MAP.values())
-            raise ToolError(f"unknown status '{status}'. Valid: {valid}")
 
         query = _render_library_query(
             with_status=status_id is not None,
@@ -529,15 +528,32 @@ mutation UpdateUserBook($id: Int!, $object: UserBookUpdateInput!) {
 """
 
 
-def _resolve_status_id(status: str | int | None) -> int | None:
-    """Convert a status name or numeric string to its integer ID."""
+def _resolve_status_id(status: Any, name: str = "status") -> int | None:
+    """A status name (any case) or id 1-6 as its id, or None if not given.
+
+    Raises
+    ------
+    ToolError
+        For anything else, listing the valid names.
+    """
     if status is None:
         return None
-    if isinstance(status, int):
+    if isinstance(status, int) and not isinstance(status, bool) and status in STATUS_MAP:
         return status
-    if isinstance(status, str) and status.isdigit():
-        return int(status)
-    return STATUS_NAME_TO_ID.get(str(status).lower())
+    if isinstance(status, str):
+        key = status.strip().lower()
+        if key.isdigit() and int(key) in STATUS_MAP:
+            return int(key)
+        if key in STATUS_NAME_TO_ID:
+            return STATUS_NAME_TO_ID[key]
+    raise ToolError(f"unknown {name} {status!r}. Valid: {', '.join(STATUS_NAMES)} (or 1-6).")
+
+
+def status_label(status_id: int | None) -> str | None:
+    """The output label for a status id, e.g. 'Read'; ``unknown (<id>)`` if unrecognised."""
+    if status_id is None:
+        return None
+    return STATUS_MAP.get(status_id, f"unknown ({status_id})")
 
 
 def _text_to_slate(text: str) -> list[dict[str, Any]]:
@@ -583,9 +599,6 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
 
     status = arguments.get("status")
     status_id = _resolve_status_id(status)
-    if status is not None and status_id is None:
-        valid = ", ".join(STATUS_MAP.values())
-        raise ToolError(f"unknown status '{status}'. Valid: {valid}")
 
     privacy = arguments.get("privacy")
     privacy_setting_id = None if privacy is None else _require_privacy(privacy)
@@ -694,7 +707,7 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
     output = {
         "user_book_id": ub.get("id"),
         "book_id": ub.get("book_id"),
-        "status": STATUS_MAP.get(ub.get("status_id"), str(ub.get("status_id"))),
+        "status": status_label(ub.get("status_id")),
         "privacy": privacy_label(ub.get("privacy_setting_id")),
         "rating": ub.get("rating"),
         "edition_id": ub.get("edition_id"),
@@ -1037,7 +1050,8 @@ TOOLS: list[ToolSpec] = [
                 "properties": {
                     "status": {
                         "type": "string",
-                        "description": "Status filter (e.g. 'Read', 'Currently Reading').",
+                        "enum": STATUS_NAMES,
+                        "description": "Only books with this status.",
                     },
                     "start_date": {
                         "type": "string",
@@ -1106,7 +1120,8 @@ TOOLS: list[ToolSpec] = [
                 "edition, and every read entry (with their ids, needed by "
                 "set_user_book_read/delete_user_book_read), plus the lists of yours it's on "
                 "(not Owned; change them with set_list_book). Returns 'Book not in your "
-                "library' if you haven't added it. This is your relationship to the book; for "
+                "library' if you haven't added it, or 'No book found with slug …' for an "
+                "unknown slug. This is your relationship to the book; for "
                 "the book itself (description, pages, community rating) use get_book, and to "
                 "browse many of your books use get_user_library."
             ),
@@ -1153,7 +1168,8 @@ TOOLS: list[ToolSpec] = [
                     },
                     "status": {
                         "type": "string",
-                        "description": "Status name (e.g. 'Read') or numeric ID (1-5).",
+                        "enum": STATUS_NAMES,
+                        "description": "Reading status.",
                     },
                     "rating": {
                         "type": "number",

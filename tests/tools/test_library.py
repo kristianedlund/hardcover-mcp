@@ -8,6 +8,8 @@ import pytest
 from hardcover_mcp.tools._validation import ToolError
 from hardcover_mcp.tools.library import (
     LIBRARY_SORT_FIELDS,
+    STATUS_MAP,
+    STATUS_NAMES,
     _build_read_input,
     _format_user_book,
     _format_user_book_detail,
@@ -20,6 +22,7 @@ from hardcover_mcp.tools.library import (
     handle_get_user_library,
     handle_set_user_book,
     handle_set_user_book_read,
+    status_label,
 )
 
 
@@ -37,8 +40,37 @@ class TestResolveStatusId:
         assert _resolve_status_id("currently reading") == 2
         assert _resolve_status_id("Currently Reading") == 2
 
-    def test_returns_none_for_unknown_name(self):
-        assert _resolve_status_id("nonexistent") is None
+    def test_resolves_every_status(self):
+        for status_id, name in STATUS_MAP.items():
+            assert _resolve_status_id(name.upper()) == status_id
+            assert _resolve_status_id(status_id) == status_id
+
+    @pytest.mark.parametrize("value", ["nonexistent", "", 0, 7, 99, "99", True, 3.0, ["Read"]])
+    def test_rejects_anything_else(self, value):
+        with pytest.raises(ToolError, match="unknown status") as exc:
+            _resolve_status_id(value)
+        assert "Did Not Finish" in str(exc.value)  # lists the valid names
+
+    def test_error_names_the_argument(self):
+        with pytest.raises(ToolError, match="unknown library_status"):
+            _resolve_status_id("x", "library_status")
+
+
+class TestStatusLabel:
+    def test_labels(self):
+        assert status_label(5) == "Did Not Finish"
+        assert status_label(None) is None
+        assert status_label(99) == "unknown (99)"
+
+    def test_status_schemas_list_every_name(self):
+        from hardcover_mcp import server
+
+        schemas = {
+            spec.tool.name: spec.tool.input_schema["properties"] for spec in server.TOOL_REGISTRY
+        }
+        assert schemas["set_user_book"]["status"]["enum"] == STATUS_NAMES
+        assert schemas["get_user_library"]["status"]["enum"] == STATUS_NAMES
+        assert schemas["get_user"]["library_status"]["enum"] == STATUS_NAMES
 
 
 class TestFormatUserBook:
@@ -72,7 +104,7 @@ class TestFormatUserBook:
         }
         result = _format_user_book(ub)
 
-        assert "Unknown" in result["status"]
+        assert result["status"] == "unknown (99)"
 
 
 class TestMergeReadInput:

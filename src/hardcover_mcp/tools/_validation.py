@@ -7,8 +7,11 @@ class ToolError(ValueError):
     """A tool call that failed on its own terms: bad input, or an action the API rejected.
 
     ``call_tool`` returns it to the client as ``Error: <message>`` with ``isError`` set and
-    no traceback. Raise it for failures only. Answers like "No book found." or "Book not in
-    your library." are valid results, so handlers return them as normal text.
+    no traceback. Raise it for failures only:
+
+    - A write tool whose target doesn't exist raises it (the action didn't happen).
+    - A read tool that finds nothing isn't a failure. A list returns an empty page; a lookup
+      of one object returns a short plain-text answer such as "No book found.".
 
     Subclasses ``ValueError`` so the ``_require_*`` validators can raise it directly.
     """

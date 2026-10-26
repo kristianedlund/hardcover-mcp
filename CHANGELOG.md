@@ -59,6 +59,22 @@ extras: `get_book`'s edition lookup adds `subtitle`, `isbn_10`, and `book`; `get
 | `get_user(include_library=true)` | `your_rating` (the profiled user's rating) | `user_rating` |
 | `get_series` | `author` (name) and `author_slug` | `authors` (list of names), like other tools |
 
+### Breaking: stricter inputs and errors
+
+- `status` (`set_user_book`, `get_user_library`) and `library_status` (`get_user`) accept
+  only the six status names (any case) or `1`–`6`. Other values, such as `99` or `true`,
+  are an error listing the valid names; before, any number was sent to Hardcover. The
+  schemas now list the names, and the "1-5" in `set_user_book`'s description was wrong (6 is
+  "Ignored").
+- An unrecognised status id in results reads `unknown (<id>)`, like privacy (was
+  `Unknown (<id>)`, or just the id in `set_user_book`).
+- `set_following` with an unknown username is an error (with `isError` set) instead of a
+  normal "No user found" result. The rule now: a write tool whose target doesn't exist
+  fails; a read tool that finds nothing returns an empty page, or a short "No … found"
+  answer for a single lookup.
+- `set_journal_entry` no longer passes an undocumented `tags` argument through to
+  Hardcover.
+
 ### Fixed
 
 - Tool errors (bad input, or an action Hardcover rejected) now set MCP's `isError` flag,
