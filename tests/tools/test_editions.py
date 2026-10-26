@@ -212,3 +212,39 @@ class TestHandleGetEdition:
         result = await handle_get_edition({"isbn_13": "9780000000000"})
 
         assert "No edition found" in result[0].text
+
+
+_RAW_EDITION = {
+    "id": 1,
+    "title": "T",
+    "edition_format": "Hardcover",
+    "language": {"language": "English"},
+    "publisher": {"id": 5, "name": "Pub", "slug": "pub"},
+    "reading_format": {"format": "Read"},
+    "book": {"id": 9, "title": "B", "slug": "b"},
+    "users_count": 3,
+}
+
+
+class TestOneEditionShape:
+    """Every tool that returns an edition uses the keys of ``format_edition``."""
+
+    def test_every_tool_shares_the_core_keys(self):
+        from hardcover_mcp.tools.books import _format_edition_summary
+        from hardcover_mcp.tools.editions import _format_edition, format_edition
+        from hardcover_mcp.tools.library import _format_user_book_detail
+        from hardcover_mcp.tools.publishers import _format_publisher
+
+        core = format_edition(_RAW_EDITION)
+        ub = {"id": 1, "book_id": 9, "status_id": 1, "book": {}, "edition": _RAW_EDITION}
+        shaped = [
+            _format_edition(_RAW_EDITION),
+            _format_edition_summary(_RAW_EDITION),
+            _format_user_book_detail(ub)["edition"],
+            _format_publisher({"editions": [_RAW_EDITION]})["editions"][0],
+        ]
+
+        for edition in shaped:
+            assert {k: edition[k] for k in core} == core
+        assert core["language"] == "English"
+        assert core["publisher"] == {"id": 5, "name": "Pub", "slug": "pub"}

@@ -175,7 +175,7 @@ def _format_user(raw: dict[str, Any]) -> dict[str, Any]:
                 "title": ub["book"].get("title"),
                 "release_year": ub["book"].get("release_year"),
                 "rating": ub["book"].get("rating"),
-                "your_rating": ub.get("rating"),
+                "user_rating": ub.get("rating"),
                 "status": STATUS_MAP.get(ub["status_id"], f"Unknown ({ub['status_id']})"),
             }
             for ub in raw["user_books"]
@@ -304,7 +304,8 @@ TOOLS: list[ToolSpec] = [
                 "(the owner of the API token) including your user id; otherwise look someone "
                 "up by id, username, or name (name resolves to the top search match). "
                 "Read-only. Returns bio, book/follower counts, and privacy. Optional sections: "
-                "include_library (recent library entries; a private user's comes back empty "
+                "include_library (recent library entries, each with the book's community "
+                "'rating' and the user's own 'user_rating'; a private user's comes back empty "
                 "unless you follow them), include_following / include_followers (who they "
                 "follow / who follows them, newest first), and include_stats (your own profile "
                 "only: totals per status, average rating, books read in stats_year, default "

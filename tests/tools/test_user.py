@@ -64,7 +64,8 @@ class TestFormatUser:
         entry = result["library"][0]
         assert entry["book_id"] == 100
         assert entry["title"] == "Dune"
-        assert entry["your_rating"] == 4.5
+        assert entry["user_rating"] == 4.5
+        assert "your_rating" not in entry
         assert entry["status"] == "Read"
 
 

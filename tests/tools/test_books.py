@@ -470,7 +470,7 @@ class TestHandleGetBookIncludeEditions:
 
         first, second = data["editions"]
         assert first["language"] == "English"
-        assert first["publisher"] == "Pub"
+        assert first["publisher"]["name"] == "Pub"
         assert first["reading_format"] == "Read"
         assert second["language"] is None
         assert mock_execute.call_args_list[1][0][1] == {"book_id": 123, "limit": 10}

@@ -9,11 +9,13 @@ from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._validation import ToolError, _require_int
 from hardcover_mcp.tools.books import resolve_id_by_name
+from hardcover_mcp.tools.editions import EDITION_FIELDS, format_edition
 
 _DEFAULT_EDITIONS_LIMIT = 20
 _MAX_EDITIONS_LIMIT = 100
 
-_PUBLISHER_FIELDS = """
+_PUBLISHER_FIELDS = (
+    """
         id
         name
         slug
@@ -28,10 +30,9 @@ _PUBLISHER_FIELDS = """
             offset: $editions_offset,
             order_by: {book: {users_count: desc_nulls_last}}
         ) {
-            id
-            title
-            isbn_13
-            edition_format
+            """
+    + EDITION_FIELDS
+    + """
             book {
                 id
                 title
@@ -41,6 +42,7 @@ _PUBLISHER_FIELDS = """
             }
         }
 """
+)
 
 GET_PUBLISHER_BY_ID_QUERY = (
     """
@@ -73,15 +75,16 @@ def _format_publisher(raw: dict[str, Any]) -> dict[str, Any]:
         book = e.get("book") or {}
         formatted_editions.append(
             {
-                "edition_id": e.get("id"),
-                "title": e.get("title"),
-                "isbn_13": e.get("isbn_13"),
-                "format": e.get("edition_format"),
-                "book_id": book.get("id"),
-                "book_title": book.get("title"),
-                "book_slug": book.get("slug"),
-                "rating": book.get("rating"),
-                "release_year": book.get("release_year"),
+                **format_edition(e),
+                "book": {
+                    "id": book.get("id"),
+                    "title": book.get("title"),
+                    "slug": book.get("slug"),
+                    "rating": book.get("rating"),
+                    "release_year": book.get("release_year"),
+                }
+                if book
+                else None,
             }
         )
 
@@ -148,8 +151,9 @@ TOOLS: list[ToolSpec] = [
             description=(
                 "Look up a publisher by Hardcover id, slug, or name (provide one; a name "
                 "resolves to the top search match). Read-only. Returns name, editions count, "
-                "parent publisher, and a page of its editions (edition_id, title, format, book "
-                "id/title, rating, release year) via editions_limit/editions_offset."
+                "parent publisher, and a page of its editions (the same edition fields as "
+                "get_book, plus each edition's book: id, title, slug, rating, release year) "
+                "via editions_limit/editions_offset."
             ),
             inputSchema={
                 "type": "object",

@@ -452,7 +452,9 @@ class TestFormatUserBookDetailEdition:
         }
         ub = self._make_ub(edition=edition)
         result = _format_user_book_detail(ub)
-        assert result["edition"] == edition
+        assert result["edition"]["id"] == 100
+        assert result["edition"]["asin"] == "B001234567"
+        assert result["edition"]["language"] == "English"  # flattened, not nested
 
     def test_edition_none_when_absent(self):
         ub = self._make_ub()

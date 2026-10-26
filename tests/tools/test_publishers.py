@@ -44,8 +44,8 @@ class TestFormatPublisher:
         assert result["state"] == "active"
         assert result["parent_publisher"]["name"] == "Macmillan Publishers"
         assert len(result["editions"]) == 1
-        assert result["editions"][0]["edition_id"] == 5195452
-        assert result["editions"][0]["book_title"] == "Mistborn: The Final Empire"
+        assert result["editions"][0]["id"] == 5195452
+        assert result["editions"][0]["book"]["title"] == "Mistborn: The Final Empire"
         assert result["editions"][0]["isbn_13"] == "9780765311788"
 
     def test_handles_missing_parent(self):

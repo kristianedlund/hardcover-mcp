@@ -43,6 +43,22 @@ Hardcover can count them: `get_user_library`, `get_list` without `id`, and `sear
 `get_list` with an `id` pages its books with `books_limit` / `books_offset` (were
 `book_limit` / `book_offset`), matching `get_author`'s `books_limit`.
 
+### Breaking: one name and shape for the same data
+
+Editions come back with the same keys from every tool: `id`, `title`, `edition_format`,
+`physical_format`, `reading_format`, `pages`, `audio_seconds`, `release_date`, `isbn_13`,
+`asin`, `language` (a string), and `publisher` (`{id, name, slug}`). Tools add their own
+extras: `get_book`'s edition lookup adds `subtitle`, `isbn_10`, and `book`; `get_book`'s
+`editions` add `users_count`; `get_publisher`'s editions add `book`.
+
+| Tool | Before | Now |
+|------|--------|-----|
+| `get_book(include_editions=true)` | `publisher` was a name string | `publisher` is `{id, name, slug}` |
+| `get_publisher` editions | `edition_id`, `format`, `book_id`, `book_title`, `book_slug`, `rating`, `release_year` | edition fields above, plus `book: {id, title, slug, rating, release_year}` |
+| `get_user_book` | `edition.language` was `{"language": "English"}`; fewer fields | the edition fields above |
+| `get_user(include_library=true)` | `your_rating` (the profiled user's rating) | `user_rating` |
+| `get_series` | `author` (name) and `author_slug` | `authors` (list of names), like other tools |
+
 ### Fixed
 
 - Tool errors (bad input, or an action Hardcover rejected) now set MCP's `isError` flag,

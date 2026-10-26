@@ -8,20 +8,20 @@ from mcp.types import TextContent
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._validation import ToolError, _require_int
 
-# ── Edition field fragment, shared across lookup queries ──
+# ── The edition shape every tool returns ──
 
-_EDITION_FIELDS = """
+# Fields behind ``format_edition``. Tools that return editions select these (plus their
+# own extras), so an edition has the same keys whichever tool it comes from.
+EDITION_FIELDS = """
         id
         title
-        subtitle
-        isbn_13
-        isbn_10
-        asin
+        edition_format
+        physical_format
         pages
         audio_seconds
         release_date
-        edition_format
-        physical_format
+        isbn_13
+        asin
         publisher {
             id
             name
@@ -33,6 +33,40 @@ _EDITION_FIELDS = """
         reading_format {
             format
         }
+"""
+
+
+def format_edition(e: dict[str, Any]) -> dict[str, Any]:
+    """The shared edition shape, from a record selected with ``EDITION_FIELDS``.
+
+    ``language`` and ``reading_format`` are flattened to strings; ``publisher`` is
+    ``{id, name, slug}`` or None.
+    """
+    publisher = e.get("publisher")
+    return {
+        "id": e.get("id"),
+        "title": e.get("title"),
+        "edition_format": e.get("edition_format"),
+        "physical_format": e.get("physical_format"),
+        "reading_format": (e.get("reading_format") or {}).get("format"),
+        "pages": e.get("pages"),
+        "audio_seconds": e.get("audio_seconds"),
+        "release_date": e.get("release_date"),
+        "isbn_13": e.get("isbn_13"),
+        "asin": e.get("asin"),
+        "language": (e.get("language") or {}).get("language"),
+        "publisher": (
+            {key: publisher.get(key) for key in ("id", "name", "slug")} if publisher else None
+        ),
+    }
+
+
+# Edition lookup (get_book with an edition key) adds a few fields and the book.
+_EDITION_FIELDS = (
+    EDITION_FIELDS
+    + """
+        subtitle
+        isbn_10
         book {
             id
             slug
@@ -40,6 +74,7 @@ _EDITION_FIELDS = """
             rating
         }
 """
+)
 
 EDITION_BY_ID_QUERY = (
     """
@@ -87,34 +122,15 @@ def _format_edition(e: dict[str, Any]) -> dict[str, Any]:
     Returns
     -------
     dict[str, Any]
-        Flattened edition dict with nested objects inlined for readability.
+        The shared edition shape (``format_edition``) plus ``subtitle``, ``isbn_10``,
+        and ``book``.
     """
-    publisher = e.get("publisher") or {}
-    language = e.get("language") or {}
-    reading_format = e.get("reading_format") or {}
     book = e.get("book") or {}
 
     return {
-        "id": e["id"],
-        "title": e.get("title"),
+        **format_edition(e),
         "subtitle": e.get("subtitle"),
-        "isbn_13": e.get("isbn_13"),
         "isbn_10": e.get("isbn_10"),
-        "asin": e.get("asin"),
-        "pages": e.get("pages"),
-        "audio_seconds": e.get("audio_seconds"),
-        "release_date": e.get("release_date"),
-        "edition_format": e.get("edition_format"),
-        "physical_format": e.get("physical_format"),
-        "publisher": {
-            "id": publisher.get("id"),
-            "name": publisher.get("name"),
-            "slug": publisher.get("slug"),
-        }
-        if publisher
-        else None,
-        "language": language.get("language"),
-        "reading_format": reading_format.get("format"),
         "book": {
             "id": book.get("id"),
             "slug": book.get("slug"),
