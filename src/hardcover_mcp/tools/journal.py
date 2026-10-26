@@ -285,7 +285,8 @@ async def _create_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
     # Required by the API; anything but 1/2/3 is silently rejected (returns a null entry).
     privacy_setting_id = _privacy_argument(arguments)
     obj["privacy_setting_id"] = 1 if privacy_setting_id is None else privacy_setting_id
-    obj["tags"] = arguments.get("tags", [])
+    # The API wants a tags list; the tool doesn't offer tags, so it's always empty.
+    obj["tags"] = []
 
     # Auth gate — the API scopes the mutation to the authenticated user via token.
     await get_current_user()

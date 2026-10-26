@@ -149,7 +149,7 @@ def _format_user(raw: dict[str, Any]) -> dict[str, Any]:
     (i.e. the caller requested it). Library entries respect the API's own
     privacy enforcement — a private user returns an empty list to non-followers.
     """
-    from hardcover_mcp.tools.library import STATUS_MAP
+    from hardcover_mcp.tools.library import status_label
 
     image = raw.get("cached_image") or {}
     privacy_id = raw.get("account_privacy_setting_id")
@@ -176,7 +176,7 @@ def _format_user(raw: dict[str, Any]) -> dict[str, Any]:
                 "release_year": ub["book"].get("release_year"),
                 "rating": ub["book"].get("rating"),
                 "user_rating": ub.get("rating"),
-                "status": STATUS_MAP.get(ub["status_id"], f"Unknown ({ub['status_id']})"),
+                "status": status_label(ub["status_id"]),
             }
             for ub in raw["user_books"]
             if ub.get("book")
@@ -227,14 +227,10 @@ async def handle_get_user(arguments: dict[str, Any]) -> list[TextContent]:
     if not user_id and not username and not name:
         user_id = (await get_current_user())["id"]
 
-    from hardcover_mcp.tools.library import STATUS_MAP, _resolve_status_id
+    from hardcover_mcp.tools.library import _resolve_status_id
 
     include_library = bool(arguments.get("include_library"))
-    library_status = arguments.get("library_status")
-    status_id = _resolve_status_id(library_status)
-    if library_status is not None and status_id is None:
-        valid = ", ".join(STATUS_MAP.values())
-        raise ToolError(f"unknown status '{library_status}'. Valid: {valid}")
+    status_id = _resolve_status_id(arguments.get("library_status"), "library_status")
 
     include_following = bool(arguments.get("include_following"))
     include_followers = bool(arguments.get("include_followers"))
@@ -333,9 +329,17 @@ TOOLS: list[ToolSpec] = [
                     },
                     "library_status": {
                         "type": "string",
-                        "description": (
-                            "Filter library entries by status (e.g. 'Read', 'Currently Reading')."
-                        ),
+                        # Same names as tools.library.STATUS_NAMES; not imported here to avoid
+                        # an import cycle (library imports this module).
+                        "enum": [
+                            "Want to Read",
+                            "Currently Reading",
+                            "Read",
+                            "Paused",
+                            "Did Not Finish",
+                            "Ignored",
+                        ],
+                        "description": "Only library entries with this status.",
                     },
                     "library_limit": {
                         "type": "integer",

@@ -46,11 +46,11 @@ class TestSetFollowing:
         finally:
             await set_following(originally_following)
 
-    async def test_unknown_username_reports_not_found(self):
+    async def test_unknown_username_is_an_error(self):
+        from hardcover_mcp.tools._validation import ToolError
         from hardcover_mcp.tools.follow import handle_set_following
 
-        result = await handle_set_following(
-            {"username": "definitely-not-a-real-user-xyz-9999", "following": True}
-        )
-
-        assert "No user found" in result[0].text
+        with pytest.raises(ToolError, match="no user found"):
+            await handle_set_following(
+                {"username": "definitely-not-a-real-user-xyz-9999", "following": True}
+            )

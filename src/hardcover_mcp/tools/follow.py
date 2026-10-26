@@ -29,10 +29,10 @@ mutation UnfollowUser($id: Int!) {
 """
 
 
-async def _resolve_user_id(arguments: dict[str, Any]) -> int | str:
+async def _resolve_user_id(arguments: dict[str, Any]) -> int:
     """Resolve user_id from arguments, looking up username if needed.
 
-    Returns the resolved int id, or a "No user found" message for an unknown username.
+    Raises ``ToolError`` when neither is given or the username doesn't exist.
     """
     user_id = arguments.get("user_id")
     username = arguments.get("username")
@@ -44,7 +44,7 @@ async def _resolve_user_id(arguments: dict[str, Any]) -> int | str:
         found = await execute(GET_USER_ID_BY_USERNAME_QUERY, {"username": username})
         users = found["data"]["users"]
         if not users:
-            return f"No user found for username '{username}'."
+            raise ToolError(f"no user found for username '{username}'.")
         user_id = users[0]["id"]
 
     return _require_int(user_id, "user_id")
@@ -78,8 +78,6 @@ async def handle_set_following(arguments: dict[str, Any]) -> list[TextContent]:
         raise ToolError("'following' (true/false) is required.")
 
     resolved = await _resolve_user_id(arguments)
-    if isinstance(resolved, str):
-        return [TextContent(type="text", text=resolved)]
 
     if await _is_following(resolved) == following:
         output = {"user_id": resolved, "following": following, "changed": False}
@@ -109,8 +107,8 @@ TOOLS: list[ToolSpec] = [
                 "identified by user_id or username (provide one; user_id wins if both are "
                 "given). Idempotent: if you already are in the requested state nothing changes. "
                 "Followed users' activity appears in get_activity_feed. Returns user_id, "
-                "following, and 'changed' (whether anything was done), or an error message if "
-                "the user isn't found."
+                "following, and 'changed' (whether anything was done); an unknown user is an "
+                "error."
             ),
             inputSchema={
                 "type": "object",
