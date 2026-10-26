@@ -45,8 +45,8 @@ class TestFormatSeries:
         assert result["id"] == 42
         assert result["name"] == "The Stormlight Archive"
         assert result["slug"] == "the-stormlight-archive"
-        assert result["author"] == "Brandon Sanderson"
-        assert result["author_slug"] == "brandon-sanderson"
+        assert result["authors"] == ["Brandon Sanderson"]
+        assert "author" not in result
         assert result["is_completed"] is False
         assert result["primary_books_count"] == 4
         assert len(result["books"]) == 2
@@ -69,8 +69,7 @@ class TestFormatSeries:
 
         result = _format_series(raw)
 
-        assert result["author"] is None
-        assert result["author_slug"] is None
+        assert result["authors"] == []
         assert result["books"] == []
 
     def test_excludes_users_count_from_output(self):

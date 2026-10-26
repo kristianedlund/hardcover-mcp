@@ -8,7 +8,7 @@ from mcp.types import TextContent, Tool
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._validation import ToolError, _require_int
-from hardcover_mcp.tools.editions import handle_get_edition
+from hardcover_mcp.tools.editions import EDITION_FIELDS, format_edition, handle_get_edition
 
 # Older records leave the role empty; on those the contributions relation says "Author".
 _AUTHOR_ROLES = {None, "Author"}
@@ -101,30 +101,15 @@ GET_BOOK_BY_SLUG_QUERY = GET_BOOK_BY_ID_QUERY.replace(
     "GetBookById($id: Int!)", "GetBookBySlug($slug: String!)"
 ).replace("{id: {_eq: $id}}", "{slug: {_eq: $slug}}")
 
-GET_EDITIONS_QUERY = """
-query GetBookEditions($book_id: Int!, $limit: Int!) {
-    editions(where: {book_id: {_eq: $book_id}}, order_by: {users_count: desc}, limit: $limit) {
-        id
-        title
-        edition_format
-        physical_format
-        pages
-        audio_seconds
-        release_date
-        isbn_13
-        asin
+GET_EDITIONS_QUERY = f"""
+query GetBookEditions($book_id: Int!, $limit: Int!) {{
+    editions(
+        where: {{book_id: {{_eq: $book_id}}}}, order_by: {{users_count: desc}}, limit: $limit
+    ) {{
+        {EDITION_FIELDS}
         users_count
-        language {
-            language
-        }
-        publisher {
-            name
-        }
-        reading_format {
-            format
-        }
-    }
-}
+    }}
+}}
 """
 
 _DEFAULT_EDITIONS_LIMIT = 10
@@ -132,22 +117,8 @@ _MAX_EDITIONS_LIMIT = 50
 
 
 def _format_edition_summary(edition: dict[str, Any]) -> dict[str, Any]:
-    """Flatten an editions row (nested language/publisher/format names) for get_book."""
-    return {
-        "id": edition.get("id"),
-        "title": edition.get("title"),
-        "edition_format": edition.get("edition_format"),
-        "physical_format": edition.get("physical_format"),
-        "reading_format": (edition.get("reading_format") or {}).get("format"),
-        "pages": edition.get("pages"),
-        "audio_seconds": edition.get("audio_seconds"),
-        "release_date": edition.get("release_date"),
-        "isbn_13": edition.get("isbn_13"),
-        "asin": edition.get("asin"),
-        "language": (edition.get("language") or {}).get("language"),
-        "publisher": (edition.get("publisher") or {}).get("name"),
-        "users_count": edition.get("users_count"),
-    }
+    """The shared edition shape plus ``users_count``, for get_book(include_editions)."""
+    return {**format_edition(edition), "users_count": edition.get("users_count")}
 
 
 GET_CHARACTERS_QUERY = """

@@ -17,6 +17,7 @@ from hardcover_mcp.tools._validation import (
     privacy_label,
 )
 from hardcover_mcp.tools.books import author_names
+from hardcover_mcp.tools.editions import EDITION_FIELDS, format_edition
 from hardcover_mcp.tools.user import get_current_user
 
 STATUS_MAP: dict[int, str] = {
@@ -50,7 +51,8 @@ _USER_BOOK_FIELDS = """
     }
 """
 
-_USER_BOOK_DETAIL_FIELDS = """
+_USER_BOOK_DETAIL_FIELDS = (
+    """
     id
     book_id
     status_id
@@ -61,19 +63,9 @@ _USER_BOOK_DETAIL_FIELDS = """
     review_has_spoilers
     reviewed_at
     private_notes
-    edition {
-        id
-        title
-        isbn_13
-        asin
-        pages
-        audio_seconds
-        edition_format
-        release_date
-        language {
-            language
-        }
-    }
+    edition {"""
+    + EDITION_FIELDS
+    + """    }
     user_book_reads(order_by: {id: desc}) {
         id
         started_at
@@ -93,6 +85,7 @@ _USER_BOOK_DETAIL_FIELDS = """
         }
     }
 """
+)
 
 
 # ── Read: get_user_library (single query, optional status filter) ──
@@ -294,7 +287,7 @@ def _format_user_book_detail(ub: dict[str, Any]) -> dict[str, Any]:
         "review_has_spoilers": ub.get("review_has_spoilers"),
         "reviewed_at": ub.get("reviewed_at"),
         "private_notes": ub.get("private_notes"),
-        "edition": ub.get("edition"),
+        "edition": format_edition(ub["edition"]) if ub.get("edition") else None,
         "reads": ub.get("user_book_reads", []),
     }
 

@@ -75,8 +75,7 @@ def _format_series(s: dict[str, Any]) -> dict[str, Any]:
         "books_count": s["books_count"],
         "primary_books_count": s.get("primary_books_count"),
         "is_completed": s.get("is_completed"),
-        "author": author.get("name"),
-        "author_slug": author.get("slug"),
+        "authors": [author["name"]] if author.get("name") else [],
         "books": books,
     }
 
@@ -130,7 +129,7 @@ TOOLS: list[ToolSpec] = [
             name="get_series",
             description=(
                 "Get a book series by id, slug, or name (provide one; a name resolves to the "
-                "top search match). Read-only. Returns series info (author, books count, "
+                "top search match). Read-only. Returns series info (authors, books count, "
                 "completed flag) and all its books in reading order with position, title, "
                 "release year, and rating. Use search_books(query_type='Series') if a name "
                 "might be ambiguous."
