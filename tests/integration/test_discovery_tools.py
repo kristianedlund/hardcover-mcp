@@ -17,7 +17,7 @@ class TestTrendingBooks:
 
         result = await handle_get_trending_books({"duration": "week", "limit": 3})
 
-        books = json.loads(result[0].text)
+        books = json.loads(result[0].text)["books"]
         assert isinstance(books, list)
         assert 0 < len(books) <= 3
         assert books[0]["title"]
@@ -30,7 +30,7 @@ class TestVibes:
 
         result = await handle_get_vibes({"limit": 1, "books_per_vibe": 2})
 
-        vibes = json.loads(result[0].text)
+        vibes = json.loads(result[0].text)["vibes"]
         assert isinstance(vibes, list)
         assert len(vibes) == 1
         assert vibes[0]["title"]
@@ -52,7 +52,7 @@ class TestSearchSortFilter:
             )[0].text
         )
         # Filtering by year must not return more hits than the unfiltered query.
-        assert filtered["found"] <= unfiltered["found"]
+        assert filtered["total"] <= unfiltered["total"]
 
     async def test_sort_by_rating_desc(self):
         from hardcover_mcp.tools.books import handle_search_books

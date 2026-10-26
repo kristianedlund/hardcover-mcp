@@ -7,6 +7,7 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import DELETE, READ, UPDATE, ToolSpec
+from hardcover_mcp.tools._results import list_result
 from hardcover_mcp.tools._validation import (
     PRIVACY_DESCRIPTION,
     ToolError,
@@ -20,11 +21,12 @@ from hardcover_mcp.tools.user import get_current_user
 VALID_GOAL_METRICS = {"book", "page"}
 
 GET_READING_GOAL_QUERY = """
-query GetReadingGoal($user_id: Int!, $limit: Int!) {
+query GetReadingGoal($user_id: Int!, $limit: Int!, $offset: Int!) {
     goals(
         where: {user_id: {_eq: $user_id}, archived: {_eq: false}},
-        order_by: {end_date: asc},
-        limit: $limit
+        order_by: [{end_date: asc}, {id: asc}],
+        limit: $limit,
+        offset: $offset
     ) {
         id
         goal
@@ -139,7 +141,6 @@ def _format_reading_goal(goal: dict[str, Any]) -> dict[str, Any]:
         "end_date": goal.get("end_date"),
         "state": goal.get("state"),
         "privacy": privacy_label(goal.get("privacy_setting_id")),
-        "privacy_setting_id": goal.get("privacy_setting_id"),
         "archived": goal.get("archived", False),
     }
 
@@ -160,30 +161,30 @@ async def handle_get_reading_goal(arguments: dict[str, Any]) -> list[TextContent
     Parameters
     ----------
     arguments : dict[str, Any]
-        Optional: ``limit`` (int, default 10, max 100).
+        Optional: ``limit`` (int, default 10, max 100), ``offset`` (int, default 0).
 
     Returns
     -------
     list[TextContent]
-        JSON payload with ``goals`` and ``returned``.
+        JSON ``{returned, offset, goals}``.
     """
     # --- 1. Validate input
     limit = _require_int(arguments.get("limit", 10), "limit")
 
     if limit <= 0:
         raise ToolError("'limit' must be greater than 0.")
+    offset = _require_int(arguments.get("offset", 0), "offset")
 
     # --- 2. Resolve user and query active goals
     user = await get_current_user()
     result = await execute(
         GET_READING_GOAL_QUERY,
-        {"user_id": user["id"], "limit": min(limit, 100)},
+        {"user_id": user["id"], "limit": min(limit, 100), "offset": offset},
     )
 
     # --- 3. Format and return
     goals = [_format_reading_goal(goal) for goal in result["data"]["goals"]]
-    payload = {"goals": goals, "returned": len(goals)}
-    return [TextContent(type="text", text=json.dumps(payload, indent=2))]
+    return list_result("goals", goals, offset=offset)
 
 
 async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent]:
@@ -400,8 +401,9 @@ TOOLS: list[ToolSpec] = [
             name="get_reading_goal",
             description=(
                 "Get your active (non-archived) reading goals, soonest end date first. "
-                "Read-only. Returns each goal's id, target, metric (book/page), progress, date "
-                "range, and state; 'goals' is an empty array if you have none. To create or "
+                "Read-only. Returns {returned, offset, goals} with each goal's id, target, "
+                "metric (book/page), progress, date range, privacy, and state; 'goals' is "
+                "empty if you have none. To create or "
                 "change or archive a goal use set_reading_goal; to delete one use "
                 "delete_reading_goal."
             ),
@@ -411,6 +413,10 @@ TOOLS: list[ToolSpec] = [
                     "limit": {
                         "type": "integer",
                         "description": "Max goals to return (default 10, max 100).",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Offset for pagination (default 0).",
                     },
                 },
             },

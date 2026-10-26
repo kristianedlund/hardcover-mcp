@@ -156,6 +156,21 @@ class TestHandleSearchBooks:
         assert call_vars["per_page"] == 25
 
     @patch("hardcover_mcp.tools.books.execute", new_callable=AsyncMock)
+    async def test_result_has_total_returned_and_page(self, mock_execute):
+        hit = {"document": {"id": 1, "title": "T", "slug": "t", "author_names": ["A"]}}
+        mock_execute.return_value = {"data": {"search": {"results": {"hits": [hit], "found": 42}}}}
+
+        data = json.loads((await handle_search_books({"query": "t", "page": 2}))[0].text)
+
+        assert {k: data[k] for k in ("total", "returned", "page")} == {
+            "total": 42,
+            "returned": 1,
+            "page": 2,
+        }
+        assert "found" not in data
+        assert data["books"][0]["title"] == "T"
+
+    @patch("hardcover_mcp.tools.books.execute", new_callable=AsyncMock)
     async def test_default_query_type_is_book(self, mock_execute):
         mock_execute.return_value = {"data": {"search": {"results": {"hits": [], "found": 0}}}}
 

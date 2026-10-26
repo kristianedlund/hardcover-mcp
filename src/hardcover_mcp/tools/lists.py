@@ -7,6 +7,7 @@ from mcp.types import TextContent, Tool, ToolAnnotations
 
 from hardcover_mcp.client import HardcoverAPIError, execute
 from hardcover_mcp.tools._registry import DELETE, READ, UPDATE, ToolSpec
+from hardcover_mcp.tools._results import list_result
 from hardcover_mcp.tools._validation import (
     PRIVACY_DESCRIPTION,
     ToolError,
@@ -33,11 +34,14 @@ query GetMyLists($user_id: Int!, $limit: Int!, $offset: Int!) {
         privacy_setting_id
         updated_at
     }
+    lists_aggregate(where: {user_id: {_eq: $user_id}}) {
+        aggregate { count }
+    }
 }
 """
 
 GET_LIST_BY_ID_QUERY = """
-query GetListById($id: Int!, $book_limit: Int!, $book_offset: Int!) {
+query GetListById($id: Int!, $books_limit: Int!, $books_offset: Int!) {
     lists(where: {id: {_eq: $id}}, limit: 1) {
         id
         name
@@ -48,8 +52,8 @@ query GetListById($id: Int!, $book_limit: Int!, $book_offset: Int!) {
         updated_at
         list_books(
             order_by: [{position: asc}, {id: asc}],
-            limit: $book_limit,
-            offset: $book_offset
+            limit: $books_limit,
+            offset: $books_offset
         ) {
             position
             book {
@@ -101,7 +105,7 @@ async def _get_my_lists(arguments: dict[str, Any]) -> list[TextContent]:
     Returns
     -------
     list[TextContent]
-        JSON array of list summaries.
+        JSON ``{total, returned, offset, lists}`` of list summaries.
     """
     user = await get_current_user()
     user_id = user["id"]
@@ -112,10 +116,9 @@ async def _get_my_lists(arguments: dict[str, Any]) -> list[TextContent]:
     result = await execute(
         GET_MY_LISTS_QUERY, {"user_id": user_id, "limit": limit, "offset": offset}
     )
-    lists = result["data"]["lists"]
-    formatted = [_format_list_summary(lst) for lst in lists]
-
-    return [TextContent(type="text", text=json.dumps(formatted, indent=2))]
+    lists = [_format_list_summary(lst) for lst in result["data"]["lists"]]
+    total = result["data"]["lists_aggregate"]["aggregate"]["count"]
+    return list_result("lists", lists, offset=offset, total=total)
 
 
 async def handle_get_list(arguments: dict[str, Any]) -> list[TextContent]:
@@ -126,28 +129,28 @@ async def handle_get_list(arguments: dict[str, Any]) -> list[TextContent]:
     arguments : dict[str, Any]
         Optional: ``id`` (int). Without it, delegates to ``_get_my_lists``
         (``limit``, ``offset``).
-        With it: ``book_limit`` (int, default 25, max 100),
-        ``book_offset`` (int, default 0).
+        With it: ``books_limit`` (int, default 25, max 100),
+        ``books_offset`` (int, default 0).
 
     Returns
     -------
     list[TextContent]
-        JSON with list summary and nested ``books`` array, or an array of
-        list summaries when no id is given.
+        JSON with list summary and nested ``books`` array, or
+        ``{total, returned, offset, lists}`` when no id is given.
     """
     list_id = arguments.get("id")
     if list_id is None:
         return await _get_my_lists(arguments)
 
-    book_limit = min(arguments.get("book_limit", 25), 100)
-    book_offset = arguments.get("book_offset", 0)
+    books_limit = min(arguments.get("books_limit", 25), 100)
+    books_offset = arguments.get("books_offset", 0)
 
     result = await execute(
         GET_LIST_BY_ID_QUERY,
         {
             "id": _require_int(list_id, "id"),
-            "book_limit": book_limit,
-            "book_offset": book_offset,
+            "books_limit": books_limit,
+            "books_offset": books_offset,
         },
     )
 
@@ -505,12 +508,12 @@ TOOLS: list[ToolSpec] = [
         Tool(
             name="get_list",
             description=(
-                "Without id: list the lists you own, most recently updated first (id, name, "
-                "slug, description, books count, privacy; no books), paginated with "
-                "limit/offset. With id: get that list (yours or another user's) including a "
-                "'books' array in list order (position, book_id, title, slug, authors), "
-                "paginated with book_limit/book_offset. Read-only. Find other users' lists "
-                "with search_books(query_type='List')."
+                "Without id: list the lists you own, most recently updated first, as {total, "
+                "returned, offset, lists} (id, name, slug, description, books count, privacy; no "
+                "books), paginated with limit/offset. With id: get that list (yours or another "
+                "user's) including a 'books' array in list order (position, book_id, title, slug, "
+                "authors), paginated with books_limit/books_offset. Read-only. Find other users' "
+                "lists with search_books(query_type='List')."
             ),
             inputSchema={
                 "type": "object",
@@ -527,11 +530,11 @@ TOOLS: list[ToolSpec] = [
                         "type": "integer",
                         "description": "Without id: offset for pagination (default 0).",
                     },
-                    "book_limit": {
+                    "books_limit": {
                         "type": "integer",
                         "description": "With id: max books to return (default 25, max 100).",
                     },
-                    "book_offset": {
+                    "books_offset": {
                         "type": "integer",
                         "description": "With id: offset for book pagination (default 0).",
                     },

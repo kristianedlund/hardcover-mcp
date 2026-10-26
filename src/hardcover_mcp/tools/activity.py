@@ -1,12 +1,12 @@
 """Tools: get_activity_feed (recent reading activity)."""
 
-import json
 from typing import Any
 
 from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
+from hardcover_mcp.tools._results import list_result
 from hardcover_mcp.tools._validation import _require_int
 
 _DEFAULT_LIMIT = 25
@@ -110,7 +110,7 @@ async def handle_get_activity_feed(arguments: dict[str, Any]) -> list[TextConten
     Returns
     -------
     list[TextContent]
-        JSON array of activity events (event type, book, user, timestamp).
+        JSON ``{returned, offset, activities}``: event type, book, user, timestamp each.
     """
     limit = min(_require_int(arguments.get("limit", _DEFAULT_LIMIT), "limit"), _MAX_LIMIT)
     offset = _require_int(arguments.get("offset", 0), "offset")
@@ -135,16 +135,11 @@ async def handle_get_activity_feed(arguments: dict[str, Any]) -> list[TextConten
         me = followed["data"]["me"]
         ids = [f["followed_user_id"] for f in (me[0]["followed_users"] if me else [])]
         if not ids:
-            return [
-                TextContent(
-                    type="text",
-                    text="You don't follow anyone yet, so your activity feed is empty.",
-                )
-            ]
+            return list_result("activities", [], offset=offset)
         result = await execute(FEED_QUERY, {"ids": ids, "limit": limit, "offset": offset})
 
     activities = [_format_activity(a) for a in result["data"]["activities"]]
-    return [TextContent(type="text", text=json.dumps(activities, indent=2))]
+    return list_result("activities", activities, offset=offset)
 
 
 # ── Tool definitions ──
@@ -157,7 +152,8 @@ TOOLS: list[ToolSpec] = [
                 "Get recent social activity events (status changes, ratings, reviews, list "
                 "updates), newest first. Read-only. Defaults to the feed of users you follow "
                 "(empty if you follow nobody); pass user_id or username for one user's activity. "
-                "Returns event type, book, user, and timestamp per event. For your own detailed "
+                "Returns {returned, offset, activities} with event type, book, user, and "
+                "timestamp per event. For your own detailed "
                 "notes, quotes, and progress log use get_reading_journal; for your review texts "
                 "use get_user_library(has_review=true)."
             ),

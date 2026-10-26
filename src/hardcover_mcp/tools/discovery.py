@@ -1,12 +1,12 @@
 """Tools: get_trending_books and get_vibes (discovery)."""
 
-import json
 from typing import Any
 
 from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
+from hardcover_mcp.tools._results import list_result
 from hardcover_mcp.tools._validation import ToolError, _require_int
 from hardcover_mcp.tools.books import fetch_books_by_ids
 
@@ -39,7 +39,8 @@ async def handle_get_trending_books(arguments: dict[str, Any]) -> list[TextConte
     Returns
     -------
     list[TextContent]
-        JSON array of book summaries (id, title, authors, rating, release year).
+        JSON ``{returned, offset, books}`` of book summaries (id, title, authors,
+        rating, release year).
     """
     duration = arguments.get("duration", "week")
     if duration not in _TRENDING_DURATIONS:
@@ -60,7 +61,7 @@ async def handle_get_trending_books(arguments: dict[str, Any]) -> list[TextConte
         raise ToolError(str(trending["error"]))
 
     books = await fetch_books_by_ids(trending.get("ids") or [])
-    return [TextContent(type="text", text=json.dumps(books, indent=2))]
+    return list_result("books", books, offset=offset)
 
 
 # ── Vibes (curated recommendation collections) ──
@@ -107,7 +108,7 @@ async def handle_get_vibes(arguments: dict[str, Any]) -> list[TextContent]:
     Returns
     -------
     list[TextContent]
-        JSON array of vibes, each with metadata and a ``books`` array.
+        JSON ``{returned, offset, vibes}``, each vibe with metadata and a ``books`` array.
     """
     featured = arguments.get("featured", True)
     limit = min(
@@ -140,7 +141,7 @@ async def handle_get_vibes(arguments: dict[str, Any]) -> list[TextContent]:
         }
         for v, ids in zip(vibes, per_vibe_ids, strict=True)
     ]
-    return [TextContent(type="text", text=json.dumps(output, indent=2))]
+    return list_result("vibes", output, offset=offset)
 
 
 # ── Tool definitions ──
@@ -152,7 +153,8 @@ TOOLS: list[ToolSpec] = [
             description=(
                 "Get the books trending on Hardcover in a time window ('duration', default "
                 "'week'), ranked most popular first and paginated with limit/offset. Read-only. "
-                "Returns book_id, slug, title, authors, rating, and release year. For curated "
+                "Returns {returned, offset, books} with book_id, slug, title, authors, rating, "
+                "and release year. For curated "
                 "themed collections use get_vibes; for a custom query use search_books with "
                 "sort='users_count:desc'."
             ),
@@ -184,11 +186,11 @@ TOOLS: list[ToolSpec] = [
         Tool(
             name="get_vibes",
             description=(
-                "List Hardcover 'vibes': curated, themed book recommendation collections "
-                "(e.g. 'Hidden Gem Fantasy'). Read-only. Only featured vibes are returned unless "
-                "featured=false. Each vibe includes title, description, likes, and up to "
-                "books_per_vibe books. For popularity rankings use get_trending_books; for "
-                "user-made lists use get_list."
+                "List Hardcover 'vibes': curated, themed book recommendation collections (e.g. "
+                "'Hidden Gem Fantasy'). Read-only. Only featured vibes are returned unless "
+                "featured=false; paginate with limit/offset. Returns {returned, offset, vibes}; "
+                "each vibe includes title, description, likes, and up to books_per_vibe books. "
+                "For popularity rankings use get_trending_books; for user-made lists use get_list."
             ),
             inputSchema={
                 "type": "object",

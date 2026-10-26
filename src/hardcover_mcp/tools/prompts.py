@@ -7,6 +7,7 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, UPDATE, ToolSpec
+from hardcover_mcp.tools._results import list_result
 from hardcover_mcp.tools._validation import ToolError, _require_int
 from hardcover_mcp.tools.user import get_current_user
 
@@ -104,8 +105,8 @@ async def handle_get_prompts(arguments: dict[str, Any]) -> list[TextContent]:
     Returns
     -------
     list[TextContent]
-        JSON array of prompt summaries with ``question``, ``description``,
-        ``answers_count``, and ``books_count``.
+        JSON ``{returned, offset, prompts}`` of prompt summaries with ``question``,
+        ``description``, ``answers_count``, and ``books_count``.
     """
     limit = min(arguments.get("limit", 25), 100)
     offset = arguments.get("offset", 0)
@@ -119,9 +120,7 @@ async def handle_get_prompts(arguments: dict[str, Any]) -> list[TextContent]:
         {"limit": limit, "offset": offset, "where": where},
     )
     prompts = result["data"]["prompts"]
-    formatted = [_format_prompt(p) for p in prompts]
-
-    return [TextContent(type="text", text=json.dumps(formatted, indent=2))]
+    return list_result("prompts", [_format_prompt(p) for p in prompts], offset=offset)
 
 
 async def handle_set_prompt_answer(arguments: dict[str, Any]) -> list[TextContent]:
@@ -195,10 +194,10 @@ TOOLS: list[ToolSpec] = [
             description=(
                 "List community book prompts (questions like 'best sci-fi of 2025'), most "
                 "answered first, paginated with limit/offset. Read-only. Set featured=true for "
-                "featured prompts only. Returns id, question, description, answers_count, and "
-                "books_count. Use it to browse; to find a prompt by words in its question use "
-                "search_books(query_type='Prompt'). Pass a prompt id to set_prompt_answer to "
-                "submit a book."
+                "featured prompts only. Returns {returned, offset, prompts} with id, question, "
+                "description, answers_count, and books_count. Use it to browse; to find a prompt "
+                "by words in its question use search_books(query_type='Prompt'). Pass a prompt id "
+                "to set_prompt_answer to submit a book."
             ),
             inputSchema={
                 "type": "object",

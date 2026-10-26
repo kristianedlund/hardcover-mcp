@@ -38,7 +38,6 @@ class TestFormatReadingGoal:
             "end_date": "2026-12-31",
             "state": "active",
             "privacy": "public",
-            "privacy_setting_id": 1,
             "archived": False,
         }
 
@@ -72,14 +71,35 @@ class TestHandleGetReadingGoal:
         assert data["goals"][0]["goal"] == 52
         assert data["goals"][0]["metric"] == "book"
 
+        assert data["offset"] == 0
+        assert "privacy_setting_id" not in data["goals"][0]
+
         query_vars = mock_execute.call_args[0][1]
         assert query_vars["limit"] == 10
+        assert query_vars["offset"] == 0
         assert query_vars["user_id"] == 1
 
     async def test_invalid_limit_returns_error(self):
         with pytest.raises(ToolError) as exc:
             await handle_get_reading_goal({"limit": 0})
         assert str(exc.value) == "'limit' must be greater than 0."
+
+
+class TestHandleGetReadingGoalPaging:
+    @patch("hardcover_mcp.tools.goals.get_current_user", new_callable=AsyncMock)
+    @patch("hardcover_mcp.tools.goals.execute", new_callable=AsyncMock)
+    async def test_offset_is_sent_and_reported(self, mock_execute, mock_user):
+        mock_user.return_value = {"id": 1}
+        mock_execute.return_value = {"data": {"goals": []}}
+
+        data = json.loads((await handle_get_reading_goal({"offset": 4}))[0].text)
+
+        assert data == {"returned": 0, "offset": 4, "goals": []}
+        assert mock_execute.call_args[0][1]["offset"] == 4
+
+    async def test_rejects_non_int_offset(self):
+        with pytest.raises(ToolError, match="'offset' must be an integer"):
+            await handle_get_reading_goal({"offset": "x"})
 
 
 class TestHandleSetReadingGoal:

@@ -335,7 +335,7 @@ async def handle_search_books(arguments: dict[str, Any]) -> list[TextContent]:
 
     result_key = _RESULT_KEY.get(query_type, "results")
     items = [_format_search_hit(h, query_type) for h in hits]
-    output = {"found": found, "page": page, result_key: items}
+    output = {"total": found, "returned": len(items), "page": page, result_key: items}
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
 
@@ -457,11 +457,11 @@ TOOLS: list[ToolSpec] = [
             description=(
                 "Full-text search across Hardcover's catalog by title, author, ISBN, or keyword; "
                 "set query_type to search authors, series, lists, users, publishers, characters, "
-                "or prompts instead of books. Read-only. Returns a total 'found' count, the page "
-                "number, and compact hits (id, slug, name/title, plus type-specific fields) "
-                "ranked by relevance unless 'sort' is given. Use it to discover ids, then call "
-                "get_book, get_author, get_series, etc. for full details. If you already have an "
-                "id, slug, or ISBN, call the matching get_* tool directly."
+                "or prompts instead of books. Read-only. Returns {total, returned, page, <type>} "
+                "(e.g. 'books', 'authors') with compact hits (id, slug, name/title, plus "
+                "type-specific fields) ranked by relevance unless 'sort' is given. Use it to "
+                "discover ids, then call get_book, get_author, get_series, etc. for full details. "
+                "If you already have an id, slug, or ISBN, call the matching get_* tool directly."
             ),
             inputSchema={
                 "type": "object",
