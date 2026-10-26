@@ -95,9 +95,9 @@ class TestHandleGetPrompts:
             result = await handle_get_prompts({})
 
         data = json.loads(result[0].text)
-        assert len(data) == 1
-        assert data[0]["question"] == "Best sci-fi?"
-        assert data[0]["featured"] is True
+        assert data["returned"] == 1
+        assert data["prompts"][0]["question"] == "Best sci-fi?"
+        assert data["prompts"][0]["featured"] is True
 
     @pytest.mark.asyncio
     async def test_featured_filter_sends_where_clause(self):

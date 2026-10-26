@@ -53,7 +53,7 @@ class TestFormatJournalEntry:
         assert result["action_at"] == "2025-03-15T10:00:00+00:00"
         assert result["metadata"] is None
         assert result["privacy"] == "public"
-        assert result["privacy_setting_id"] == 1
+        assert "privacy_setting_id" not in result
 
     def test_includes_book_title_and_slug(self):
         result = _format_journal_entry(_RAW_ENTRY)
@@ -114,12 +114,14 @@ class TestHandleGetReadingJournal:
         mock_user.return_value = {"id": 1}
         mock_execute.return_value = _MOCK_RESPONSE
 
-        result = await handle_get_reading_journal({})
+        result = await handle_get_reading_journal({"offset": 5})
         data = json.loads(result[0].text)
 
-        assert len(data) == 1
-        assert data[0]["event"] == "note"
-        assert data[0]["book"]["authors"] == ["Andy Weir"]
+        assert data["returned"] == 1
+        assert data["offset"] == 5
+        assert "total" not in data
+        assert data["entries"][0]["event"] == "note"
+        assert data["entries"][0]["book"]["authors"] == ["Andy Weir"]
 
     @patch("hardcover_mcp.tools.journal.get_current_user", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.journal.execute", new_callable=AsyncMock)
@@ -130,7 +132,7 @@ class TestHandleGetReadingJournal:
         result = await handle_get_reading_journal({})
         data = json.loads(result[0].text)
 
-        assert data == []
+        assert data == {"returned": 0, "offset": 0, "entries": []}
 
     @patch("hardcover_mcp.tools.journal.get_current_user", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.journal.execute", new_callable=AsyncMock)
@@ -316,7 +318,7 @@ class TestHandleSetJournalEntryCreate:
         assert data["edition_id"] == 7
         assert data["event"] == "note"
         assert data["entry"] == "Really liked the ending."
-        assert data["privacy_setting_id"] == 1
+        assert data["privacy"] == "public"
 
         call_vars = mock_execute.call_args[0][1]
         assert call_vars["object"] == {

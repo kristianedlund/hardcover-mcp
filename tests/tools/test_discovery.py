@@ -1,5 +1,8 @@
 """Unit tests for tools.discovery (query rendering + validation)."""
 
+import json
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from hardcover_mcp.tools._validation import ToolError
@@ -37,3 +40,41 @@ class TestVibesValidation:
     async def test_rejects_non_int_books_per_vibe(self):
         with pytest.raises(ToolError):
             await handle_get_vibes({"books_per_vibe": "many"})
+
+
+_BOOK = {"book_id": 7, "title": "T", "slug": "t", "authors": [], "rating": 4.0}
+
+
+class TestResultShapes:
+    async def test_trending_is_a_page_of_books(self):
+        trending = AsyncMock(
+            return_value={"data": {"books_trending": {"ids": [7], "error": None}}}
+        )
+        with (
+            patch("hardcover_mcp.tools.discovery.execute", new=trending),
+            patch(
+                "hardcover_mcp.tools.discovery.fetch_books_by_ids",
+                new=AsyncMock(return_value=[_BOOK]),
+            ),
+        ):
+            result = await handle_get_trending_books({"offset": 3})
+
+        assert json.loads(result[0].text) == {"returned": 1, "offset": 3, "books": [_BOOK]}
+
+    async def test_vibes_is_a_page_of_vibes(self):
+        vibe = {"id": 1, "slug": "v", "title": "V", "featured": True, "cached_book_ids": [7]}
+        with (
+            patch(
+                "hardcover_mcp.tools.discovery.execute",
+                new=AsyncMock(return_value={"data": {"vibes": [vibe]}}),
+            ),
+            patch(
+                "hardcover_mcp.tools.discovery.fetch_books_by_ids",
+                new=AsyncMock(return_value=[_BOOK]),
+            ),
+        ):
+            result = await handle_get_vibes({})
+
+        data = json.loads(result[0].text)
+        assert {k: data[k] for k in ("returned", "offset")} == {"returned": 1, "offset": 0}
+        assert data["vibes"][0]["books"] == [_BOOK]

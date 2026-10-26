@@ -7,6 +7,7 @@ from mcp.types import TextContent, Tool, ToolAnnotations
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import DELETE, READ, ToolSpec
+from hardcover_mcp.tools._results import list_result
 from hardcover_mcp.tools._validation import (
     PRIVACY_DESCRIPTION,
     ToolError,
@@ -128,8 +129,8 @@ def _format_journal_entry(raw: dict[str, Any]) -> dict[str, Any]:
     -------
     dict[str, Any]
         Flattened dict with ``id``, ``event``, ``entry``, ``action_at``,
-        ``book_id``, ``edition_id``, ``metadata``, ``privacy`` (label),
-        ``privacy_setting_id``, and ``book`` (with ``title``, ``slug``, ``authors``).
+        ``book_id``, ``edition_id``, ``metadata``, ``privacy``, and ``book`` (with
+        ``title``, ``slug``, ``authors``).
     """
     book_raw = raw.get("book") or {}
     authors = author_names(book_raw)
@@ -143,7 +144,6 @@ def _format_journal_entry(raw: dict[str, Any]) -> dict[str, Any]:
         "edition_id": raw.get("edition_id"),
         "metadata": raw.get("metadata"),
         "privacy": privacy_label(raw.get("privacy_setting_id")),
-        "privacy_setting_id": raw.get("privacy_setting_id"),
         "book": {
             "title": book_raw.get("title"),
             "slug": book_raw.get("slug"),
@@ -171,9 +171,8 @@ async def handle_get_reading_journal(arguments: dict[str, Any]) -> list[TextCont
     Returns
     -------
     list[TextContent]
-        Single-element list with a JSON array of formatted journal entries.
-        Each entry contains ``id``, ``event``, ``entry``, ``action_at``,
-        ``book_id``, ``edition_id``, ``metadata``, ``privacy_setting_id``,
+        JSON ``{returned, offset, entries}``. Each entry contains ``id``, ``event``,
+        ``entry``, ``action_at``, ``book_id``, ``edition_id``, ``metadata``, ``privacy``,
         and ``book`` (``title``, ``slug``, ``authors``).
 
     Raises
@@ -218,8 +217,7 @@ async def handle_get_reading_journal(arguments: dict[str, Any]) -> list[TextCont
 
     # --- 5. Format and return
     entries = result["data"]["reading_journals"]
-    formatted = [_format_journal_entry(e) for e in entries]
-    return [TextContent(type="text", text=json.dumps(formatted, indent=2))]
+    return list_result("entries", [_format_journal_entry(e) for e in entries], offset=offset)
 
 
 _EDITABLE_EVENTS = {"note", "quote"}
@@ -236,7 +234,6 @@ def _format_written_entry(raw: dict[str, Any]) -> dict[str, Any]:
         "action_at": raw.get("action_at"),
         "metadata": raw.get("metadata"),
         "privacy": privacy_label(raw.get("privacy_setting_id")),
-        "privacy_setting_id": raw.get("privacy_setting_id"),
     }
 
 
@@ -399,10 +396,10 @@ TOOLS: list[ToolSpec] = [
             description=(
                 "Get your own reading journal, newest first: notes, quotes, status changes, "
                 "ratings, reviews, and progress updates. Read-only. Filter by book_id and/or "
-                "event type; paginate with limit/offset. Returns each entry's id, event, text, "
-                "timestamp, and book. This is your personal log; for what people you follow are "
-                "doing use get_activity_feed; for review texts use "
-                "get_user_library(has_review=true)."
+                "event type; paginate with limit/offset. Returns {returned, offset, entries}; "
+                "each entry has its id, event, text, timestamp, privacy, and book. This is your "
+                "personal log; for what people you follow are doing use get_activity_feed; for "
+                "review texts use get_user_library(has_review=true)."
             ),
             inputSchema={
                 "type": "object",

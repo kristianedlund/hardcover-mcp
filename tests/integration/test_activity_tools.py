@@ -18,7 +18,7 @@ class TestActivityFeed:
         # 'adam' (Hardcover founder) has a long, stable public activity history.
         result = await handle_get_activity_feed({"username": "adam", "limit": 3})
 
-        events = json.loads(result[0].text)
+        events = json.loads(result[0].text)["activities"]
         assert isinstance(events, list)
         assert len(events) <= 3
         first = events[0]
@@ -31,7 +31,7 @@ class TestActivityFeed:
 
         result = await handle_get_activity_feed({"user_id": 1, "limit": 1})
 
-        events = json.loads(result[0].text)
+        events = json.loads(result[0].text)["activities"]
         assert isinstance(events, list)
         assert events[0]["user"]["id"] == 1
 
@@ -44,16 +44,11 @@ class TestActivityFeed:
 
         assert "No user found" in result[0].text
 
-    async def test_followed_feed_returns_list_or_empty_message(self):
+    async def test_followed_feed_returns_a_page(self):
         from hardcover_mcp.tools.activity import handle_get_activity_feed
 
-        # Feed depends on who the token's account follows; accept either shape.
-        result = await handle_get_activity_feed({"limit": 5})
-        text = result[0].text
+        # Feed depends on who the token's account follows; it may be empty.
+        data = json.loads((await handle_get_activity_feed({"limit": 5}))[0].text)
 
-        if text.strip().startswith("["):
-            events = json.loads(text)
-            assert isinstance(events, list)
-            assert len(events) <= 5
-        else:
-            assert "don't follow anyone" in text
+        assert data["offset"] == 0
+        assert data["returned"] == len(data["activities"]) <= 5

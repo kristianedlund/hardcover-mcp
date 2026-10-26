@@ -38,7 +38,7 @@ class TestSearchBooks:
         result = await handle_search_books({"query": "Project Hail Mary"})
 
         data = json.loads(result[0].text)
-        assert data["found"] > 0
+        assert data["total"] > 0
         assert len(data["books"]) > 0
         assert data["books"][0]["title"] is not None
 
@@ -217,14 +217,15 @@ class TestGetListOwn:
         result = await handle_get_list({})
 
         data = json.loads(result[0].text)
-        assert isinstance(data, list)
+        assert isinstance(data["lists"], list)
+        assert data["total"] >= data["returned"] == len(data["lists"])
 
     async def test_list_has_expected_fields(self):
         from hardcover_mcp.tools.lists import handle_get_list
 
         result = await handle_get_list({"limit": 1})
 
-        data = json.loads(result[0].text)
+        data = json.loads(result[0].text)["lists"]
         if data:
             lst = data[0]
             assert "id" in lst
@@ -236,7 +237,7 @@ class TestGetUserBookLists:
         from hardcover_mcp.tools.library import handle_get_user_book
         from hardcover_mcp.tools.lists import handle_get_list
 
-        lists = json.loads((await handle_get_list({"limit": 50}))[0].text)
+        lists = json.loads((await handle_get_list({"limit": 50}))[0].text)["lists"]
         for summary in lists:
             if summary["slug"] == "owned" or not summary["books_count"]:
                 continue
@@ -322,7 +323,7 @@ class TestSearchEntities:
         result = await handle_search_books({"query": "Brandon Sanderson", "query_type": "Author"})
 
         data = json.loads(result[0].text)
-        assert data["found"] > 0
+        assert data["total"] > 0
         assert len(data["authors"]) > 0
         assert data["authors"][0]["name"] is not None
 
@@ -332,7 +333,7 @@ class TestSearchEntities:
         result = await handle_search_books({"query": "Andy Weir", "query_type": "Author"})
 
         data = json.loads(result[0].text)
-        assert data["found"] > 0
+        assert data["total"] > 0
         author = data["authors"][0]
         assert "id" in author
         assert "name" in author
@@ -344,7 +345,7 @@ class TestSearchEntities:
         result = await handle_search_books({"query": "Stormlight", "query_type": "Series"})
 
         data = json.loads(result[0].text)
-        assert data["found"] > 0
+        assert data["total"] > 0
         assert len(data["series"]) > 0
         assert data["series"][0]["name"] is not None
 
@@ -354,7 +355,7 @@ class TestSearchEntities:
         result = await handle_search_books({"query": "Mistborn", "query_type": "Series"})
 
         data = json.loads(result[0].text)
-        assert data["found"] > 0
+        assert data["total"] > 0
         series = data["series"][0]
         assert "id" in series
         assert "name" in series
@@ -516,14 +517,14 @@ class TestGetReadingJournal:
         result = await handle_get_reading_journal({})
 
         data = json.loads(result[0].text)
-        assert isinstance(data, list)
+        assert isinstance(data["entries"], list)
 
     async def test_each_entry_has_expected_fields(self):
         from hardcover_mcp.tools.journal import handle_get_reading_journal
 
         result = await handle_get_reading_journal({"limit": 5})
 
-        data = json.loads(result[0].text)
+        data = json.loads(result[0].text)["entries"]
         for entry in data:
             assert "id" in entry
             assert "event" in entry
@@ -538,7 +539,7 @@ class TestGetReadingJournal:
 
         result = await handle_get_reading_journal({"limit": 2})
 
-        data = json.loads(result[0].text)
+        data = json.loads(result[0].text)["entries"]
         assert len(data) <= 2
 
     async def test_filter_by_event_type(self):
@@ -546,7 +547,7 @@ class TestGetReadingJournal:
 
         result = await handle_get_reading_journal({"event": "status_read", "limit": 10})
 
-        data = json.loads(result[0].text)
+        data = json.loads(result[0].text)["entries"]
         assert isinstance(data, list)
         for entry in data:
             assert entry["event"] == "status_read"

@@ -7,6 +7,7 @@ from mcp.types import TextContent, Tool, ToolAnnotations
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import DELETE, READ, UPDATE, ToolSpec
+from hardcover_mcp.tools._results import list_result
 from hardcover_mcp.tools._validation import (
     PRIVACY_DESCRIPTION,
     ToolError,
@@ -377,8 +378,7 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
     formatter = _format_user_review if has_review else _format_user_book
     formatted = [formatter(ub) for ub in user_books]
 
-    output = {"total": total, "returned": len(formatted), "offset": offset, "books": formatted}
-    return [TextContent(type="text", text=json.dumps(output, indent=2))]
+    return list_result("books", formatted, offset=offset, total=total)
 
 
 async def handle_get_user_book(arguments: dict[str, Any]) -> list[TextContent]:

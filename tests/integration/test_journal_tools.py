@@ -48,7 +48,7 @@ class TestJournalEntryLifecycle:
                 read_result = await handle_get_reading_journal(
                     {"book_id": book_id, "event": "note", "limit": 100}
                 )
-                return json.loads(read_result[0].text)
+                return json.loads(read_result[0].text)["entries"]
 
             async def find(target: int) -> list[dict]:
                 return [e for e in await notes() if e["id"] == target]

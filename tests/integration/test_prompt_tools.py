@@ -23,7 +23,7 @@ class TestSetPromptAnswer:
         )
         from hardcover_mcp.tools.user import get_current_user
 
-        prompts = json.loads((await handle_get_prompts({"limit": 1}))[0].text)
+        prompts = json.loads((await handle_get_prompts({"limit": 1}))[0].text)["prompts"]
         assert prompts, "expected at least one community prompt"
         prompt_id = prompts[0]["id"]
         book = json.loads((await handle_get_book({"slug": "the-code-book"}))[0].text)

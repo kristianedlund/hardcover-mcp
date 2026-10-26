@@ -198,13 +198,34 @@ class TestHandleGetList:
             ),
             patch(
                 "hardcover_mcp.tools.lists.execute",
-                new=AsyncMock(return_value={"data": {"lists": [lst]}}),
+                new=AsyncMock(
+                    return_value={
+                        "data": {
+                            "lists": [lst],
+                            "lists_aggregate": {"aggregate": {"count": 12}},
+                        }
+                    }
+                ),
             ) as mock,
         ):
             result = await handle_get_list({"limit": 5})
 
-        assert json.loads(result[0].text)[0]["name"] == "A"
+        data = json.loads(result[0].text)
+        assert {k: data[k] for k in ("total", "returned", "offset")} == {
+            "total": 12,
+            "returned": 1,
+            "offset": 0,
+        }
+        assert data["lists"][0]["name"] == "A"
         assert mock.call_args[0][1] == {"user_id": 42, "limit": 5, "offset": 0}
+
+    async def test_with_id_pages_books_with_books_limit_and_offset(self):
+        lst = {"id": 3, "name": "A", "slug": "a", "books_count": 9, "list_books": []}
+        mock = AsyncMock(return_value={"data": {"lists": [lst]}})
+        with patch("hardcover_mcp.tools.lists.execute", new=mock):
+            await handle_get_list({"id": 3, "books_limit": 4, "books_offset": 8})
+
+        assert mock.call_args[0][1] == {"id": 3, "books_limit": 4, "books_offset": 8}
 
 
 def _own(lists: list[int], entries: dict[int, int] | None = None) -> dict:

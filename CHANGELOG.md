@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `set_user_book`, `get_user_book`, `get_user` | `Public` / `Followers` / `Private` | `public` / `followers` / `private` |
 | `get_list`, `set_list` | `public` / `followers_only` / `private` | `public` / `followers` / `private` |
 
-Journal entries and goals now include `privacy` next to `privacy_setting_id`. An
+Journal entries and goals now return `privacy` instead of `privacy_setting_id`. An
 unrecognised privacy id is reported as `unknown (<id>)`. Update anything that matches on the
 old values.
 
@@ -22,6 +22,26 @@ old values.
 with the same values as the other write tools (`public`, `followers`, `private`, or
 `1`/`2`/`3`). Passing `privacy_setting_id` is now an error rather than being ignored, so an
 old call can't quietly create a public entry it meant to keep private.
+
+### Breaking: one shape for list results
+
+Tools that return several items now return an object with the items under a named key, plus
+`returned` (items in this page) and `offset`. `total` (all matches) is included where
+Hardcover can count them: `get_user_library`, `get_list` without `id`, and `search_books`.
+
+| Tool | Before | Now |
+|------|--------|-----|
+| `get_reading_journal` | array | `{returned, offset, entries}` |
+| `get_activity_feed` | array, or a message if you follow nobody | `{returned, offset, activities}` (empty if you follow nobody) |
+| `get_trending_books` | array | `{returned, offset, books}` |
+| `get_vibes` | array | `{returned, offset, vibes}` |
+| `get_prompts` | array | `{returned, offset, prompts}` |
+| `get_list` without `id` | array | `{total, returned, offset, lists}` |
+| `get_reading_goal` | `{goals, returned}` | `{returned, offset, goals}` |
+| `search_books` | `{found, page, <type>}` | `{total, returned, page, <type>}` |
+
+`get_list` with an `id` pages its books with `books_limit` / `books_offset` (were
+`book_limit` / `book_offset`), matching `get_author`'s `books_limit`.
 
 ### Fixed
 
@@ -46,6 +66,7 @@ old call can't quietly create a public entry it meant to keep private.
 
 ### Added
 
+- `get_reading_goal` takes `offset` to page through goals.
 - `set_list_book` takes `list_ids` to put a book on (or take it off) up to 20 lists in one
   call, with one result per list. A list that isn't yours, or whose change fails, gets an
   `error` in its result while the others still change. Calls with a single `list_id` work
