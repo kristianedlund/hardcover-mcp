@@ -18,6 +18,8 @@ from hardcover_mcp.tools.library import (
     _resolve_status_id,
     _set_edition_owned,
     _text_to_slate,
+    handle_delete_user_book,
+    handle_delete_user_book_read,
     handle_get_user_book,
     handle_get_user_library,
     handle_set_user_book,
@@ -1484,10 +1486,17 @@ class TestHandleSetUserBookRead:
         current = {"data": {"user_book_reads": [{"id": 3, "started_at": "2025-01-01"}]}}
         updated = {"data": {"update_user_book_read": {"user_book_read": {"id": 3}}}}
         mock_exec = AsyncMock(side_effect=[current, updated])
-        with patch("hardcover_mcp.tools.library.execute", new=mock_exec):
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch("hardcover_mcp.tools.library.execute", new=mock_exec),
+        ):
             result = await handle_set_user_book_read({"id": 3, "finished_at": "2025-02-01"})
 
         assert json.loads(result[0].text) == {"id": 3}
+        assert mock_exec.call_args_list[0][0][1] == {"id": 3, "user_id": 1}
         assert mock_exec.call_args_list[1][0][1]["id"] == 3
         merged = mock_exec.call_args_list[1][0][1]["object"]
         assert merged["started_at"] == "2025-01-01"
@@ -1501,14 +1510,22 @@ class TestHandleSetUserBookRead:
     async def test_without_id_inserts_when_no_active_read(self):
         no_active = {"data": {"user_book_reads": []}}
         inserted = {"data": {"insert_user_book_read": {"user_book_read": {"id": 8}}}}
-        mock_exec = AsyncMock(side_effect=[no_active, inserted])
-        with patch("hardcover_mcp.tools.library.execute", new=mock_exec):
+        mock_exec = AsyncMock(
+            side_effect=[{"data": {"user_books": [{"id": 5}]}}, no_active, inserted]
+        )
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch("hardcover_mcp.tools.library.execute", new=mock_exec),
+        ):
             result = await handle_set_user_book_read(
                 {"user_book_id": 5, "started_at": "2025-03-01"}
             )
 
         assert json.loads(result[0].text) == {"id": 8}
-        assert mock_exec.call_args_list[1][0][1]["userBookId"] == 5
+        assert mock_exec.call_args_list[2][0][1]["userBookId"] == 5
 
 
 _READ_UPDATED = {"data": {"update_user_book_read": {"user_book_read": {"id": 3}}}}
@@ -1520,8 +1537,15 @@ class TestSetUserBookReadContinuesOrInserts:
 
     async def _run(self, active: dict, arguments: dict) -> AsyncMock:
         found = {"data": {"user_book_reads": [active]}}
-        mock_exec = AsyncMock(side_effect=[found, _READ_UPDATED, _READ_INSERTED])
-        with patch("hardcover_mcp.tools.library.execute", new=mock_exec):
+        own = {"data": {"user_books": [{"id": 5}]}}
+        mock_exec = AsyncMock(side_effect=[own, found, _READ_UPDATED, _READ_INSERTED])
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch("hardcover_mcp.tools.library.execute", new=mock_exec),
+        ):
             await handle_set_user_book_read({"user_book_id": 5, **arguments})
         return mock_exec
 
@@ -1537,26 +1561,34 @@ class TestSetUserBookReadContinuesOrInserts:
     async def test_continuing_calls_update_the_unfinished_read(self, arguments):
         mock_exec = await self._run({"id": 3, "started_at": "2026-10-01"}, arguments)
 
-        assert mock_exec.call_count == 2
-        assert mock_exec.call_args_list[1][0][1]["id"] == 3
+        assert mock_exec.call_count == 3
+        assert mock_exec.call_args_list[2][0][1]["id"] == 3
 
     async def test_a_start_date_fills_an_unfinished_read_without_one(self):
         mock_exec = await self._run({"id": 3, "started_at": None}, {"started_at": "2026-10-01"})
 
-        assert mock_exec.call_args_list[1][0][1]["object"]["started_at"] == "2026-10-01"
+        assert mock_exec.call_args_list[2][0][1]["object"]["started_at"] == "2026-10-01"
 
     async def test_a_different_start_date_logs_another_read(self):
         # Reading it again since 2026-10-01; logging the 2019 read must not rewrite that.
         found = {"data": {"user_book_reads": [{"id": 3, "started_at": "2026-10-01"}]}}
-        mock_exec = AsyncMock(side_effect=[found, _READ_INSERTED])
-        with patch("hardcover_mcp.tools.library.execute", new=mock_exec):
+        mock_exec = AsyncMock(
+            side_effect=[{"data": {"user_books": [{"id": 5}]}}, found, _READ_INSERTED]
+        )
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch("hardcover_mcp.tools.library.execute", new=mock_exec),
+        ):
             result = await handle_set_user_book_read(
                 {"user_book_id": 5, "started_at": "2019-01-01", "finished_at": "2019-02-01"}
             )
 
         assert json.loads(result[0].text) == {"id": 8}
-        assert mock_exec.call_count == 2
-        inserted = mock_exec.call_args_list[1][0][1]
+        assert mock_exec.call_count == 3
+        inserted = mock_exec.call_args_list[2][0][1]
         assert inserted["userBookId"] == 5
         assert inserted["userBookRead"] == {
             "started_at": "2019-01-01",
@@ -1630,3 +1662,50 @@ class TestNullPayloads:
             pytest.raises(ToolError, match="didn't confirm the change"),
         ):
             await handle_set_user_book({"book_id": 42, "status": "Read"})
+
+
+class TestOnlyYourRecords:
+    async def _run(self, handler, arguments: dict, *responses: dict) -> AsyncMock:
+        mock_exec = AsyncMock(side_effect=list(responses))
+        self.mock_exec = mock_exec
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch("hardcover_mcp.tools.library.execute", new=mock_exec),
+        ):
+            await handler(arguments)
+        return mock_exec
+
+    async def test_delete_read_that_isnt_yours_is_an_error_and_not_sent(self):
+        with pytest.raises(ToolError, match="no read of yours with that id"):
+            await self._run(
+                handle_delete_user_book_read, {"id": 3}, {"data": {"user_book_reads": []}}
+            )
+        assert self.mock_exec.call_count == 1  # lookup only, no delete
+
+    async def test_delete_your_read(self):
+        mock_exec = await self._run(
+            handle_delete_user_book_read,
+            {"id": 3},
+            {"data": {"user_book_reads": [{"id": 3}]}},
+            {"data": {"delete_user_book_read": {"id": 3}}},
+        )
+        assert mock_exec.call_args_list[0][0][1] == {"id": 3, "user_id": 1}
+        assert mock_exec.call_args_list[1][0][1] == {"id": 3}
+
+    async def test_edit_read_that_isnt_yours_is_an_error(self):
+        with pytest.raises(ToolError, match="no read of yours with that id"):
+            await self._run(
+                handle_set_user_book_read,
+                {"id": 3, "finished_at": "2025-02-01"},
+                {"data": {"user_book_reads": []}},
+            )
+
+    async def test_user_book_id_that_isnt_yours_is_an_error_and_not_deleted(self):
+        with pytest.raises(ToolError, match="no library entry of yours"):
+            await self._run(
+                handle_delete_user_book, {"user_book_id": 9}, {"data": {"user_books": []}}
+            )
+        assert self.mock_exec.call_count == 1

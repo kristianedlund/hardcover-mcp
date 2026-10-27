@@ -379,8 +379,10 @@ async def handle_delete_journal_entry(arguments: dict[str, Any]) -> list[TextCon
 
     entry_id_int = _require_int(entry_id, "id")
 
-    # Auth gate — the API scopes the mutation to the authenticated user via token.
-    await get_current_user()
+    user = await get_current_user()
+    found = await execute(GET_OWN_JOURNAL_ENTRY_QUERY, {"id": entry_id_int, "user_id": user["id"]})
+    if not found["data"]["reading_journals"]:
+        raise ToolError("no journal entry of yours with that id.")
     await execute(DELETE_READING_JOURNAL_MUTATION, {"id": entry_id_int})
     return [TextContent(type="text", text=json.dumps({"deleted": True, "id": entry_id_int}))]
 
@@ -506,6 +508,6 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_delete_journal_entry,
         toolset="journal",
-        scopes=("read:me", "write:library"),
+        scopes=("read:journal", "read:me", "write:library"),
     ),
 ]

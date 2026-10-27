@@ -209,6 +209,23 @@ mutation DeleteList($id: Int!) {
 """
 
 
+OWN_LIST_QUERY = """
+query OwnList($id: Int!, $user_id: Int!) {
+    lists(where: {id: {_eq: $id}, user_id: {_eq: $user_id}}, limit: 1) {
+        id
+    }
+}
+"""
+
+
+async def _require_own_list(list_id: int) -> None:
+    """``ToolError`` unless ``list_id`` is one of your lists."""
+    user = await get_current_user()
+    found = await execute(OWN_LIST_QUERY, {"id": list_id, "user_id": user["id"]})
+    if not found["data"]["lists"]:
+        raise ToolError("no list of yours with that id.")
+
+
 def _build_list_input(arguments: dict[str, Any]) -> dict[str, Any]:
     """Build a ListInput object from tool arguments.
 
@@ -284,9 +301,9 @@ async def _update_list(arguments: dict[str, Any]) -> list[TextContent]:
     if not obj:
         raise ToolError("provide at least one of 'name', 'description', 'privacy'.")
 
-    result = await execute(
-        UPDATE_LIST_MUTATION, {"id": _require_int(list_id, "id"), "object": obj}
-    )
+    list_id_int = _require_int(list_id, "id")
+    await _require_own_list(list_id_int)
+    result = await execute(UPDATE_LIST_MUTATION, {"id": list_id_int, "object": obj})
     mutation_result = mutation_payload(result, "update_list")
 
     lst = returned_object(mutation_result, "list", "list")
@@ -326,6 +343,7 @@ async def handle_delete_list(arguments: dict[str, Any]) -> list[TextContent]:
 
     list_id_int = _require_int(list_id, "id")
 
+    await _require_own_list(list_id_int)
     await execute(DELETE_LIST_MUTATION, {"id": list_id_int})
 
     return [TextContent(type="text", text=json.dumps({"deleted": True, "id": list_id_int}))]
@@ -590,7 +608,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_set_list,
         toolset="lists",
-        scopes=("write:lists",),
+        scopes=("read:lists", "read:me", "write:lists"),
     ),
     ToolSpec(
         Tool(
@@ -615,7 +633,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_delete_list,
         toolset="lists",
-        scopes=("write:lists",),
+        scopes=("read:lists", "read:me", "write:lists"),
     ),
     ToolSpec(
         Tool(

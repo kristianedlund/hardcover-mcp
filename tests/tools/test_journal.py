@@ -453,16 +453,29 @@ class TestHandleDeleteJournalEntry:
     @patch("hardcover_mcp.tools.journal.execute", new_callable=AsyncMock)
     async def test_deletes_entry(self, mock_execute, mock_user):
         mock_user.return_value = {"id": 1}
-        mock_execute.return_value = {
-            "data": {"delete_reading_journal": {"__typename": "Mutation"}}
-        }
+        mock_execute.side_effect = [
+            {"data": {"reading_journals": [{"id": 123}]}},
+            {"data": {"delete_reading_journal": {"__typename": "Mutation"}}},
+        ]
 
         result = await handle_delete_journal_entry({"id": "123"})
         data = json.loads(result[0].text)
 
         assert data == {"deleted": True, "id": 123}
-        call_vars = mock_execute.call_args[0][1]
-        assert call_vars["id"] == 123
+        assert mock_execute.call_args_list[0][0][1] == {"id": 123, "user_id": 1}
+        assert mock_execute.call_args_list[1][0][1] == {"id": 123}
+
+    @patch("hardcover_mcp.tools.journal.get_current_user", new_callable=AsyncMock)
+    @patch("hardcover_mcp.tools.journal.execute", new_callable=AsyncMock)
+    async def test_entry_that_isnt_yours_is_an_error_and_not_deleted(
+        self, mock_execute, mock_user
+    ):
+        mock_user.return_value = {"id": 1}
+        mock_execute.return_value = {"data": {"reading_journals": []}}
+
+        with pytest.raises(ToolError, match="no journal entry of yours"):
+            await handle_delete_journal_entry({"id": 123})
+        assert mock_execute.call_count == 1
 
     @patch("hardcover_mcp.tools.journal.get_current_user", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.journal.execute", new_callable=AsyncMock)

@@ -775,9 +775,13 @@ query FindActiveRead($user_book_id: Int!) {
 }
 """
 
+# Scoped to your library, so edits and deletes by id only reach your own reads.
 GET_USER_BOOK_READ_QUERY = """
-query GetUserBookRead($id: Int!) {
-    user_book_reads(where: {id: {_eq: $id}}, limit: 1) {
+query GetUserBookRead($id: Int!, $user_id: Int!) {
+    user_book_reads(
+        where: {id: {_eq: $id}, user_book: {user_id: {_eq: $user_id}}},
+        limit: 1
+    ) {
         id
         started_at
         finished_at
@@ -828,14 +832,38 @@ def _continues_read(active: dict[str, Any], read_input: dict[str, Any]) -> bool:
     return started is None or current is None or str(started)[:10] == str(current)[:10]
 
 
-async def _resolve_user_book_id(arguments: dict[str, Any]) -> int:
-    """Resolve user_book_id from arguments.
+OWN_USER_BOOK_QUERY = """
+query OwnUserBook($id: Int!, $user_id: Int!) {
+    user_books(where: {id: {_eq: $id}, user_id: {_eq: $user_id}}, limit: 1) {
+        id
+    }
+}
+"""
 
-    Raises ``ToolError`` when neither id is given or the book isn't in your library.
+
+async def _own_read(read_id: int) -> dict[str, Any]:
+    """Your read with ``read_id``; ``ToolError`` if there's none."""
+    user = await get_current_user()
+    found = await execute(GET_USER_BOOK_READ_QUERY, {"id": read_id, "user_id": user["id"]})
+    reads = found["data"]["user_book_reads"]
+    if not reads:
+        raise ToolError("no read of yours with that id.")
+    return reads[0]
+
+
+async def _resolve_user_book_id(arguments: dict[str, Any]) -> int:
+    """Resolve your library entry's id from ``user_book_id`` or ``book_id``.
+
+    Raises ``ToolError`` when neither is given, or the entry isn't in your library.
     """
     user_book_id = arguments.get("user_book_id")
     if user_book_id:
-        return _require_int(user_book_id, "user_book_id")
+        user_book_id = _require_int(user_book_id, "user_book_id")
+        user = await get_current_user()
+        found = await execute(OWN_USER_BOOK_QUERY, {"id": user_book_id, "user_id": user["id"]})
+        if not found["data"]["user_books"]:
+            raise ToolError("no library entry of yours with that user_book_id.")
+        return user_book_id
 
     book_id = arguments.get("book_id")
     if not book_id:
@@ -946,11 +974,7 @@ async def _update_user_book_read(arguments: dict[str, Any]) -> list[TextContent]
     # Fetch current values and merge so unchanged fields aren't nulled out
     read_id_int = _require_int(read_id, "id")
 
-    current = await execute(GET_USER_BOOK_READ_QUERY, {"id": read_id_int})
-    current_reads = current["data"]["user_book_reads"]
-    if not current_reads:
-        raise ToolError("no read entry found with that ID.")
-    merged = _merge_read_input(current_reads[0], read_input)
+    merged = _merge_read_input(await _own_read(read_id_int), read_input)
 
     result = await execute(
         UPDATE_USER_BOOK_READ_MUTATION,
@@ -1018,6 +1042,7 @@ async def handle_delete_user_book_read(arguments: dict[str, Any]) -> list[TextCo
 
     read_id_int = _require_int(read_id, "id")
 
+    await _own_read(read_id_int)
     await execute(DELETE_USER_BOOK_READ_MUTATION, {"id": read_id_int})
     return [TextContent(type="text", text=json.dumps({"deleted": True, "id": read_id_int}))]
 
@@ -1317,7 +1342,7 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_delete_user_book_read,
         toolset="library",
-        scopes=("write:library",),
+        scopes=("read:library", "read:me", "write:library"),
     ),
     ToolSpec(
         Tool(
