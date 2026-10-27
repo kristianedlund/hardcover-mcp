@@ -11,6 +11,7 @@ from hardcover_mcp.tools.lists import (
     _build_list_input,
     _format_list_book,
     _format_list_summary,
+    handle_delete_list,
     handle_get_list,
     handle_set_list,
     handle_set_list_book,
@@ -175,11 +176,20 @@ class TestHandleSetList:
 
     async def test_with_id_updates(self):
         updated = {"list": {"id": 5, "name": "New", "slug": "n", "privacy_setting_id": 3}}
-        mock = AsyncMock(return_value={"data": {"update_list": updated}})
-        with patch("hardcover_mcp.tools.lists.execute", new=mock):
+        mock = AsyncMock(
+            side_effect=[{"data": {"lists": [{"id": 5}]}}, {"data": {"update_list": updated}}]
+        )
+        with (
+            patch(
+                "hardcover_mcp.tools.lists.get_current_user",
+                new=AsyncMock(return_value={"id": 42}),
+            ),
+            patch("hardcover_mcp.tools.lists.execute", new=mock),
+        ):
             result = await handle_set_list({"id": 5, "name": "New", "privacy": "private"})
 
         assert json.loads(result[0].text)["privacy"] == "private"
+        assert mock.call_args_list[0][0][1] == {"id": 5, "user_id": 42}
         assert "update_list" in mock.call_args[0][0]
 
     async def test_update_requires_a_field(self):
@@ -355,3 +365,24 @@ async def test_set_list_without_a_returned_list_is_an_error():
         pytest.raises(ToolError, match="didn't return the list"),
     ):
         await handle_set_list({"name": "X"})
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: handle_set_list({"id": 5, "name": "New"}),
+        lambda: handle_delete_list({"id": 5}),
+    ],
+    ids=["update", "delete"],
+)
+async def test_a_list_that_isnt_yours_is_an_error_and_not_changed(call):
+    mock = AsyncMock(return_value={"data": {"lists": []}})
+    with (
+        patch(
+            "hardcover_mcp.tools.lists.get_current_user", new=AsyncMock(return_value={"id": 42})
+        ),
+        patch("hardcover_mcp.tools.lists.execute", new=mock),
+        pytest.raises(ToolError, match="no list of yours with that id"),
+    ):
+        await call()
+    assert mock.call_count == 1

@@ -77,6 +77,14 @@ extras: `get_book`'s edition lookup adds `subtitle`, `isbn_10`, and `book`; `get
 
 ### Fixed
 
+- Deletes and edits by id only act on your own records. `delete_journal_entry`,
+  `delete_user_book_read`, `delete_list`, `set_list` with `id`, `set_user_book_read` with
+  `id`, and any tool given a `user_book_id` now look the record up as yours first and fail
+  with "no … of yours with that id" otherwise. Before, the deletes reported
+  `{"deleted": true}` for any id, including ones that didn't exist. These tools now also
+  declare the read scope for that lookup (`read:journal`, `read:library`, or `read:lists`,
+  plus `read:me`); every toolset already needed those, so keys made from the README links
+  are unaffected.
 - A tool call no longer waits more than a minute for Hardcover's rate limit. If
   `Retry-After` or the `RateLimit` header asks for longer, the call stops with a message
   saying how long to wait (a `Retry-After: 86400` used to block the call for a day).
