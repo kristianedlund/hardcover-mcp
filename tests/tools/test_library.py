@@ -1431,6 +1431,59 @@ class TestHandleSetUserBookRead:
         assert mock_exec.call_args_list[1][0][1]["userBookId"] == 5
 
 
+_READ_UPDATED = {"data": {"update_user_book_read": {"user_book_read": {"id": 3}}}}
+_READ_INSERTED = {"data": {"insert_user_book_read": {"user_book_read": {"id": 8}}}}
+
+
+class TestSetUserBookReadContinuesOrInserts:
+    """Without an id: update the unfinished read only when the call continues it."""
+
+    async def _run(self, active: dict, arguments: dict) -> AsyncMock:
+        found = {"data": {"user_book_reads": [active]}}
+        mock_exec = AsyncMock(side_effect=[found, _READ_UPDATED, _READ_INSERTED])
+        with patch("hardcover_mcp.tools.library.execute", new=mock_exec):
+            await handle_set_user_book_read({"user_book_id": 5, **arguments})
+        return mock_exec
+
+    @pytest.mark.parametrize(
+        "arguments",
+        [
+            {"progress_pages": 120},
+            {"finished_at": "2026-10-20"},
+            {"started_at": "2026-10-01", "finished_at": "2026-10-20"},
+        ],
+        ids=["progress", "finish-only", "same-start"],
+    )
+    async def test_continuing_calls_update_the_unfinished_read(self, arguments):
+        mock_exec = await self._run({"id": 3, "started_at": "2026-10-01"}, arguments)
+
+        assert mock_exec.call_count == 2
+        assert mock_exec.call_args_list[1][0][1]["id"] == 3
+
+    async def test_a_start_date_fills_an_unfinished_read_without_one(self):
+        mock_exec = await self._run({"id": 3, "started_at": None}, {"started_at": "2026-10-01"})
+
+        assert mock_exec.call_args_list[1][0][1]["object"]["started_at"] == "2026-10-01"
+
+    async def test_a_different_start_date_logs_another_read(self):
+        # Reading it again since 2026-10-01; logging the 2019 read must not rewrite that.
+        found = {"data": {"user_book_reads": [{"id": 3, "started_at": "2026-10-01"}]}}
+        mock_exec = AsyncMock(side_effect=[found, _READ_INSERTED])
+        with patch("hardcover_mcp.tools.library.execute", new=mock_exec):
+            result = await handle_set_user_book_read(
+                {"user_book_id": 5, "started_at": "2019-01-01", "finished_at": "2019-02-01"}
+            )
+
+        assert json.loads(result[0].text) == {"id": 8}
+        assert mock_exec.call_count == 2
+        inserted = mock_exec.call_args_list[1][0][1]
+        assert inserted["userBookId"] == 5
+        assert inserted["userBookRead"] == {
+            "started_at": "2019-01-01",
+            "finished_at": "2019-02-01",
+        }
+
+
 class TestHandleGetUserLibraryOwned:
     async def _query(self, arguments: dict) -> str:
         empty = {"data": {"user_books": [], "user_books_aggregate": {"aggregate": {"count": 0}}}}
