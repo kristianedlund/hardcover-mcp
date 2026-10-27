@@ -346,3 +346,12 @@ class TestHandleSetListBookMany:
         with pytest.raises(ToolError, match="'position' only works"):
             await self._run({"list_ids": [1, 2], "on_list": True, "position": 3})
         self.mock.assert_not_awaited()
+
+
+async def test_set_list_without_a_returned_list_is_an_error():
+    mock = AsyncMock(return_value={"data": {"insert_list": {"id": 1, "list": None}}})
+    with (
+        patch("hardcover_mcp.tools.lists.execute", new=mock),
+        pytest.raises(ToolError, match="didn't return the list"),
+    ):
+        await handle_set_list({"name": "X"})

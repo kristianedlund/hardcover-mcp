@@ -7,6 +7,7 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import UPDATE, ToolSpec
+from hardcover_mcp.tools._results import mutation_payload
 from hardcover_mcp.tools._validation import ToolError, _require_int
 from hardcover_mcp.tools.activity import FOLLOWED_IDS_QUERY, GET_USER_ID_BY_USERNAME_QUERY
 
@@ -85,10 +86,10 @@ async def handle_set_following(arguments: dict[str, Any]) -> list[TextContent]:
 
     if following:
         result = await execute(FOLLOW_USER_MUTATION, {"id": resolved})
-        payload = result["data"]["insert_followed_user"]
+        payload = mutation_payload(result, "insert_followed_user")
     else:
         result = await execute(UNFOLLOW_USER_MUTATION, {"id": resolved})
-        payload = result["data"]["delete_followed_user"]
+        payload = mutation_payload(result, "delete_followed_user")
     if payload.get("error"):
         raise ToolError(str(payload["error"]))
 

@@ -225,9 +225,8 @@ async def execute(
         If ``HARDCOVER_API_TOKEN`` is missing, the token is rejected or lacks a scope,
         the daily limit is used up, the response is not valid JSON, or the response
         contains GraphQL errors.
-    httpx.HTTPStatusError
-        If the API returns another non-success HTTP status, or 429/503 persists after
-        retries.
+        Also for a timeout, a connection failure, or another non-success HTTP status
+        (including 429/503 that persists after retries).
     """
     await _wait_for_rate_limit()
 
@@ -247,7 +246,16 @@ async def execute(
     backoff = _RETRY_BACKOFF
 
     for attempt in range(_MAX_RETRIES + 1):
-        response = await _http_client().post(url, json=payload, headers=headers)
+        try:
+            response = await _http_client().post(url, json=payload, headers=headers)
+        except httpx.TimeoutException:
+            # Not retried: a write may have gone through even though no answer came back.
+            raise HardcoverAPIError(
+                "Hardcover didn't answer within 30 seconds. If you asked for a change, check "
+                "whether it was saved before trying again."
+            ) from None
+        except httpx.HTTPError as exc:
+            raise HardcoverAPIError(f"Couldn't reach Hardcover: {exc}") from None
 
         _record_rate_limit(response.headers)
 
@@ -258,12 +266,19 @@ async def execute(
                 await asyncio.sleep(_retry_delay(response, backoff))
                 backoff *= 2
                 continue
-            response.raise_for_status()
+            raise HardcoverAPIError(
+                f"Hardcover is busy (HTTP {response.status_code}) and still was after "
+                f"{_MAX_RETRIES} retries. Try again in a minute."
+            )
 
         if response.status_code in (401, 403):
             raise _auth_error(response)
 
-        response.raise_for_status()
+        if response.is_error:
+            raise HardcoverAPIError(
+                f"Hardcover returned HTTP {response.status_code}. Try again later; if it "
+                "keeps happening, it may be a bug in hardcover-mcp."
+            )
 
         try:
             data = response.json()

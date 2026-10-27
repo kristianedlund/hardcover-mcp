@@ -7,8 +7,8 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, UPDATE, ToolSpec
-from hardcover_mcp.tools._results import list_result
-from hardcover_mcp.tools._validation import ToolError, _require_int
+from hardcover_mcp.tools._results import list_result, mutation_payload
+from hardcover_mcp.tools._validation import ToolError, _require_bool, _require_count, _require_int
 from hardcover_mcp.tools.user import get_current_user
 
 GET_PROMPTS_QUERY = """
@@ -108,9 +108,9 @@ async def handle_get_prompts(arguments: dict[str, Any]) -> list[TextContent]:
         JSON ``{returned, offset, prompts}`` of prompt summaries with ``question``,
         ``description``, ``answers_count``, and ``books_count``.
     """
-    limit = min(arguments.get("limit", 25), 100)
-    offset = arguments.get("offset", 0)
-    featured_only = arguments.get("featured", False)
+    limit = _require_count(arguments.get("limit"), "limit", default=25, minimum=1, maximum=100)
+    offset = _require_count(arguments.get("offset"), "offset", default=0)
+    featured_only = _require_bool(arguments.get("featured"), "featured")
 
     # Build optional where clause — omit entirely when not filtering by featured
     where: dict[str, Any] | None = {"featured": {"_eq": True}} if featured_only else None
@@ -164,7 +164,7 @@ async def handle_set_prompt_answer(arguments: dict[str, Any]) -> list[TextConten
         if arguments.get("description"):
             obj["description"] = arguments["description"]
         result = await execute(ANSWER_PROMPT_MUTATION, {"object": obj})
-        created = result["data"]["insert_prompt_answer"]
+        created = mutation_payload(result, "insert_prompt_answer")
         output.update(changed=True, answer_id=created.get("id"))
     elif not answered and existing_id is not None:
         try:

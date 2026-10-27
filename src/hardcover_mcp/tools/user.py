@@ -8,7 +8,13 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import NEW_API_KEY_URL, HardcoverAPIError, execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
-from hardcover_mcp.tools._validation import ToolError, _require_int, privacy_label
+from hardcover_mcp.tools._validation import (
+    ToolError,
+    _require_bool,
+    _require_count,
+    _require_int,
+    privacy_label,
+)
 from hardcover_mcp.tools.books import resolve_id_by_name
 from hardcover_mcp.tools.stats import fetch_reading_stats
 
@@ -229,17 +235,22 @@ async def handle_get_user(arguments: dict[str, Any]) -> list[TextContent]:
 
     from hardcover_mcp.tools.library import _resolve_status_id
 
-    include_library = bool(arguments.get("include_library"))
+    include_library = _require_bool(arguments.get("include_library"), "include_library")
     status_id = _resolve_status_id(arguments.get("library_status"), "library_status")
 
-    include_following = bool(arguments.get("include_following"))
-    include_followers = bool(arguments.get("include_followers"))
-    include_stats = bool(arguments.get("include_stats"))
+    include_following = _require_bool(arguments.get("include_following"), "include_following")
+    include_followers = _require_bool(arguments.get("include_followers"), "include_followers")
+    include_stats = _require_bool(arguments.get("include_stats"), "include_stats")
 
     variables: dict[str, Any] = {}
     if include_following or include_followers:
-        requested = arguments.get("follow_limit", _DEFAULT_FOLLOW_LIMIT)
-        variables["follow_limit"] = min(_require_int(requested, "follow_limit"), _MAX_FOLLOW_LIMIT)
+        variables["follow_limit"] = _require_count(
+            arguments.get("follow_limit"),
+            "follow_limit",
+            default=_DEFAULT_FOLLOW_LIMIT,
+            minimum=1,
+            maximum=_MAX_FOLLOW_LIMIT,
+        )
     stats_year = (
         _require_int(arguments["stats_year"], "stats_year")
         if arguments.get("stats_year") is not None
@@ -247,10 +258,12 @@ async def handle_get_user(arguments: dict[str, Any]) -> list[TextContent]:
     )
 
     if include_library:
-        requested = arguments.get("library_limit", _DEFAULT_LIBRARY_LIMIT)
-        variables["library_limit"] = min(
-            _require_int(requested, "library_limit"),
-            _MAX_LIBRARY_LIMIT,
+        variables["library_limit"] = _require_count(
+            arguments.get("library_limit"),
+            "library_limit",
+            default=_DEFAULT_LIBRARY_LIMIT,
+            minimum=1,
+            maximum=_MAX_LIBRARY_LIMIT,
         )
         if status_id is not None:
             variables["status_id"] = status_id

@@ -35,7 +35,10 @@ class _FakeAsyncClient:
     async def post(self, url, json=None, headers=None):
         _FakeAsyncClient.captured_headers.append(headers)
         _FakeAsyncClient.captured_urls.append(url)
-        return _FakeAsyncClient.responses.pop(0)
+        response = _FakeAsyncClient.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 @pytest.fixture(autouse=True)
@@ -191,7 +194,7 @@ async def test_503_is_retried_with_backoff(sleeps):
 async def test_429_gives_up_after_max_retries():
     _FakeAsyncClient.responses = [_response(429, {}) for _ in range(client._MAX_RETRIES + 1)]
 
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(client.HardcoverAPIError, match=r"busy \(HTTP 429\).*5 retries"):
         await client.execute("query { me { id } }")
 
 
@@ -304,3 +307,30 @@ def test_importing_the_package_does_not_load_dotenv():
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "False"
+
+
+# ── Network and HTTP errors ──
+
+
+async def test_timeout_is_a_clear_error_and_not_retried():
+    _FakeAsyncClient.responses = [httpx.ReadTimeout("slow"), _response()]
+
+    with pytest.raises(client.HardcoverAPIError, match="didn't answer within 30 seconds"):
+        await client.execute("mutation { x }")
+
+    assert len(_FakeAsyncClient.captured_headers) == 1  # no second attempt
+
+
+async def test_connection_failure_is_a_clear_error():
+    _FakeAsyncClient.responses = [httpx.ConnectError("name resolution failed")]
+
+    with pytest.raises(client.HardcoverAPIError, match="Couldn't reach Hardcover"):
+        await client.execute("query { me { id } }")
+
+
+@pytest.mark.parametrize("status", [400, 404, 500, 502])
+async def test_other_http_errors_are_clear_errors(status):
+    _FakeAsyncClient.responses = [_response(status, {})]
+
+    with pytest.raises(client.HardcoverAPIError, match=f"HTTP {status}"):
+        await client.execute("query { me { id } }")

@@ -1259,6 +1259,36 @@ class TestGetUserLibrarySort:
         expected = f"order_by: [{{{field}: {order}_nulls_last}}, {{id: desc}}]"
         assert expected in mock_exec.call_args[0][0]
 
+    async def test_string_limit_is_converted(self):
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(return_value=self._mock_result()),
+            ) as mock_exec,
+        ):
+            await handle_get_user_library({"limit": "10", "offset": "20"})
+
+        assert mock_exec.call_args[0][1]["limit"] == 10
+        assert mock_exec.call_args[0][1]["offset"] == 20
+
+    @pytest.mark.parametrize(
+        ("arguments", "message"),
+        [
+            ({"limit": "x"}, "'limit' must be an integer"),
+            ({"limit": 0}, "'limit' must be at least 1"),
+            ({"offset": -1}, "'offset' must be at least 0"),
+            ({"sort": ["rating"]}, "'sort' must be a string"),
+            ({"owned": "yes"}, "'owned' must be true or false"),
+        ],
+    )
+    async def test_bad_paging_and_flags_are_clear_errors(self, arguments, message):
+        with pytest.raises(ToolError, match=message):
+            await handle_get_user_library(arguments)
+
     async def test_invalid_sort_returns_error(self):
         with pytest.raises(ToolError) as exc:
             await handle_get_user_library({"sort": "banana"})
@@ -1567,3 +1597,36 @@ class TestHandleGetUserLibraryOwned:
 
     async def test_without_owned_no_owned_filter(self):
         assert "owned" not in await self._query({})
+
+
+class TestNullPayloads:
+    async def test_set_user_book_without_a_returned_entry_is_an_error(self):
+        mock_exec = AsyncMock(
+            side_effect=[
+                {"data": {"user_books": []}},  # not in the library yet
+                {"data": {"insert_user_book": {"error": None, "user_book": None}}},
+            ]
+        )
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch("hardcover_mcp.tools.library.execute", new=mock_exec),
+            pytest.raises(ToolError, match="didn't return the library entry"),
+        ):
+            await handle_set_user_book({"book_id": 42, "status": "Read"})
+
+    async def test_null_mutation_payload_is_an_error(self):
+        mock_exec = AsyncMock(
+            side_effect=[{"data": {"user_books": []}}, {"data": {"insert_user_book": None}}]
+        )
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch("hardcover_mcp.tools.library.execute", new=mock_exec),
+            pytest.raises(ToolError, match="didn't confirm the change"),
+        ):
+            await handle_set_user_book({"book_id": 42, "status": "Read"})

@@ -7,11 +7,12 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import DELETE, READ, UPDATE, ToolSpec
-from hardcover_mcp.tools._results import list_result
+from hardcover_mcp.tools._results import list_result, mutation_payload
 from hardcover_mcp.tools._validation import (
     PRIVACY_DESCRIPTION,
     ToolError,
     _privacy_argument,
+    _require_count,
     _require_int,
     _require_iso_date,
     privacy_label,
@@ -169,17 +170,14 @@ async def handle_get_reading_goal(arguments: dict[str, Any]) -> list[TextContent
         JSON ``{returned, offset, goals}``.
     """
     # --- 1. Validate input
-    limit = _require_int(arguments.get("limit", 10), "limit")
-
-    if limit <= 0:
-        raise ToolError("'limit' must be greater than 0.")
-    offset = _require_int(arguments.get("offset", 0), "offset")
+    limit = _require_count(arguments.get("limit"), "limit", default=10, minimum=1, maximum=100)
+    offset = _require_count(arguments.get("offset"), "offset", default=0)
 
     # --- 2. Resolve user and query active goals
     user = await get_current_user()
     result = await execute(
         GET_READING_GOAL_QUERY,
-        {"user_id": user["id"], "limit": min(limit, 100), "offset": offset},
+        {"user_id": user["id"], "limit": limit, "offset": offset},
     )
 
     # --- 3. Format and return
@@ -258,7 +256,7 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
         goal_input["privacy_setting_id"] = privacy_setting_id
 
     mutation_result = await execute(INSERT_READING_GOAL_MUTATION, {"object": goal_input})
-    insert_payload = mutation_result["data"]["insert_goal"]
+    insert_payload = mutation_payload(mutation_result, "insert_goal")
     if insert_payload.get("errors"):
         raise ToolError("; ".join(insert_payload["errors"]))
     raw_goal = insert_payload.get("goal") or {
@@ -348,7 +346,7 @@ async def _edit_reading_goal(arguments: dict[str, Any]) -> list[TextContent]:
     result = await execute(
         UPDATE_READING_GOAL_MUTATION, {"id": current["id"], "object": goal_input}
     )
-    payload = result["data"]["update_goal"]
+    payload = mutation_payload(result, "update_goal")
     if payload.get("errors"):
         raise ToolError("; ".join(payload["errors"]))
     raw_goal = payload.get("goal") or {**current, **goal_input}

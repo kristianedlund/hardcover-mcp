@@ -2,7 +2,10 @@
 
 import json
 
-from hardcover_mcp.tools._results import list_result
+import pytest
+
+from hardcover_mcp.tools._results import list_result, mutation_payload, returned_object
+from hardcover_mcp.tools._validation import ToolError
 
 
 def _decode(content) -> dict:
@@ -26,3 +29,19 @@ def test_page_with_total_comes_first():
 
 def test_zero_total_is_kept():
     assert _decode(list_result("books", [], offset=0, total=0))["total"] == 0
+
+
+def test_mutation_payload_returns_the_payload():
+    assert mutation_payload({"data": {"insert_list": {"id": 1}}}, "insert_list") == {"id": 1}
+
+
+@pytest.mark.parametrize("result", [{"data": {"insert_list": None}}, {"data": None}, {}])
+def test_mutation_payload_null_is_an_error(result):
+    with pytest.raises(ToolError, match="didn't confirm the change"):
+        mutation_payload(result, "insert_list")
+
+
+def test_returned_object_missing_is_an_error():
+    assert returned_object({"list": {"id": 1}}, "list", "list") == {"id": 1}
+    with pytest.raises(ToolError, match="didn't return the list"):
+        returned_object({"list": None}, "list", "list")

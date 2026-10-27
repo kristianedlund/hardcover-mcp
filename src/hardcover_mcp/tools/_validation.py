@@ -25,6 +25,42 @@ def _require_int(value: Any, name: str) -> int:
         raise ToolError(f"'{name}' must be an integer, got: {value!r}") from None
 
 
+def _require_count(
+    value: Any, name: str, *, default: int, minimum: int = 0, maximum: int | None = None
+) -> int:
+    """A whole-number argument such as a limit, offset, or page.
+
+    ``default`` when not given, an error below ``minimum`` (or for a bool), capped at
+    ``maximum``.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        raise ToolError(f"'{name}' must be an integer, got: {value!r}")
+    number = _require_int(value, name)
+    if number < minimum:
+        raise ToolError(f"'{name}' must be at least {minimum}, got: {value!r}")
+    return number if maximum is None else min(number, maximum)
+
+
+def _require_bool(value: Any, name: str, *, default: bool = False) -> bool:
+    """A true/false argument; also accepts the strings "true" and "false"."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in ("true", "false"):
+        return value.strip().lower() == "true"
+    raise ToolError(f"'{name}' must be true or false, got: {value!r}")
+
+
+def _require_str(value: Any, name: str) -> str | None:
+    """An optional string argument; None if not given."""
+    if value is None or isinstance(value, str):
+        return value
+    raise ToolError(f"'{name}' must be a string, got: {value!r}")
+
+
 def _require_float(value: Any, name: str) -> float:
     """Convert a value to float or raise ToolError with a user-friendly message."""
     try:
