@@ -1,7 +1,7 @@
 # hardcover-mcp
 
 [![PyPI](https://img.shields.io/pypi/v/hardcover-mcp)](https://pypi.org/project/hardcover-mcp/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/kristianedlund/hardcover-mcp/blob/main/LICENSE)
 [![Python 3.14+](https://img.shields.io/badge/python-3.14%2B-blue)](https://www.python.org/)
 
 **Talk to your [Hardcover](https://hardcover.app) library from any AI assistant.**
@@ -75,15 +75,21 @@ Add to `.vscode/mcp.json`:
 
 ### Claude Code
 
-From your project directory, register the local stdio server:
-
 ```bash
-claude mcp add --env "HARDCOVER_API_TOKEN=<your token>" --transport stdio hardcover -- uvx hardcover-mcp
+claude mcp add --scope user hardcover --env HARDCOVER_API_TOKEN=<your token> -- uvx hardcover-mcp
 ```
 
-Replace `<your token>` with your Hardcover API key. Optional settings such as
-`HARDCOVER_READ_ONLY=true` can also be passed with `--env`; see [Configuration](#configuration).
-See the [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp) for configuration scopes.
+Replace `<your token>` with your Hardcover API key. `--scope user` makes the server available
+in every project; leave it out to add it to the current project only (see the
+[Claude Code MCP documentation](https://code.claude.com/docs/en/mcp) for scopes). Other settings
+from [Configuration](#configuration) are extra `--env KEY=value` flags after the server name,
+e.g. `--env HARDCOVER_READ_ONLY=true`.
+
+To keep the token off the command line, put the variables in a file and let uvx read it:
+
+```bash
+claude mcp add --scope user hardcover -- uvx --env-file /path/to/hardcover.env hardcover-mcp
+```
 
 ### Claude Desktop
 
@@ -105,8 +111,8 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
-`HARDCOVER_TOOLSETS` and `HARDCOVER_READ_ONLY` are optional and shown with their defaults; see
-[Configuration](#configuration).
+`HARDCOVER_TOOLSETS` and `HARDCOVER_READ_ONLY` are optional and shown with their defaults;
+[Configuration](#configuration) lists every setting, including `HARDCOVER_API_URL`.
 
 To keep the token out of the client config, put the variables in a `.env` file and point uvx at
 it. The server only reads the file you name:
@@ -299,8 +305,9 @@ Contributions are welcome! Please:
 
 The Hardcover API allows 60 requests per minute with a short burst allowance, and a daily
 limit (5,000 requests on the free plan). The server queues requests, follows the API's
-rate-limit headers, and retries when asked to wait. Once the daily limit is used up it stops
-immediately with a message saying so (it resets at midnight UTC). Your usage is shown at
+rate-limit headers, and retries when asked to wait. It waits at most a minute at a time; if
+Hardcover asks for longer, the call stops and says how long to wait. Once the daily limit is
+used up it stops immediately with a message saying so (it resets at midnight UTC). Your usage is shown at
 [hardcover.app/account/api](https://hardcover.app/account/api). Keys created after August
 2026 get twice the burst allowance of older keys.
 
@@ -312,6 +319,8 @@ immediately with a message saying so (it resets at midnight UTC). Your usage is 
 | "Hardcover rejected the API token" | The key is invalid or expired; create a new one with the link in the error |
 | "missing the scope(s) this tool needs" | Create a key that includes them; the error links to a pre-filled form |
 | "daily API limit … is used up" | Wait until midnight UTC, or load fewer tools to make fewer calls |
+| "rate limit asks to wait N seconds" | Hardcover is throttling this key; try again after that time |
+| "Hardcover didn't answer within 30 seconds" | Try again; if you asked for a change, check whether it was saved first |
 | "Access is denied" on Windows | Add `"UV_LINK_MODE": "copy"` to the `env` block in your config |
 | Slow or repeated errors | The server retries automatically — wait a moment and try again |
 | Unexpected results | Check for a newer version: the Hardcover API may have changed |
