@@ -1306,6 +1306,56 @@ class TestGetUserLibraryDateRange:
         assert call_vars["start_date"] == "2025-05-01"
         assert call_vars["end_date"] == "2025-05-31"
 
+    async def test_date_range_filters_by_status(self):
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(return_value=self._mock_result()),
+            ) as mock_exec,
+        ):
+            await handle_get_user_library(
+                {"start_date": "2025-05-01", "end_date": "2025-05-31", "status": "Read"}
+            )
+
+        query, variables = mock_exec.call_args[0]
+        assert "status_id: {_eq: $status_id}" in query
+        assert "user_book_reads: {finished_at:" in query
+        assert variables["status_id"] == 3
+
+    async def test_date_range_without_status_has_no_status_filter(self):
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch(
+                "hardcover_mcp.tools.library.execute",
+                new=AsyncMock(return_value=self._mock_result()),
+            ) as mock_exec,
+        ):
+            await handle_get_user_library({"start_date": "2025-05-01", "end_date": "2025-05-31"})
+
+        query, variables = mock_exec.call_args[0]
+        assert "$status_id" not in query
+        assert "status_id" not in variables
+
+    @pytest.mark.parametrize("extra", [{"sort": "rating"}, {"order": "asc"}])
+    async def test_date_range_rejects_sort_and_order(self, extra):
+        with pytest.raises(ToolError, match="always sorted by finish date"):
+            await handle_get_user_library(
+                {"start_date": "2025-05-01", "end_date": "2025-05-31", **extra}
+            )
+
+    async def test_date_range_rejects_unknown_status(self):
+        with pytest.raises(ToolError, match="unknown status"):
+            await handle_get_user_library(
+                {"start_date": "2025-05-01", "end_date": "2025-05-31", "status": "Nope"}
+            )
+
     async def test_start_date_without_end_date_returns_error(self):
         with pytest.raises(ToolError) as exc:
             await handle_get_user_library({"start_date": "2025-01-01"})

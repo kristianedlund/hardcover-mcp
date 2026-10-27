@@ -164,21 +164,23 @@ _USER_BOOK_FIELDS_WITH_READS = (
 )
 
 
-def _render_library_by_date_query(with_owned: bool = False) -> str:
-    """Render the finished-date-range library query, optionally limited to owned books.
+def _render_library_by_date_query(with_status: bool = False, with_owned: bool = False) -> str:
+    """Render the finished-date-range library query, optionally filtered by status or owned.
 
     Sorted by ``last_read_date`` (the entry's latest finish date): ``user_books`` can't be
-    ordered by a read's ``finished_at``.
+    ordered by a read's ``finished_at``, so the caller's sort doesn't apply.
     """
-    owned_filter = _OWNED_FILTER if with_owned else ""
+    extra_filter = ", status_id: {_eq: $status_id}" if with_status else ""
+    extra_filter += _OWNED_FILTER if with_owned else ""
+    status_var = ", $status_id: Int!" if with_status else ""
     return f"""
 query GetUserLibraryByDateRange(
-    $user_id: Int!, $limit: Int!, $offset: Int!, $start_date: date!, $end_date: date!
+    $user_id: Int!, $limit: Int!, $offset: Int!, $start_date: date!, $end_date: date!{status_var}
 ) {{
     user_books(
         where: {{
             user_id: {{_eq: $user_id}},
-            user_book_reads: {{finished_at: {{_gte: $start_date, _lte: $end_date}}}}{owned_filter}
+            user_book_reads: {{finished_at: {{_gte: $start_date, _lte: $end_date}}}}{extra_filter}
         }},
         limit: $limit,
         offset: $offset,
@@ -189,7 +191,7 @@ query GetUserLibraryByDateRange(
     user_books_aggregate(
         where: {{
             user_id: {{_eq: $user_id}},
-            user_book_reads: {{finished_at: {{_gte: $start_date, _lte: $end_date}}}}{owned_filter}
+            user_book_reads: {{finished_at: {{_gte: $start_date, _lte: $end_date}}}}{extra_filter}
         }}
     ) {{
         aggregate {{ count }}
@@ -332,6 +334,13 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
         raise ToolError("has_review can't be combined with start_date/end_date.")
     if (start_date is None) != (end_date is None):
         raise ToolError("start_date and end_date must both be provided.")
+    if start_date is not None and (
+        arguments.get("sort") is not None or arguments.get("order") is not None
+    ):
+        raise ToolError(
+            "a date range is always sorted by finish date, newest first; drop sort/order."
+        )
+    status_id = _resolve_status_id(status)
 
     user = await get_current_user()
     user_id = user["id"]
@@ -339,20 +348,13 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
     order_field = LIBRARY_SORT_FIELDS[sort]
     order_dir = order
 
+    vars: dict[str, Any] = {"user_id": user_id, "limit": limit, "offset": offset}
+    if status_id is not None:
+        vars["status_id"] = status_id
     if start_date is not None:
-        result = await execute(
-            _render_library_by_date_query(with_owned=owned),
-            {
-                "user_id": user_id,
-                "limit": limit,
-                "offset": offset,
-                "start_date": start_date,
-                "end_date": end_date,
-            },
-        )
+        query = _render_library_by_date_query(with_status=status_id is not None, with_owned=owned)
+        vars.update(start_date=start_date, end_date=end_date)
     else:
-        status_id = _resolve_status_id(status)
-
         query = _render_library_query(
             with_status=status_id is not None,
             with_review=has_review,
@@ -360,10 +362,7 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
             order_field=order_field,
             order_dir=order_dir,
         )
-        vars: dict[str, Any] = {"user_id": user_id, "limit": limit, "offset": offset}
-        if status_id is not None:
-            vars["status_id"] = status_id
-        result = await execute(query, vars)
+    result = await execute(query, vars)
 
     total = result["data"]["user_books_aggregate"]["aggregate"]["count"]
     user_books = result["data"]["user_books"]
@@ -1050,7 +1049,8 @@ TOOLS: list[ToolSpec] = [
                 "flag, and review date; newest review first). Sort by updated, rating, "
                 "date_added, or reviewed. Returns user_book_id, book_id, title, authors, "
                 "status, rating, and read dates per book. E.g. sort='rating' for top-rated; "
-                "a date range answers 'what did I read in May?'. owned=true keeps only books "
+                "a date range answers 'what did I read in May?' (always newest finish first, "
+                "so it can't take sort/order). owned=true keeps only books "
                 "with an edition in your Owned list (set with set_user_book); owned books "
                 "that aren't in your library are not listed. Filters combine, e.g. owned=true "
                 "with status='Want to Read'. For one book's full entry use get_user_book."

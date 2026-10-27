@@ -77,6 +77,10 @@ extras: `get_book`'s edition lookup adds `subtitle`, `isbn_10`, and `book`; `get
 
 ### Fixed
 
+- `get_user_library` with `start_date`/`end_date` applies `status` (e.g. books you finished
+  in May that are marked Read); it used to ignore it, and an invalid status wasn't rejected.
+  A date range is always sorted by finish date, newest first, so passing `sort` or `order`
+  with it is now an error instead of being silently ignored.
 - `set_reading_goal` without `id`, for a goal with the same metric and dates as an
   existing one, no longer resets that goal's description to "<goal> <metric>s". It's
   updated like an edit by `id`: only the fields you pass change.
