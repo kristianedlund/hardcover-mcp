@@ -80,3 +80,27 @@ def test_configuration_table_lists_every_toolset():
     listed = re.findall(r"^\| `([a-z_]+)` \|", table, re.MULTILINE)
     assert len(listed) == len(set(listed)), "Toolset table contains duplicate rows"
     assert set(listed) == set(TOOLSETS)
+
+
+SRC = README.parents[0] / "src" / "hardcover_mcp"
+ENV_EXAMPLE = README.parents[0] / ".env.example"
+
+
+def _env_vars_read_by_the_code() -> set[str]:
+    pattern = re.compile(r"""(?:environ|env)\.get\(\s*["'](HARDCOVER_[A-Z_]+)["']""")
+    return {m for path in SRC.rglob("*.py") for m in pattern.findall(path.read_text("utf-8"))}
+
+
+def test_every_setting_the_code_reads_is_documented():
+    settings = _env_vars_read_by_the_code()
+    assert "HARDCOVER_API_TOKEN" in settings  # sanity check that the scan finds them
+
+    text = _readme()
+    table = text.split("| Variable | Default | Effect |", 1)[1].split("\n\n", 1)[0]
+    rows = set(re.findall(r"^\| `(HARDCOVER_[A-Z_]+)` \|", table, re.MULTILINE))
+    # The token is covered by the setup sections; every other setting needs a table row.
+    assert rows == settings - {"HARDCOVER_API_TOKEN"}
+
+    example = ENV_EXAMPLE.read_text(encoding="utf-8")
+    missing = {name for name in settings if f"{name}=" not in example}
+    assert not missing, f".env.example doesn't mention {sorted(missing)}"

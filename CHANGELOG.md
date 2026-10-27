@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+1.0.0 settles the tool interface: from here on, tool names, arguments, and result shapes only
+change incompatibly in a major release. If you're upgrading from 0.9, the changes most likely
+to affect you:
+
+- List results are objects with the items under a named key (e.g. `entries`, `books`) plus
+  `returned` and `offset`; `search_books` reports `total` instead of `found`.
+- Privacy values are lowercase (`public` / `followers` / `private`) everywhere, and
+  `set_journal_entry` / `set_reading_goal` take `privacy` instead of `privacy_setting_id`.
+- `get_list` pages books with `books_limit` / `books_offset`; editions, ratings, and series
+  authors have one name and shape in every tool.
+- `status` must be one of the status names (or 1–6).
+- The server no longer reads a `.env` file; set variables in your MCP client's config.
+
 ### Breaking: one privacy vocabulary
 
 | Tool | Before | Now |
@@ -18,10 +31,14 @@ Journal entries and goals now return `privacy` instead of `privacy_setting_id`. 
 unrecognised privacy id is reported as `unknown (<id>)`. Update anything that matches on the
 old values.
 
-`set_journal_entry` and `set_reading_goal` take `privacy` instead of `privacy_setting_id`,
-with the same values as the other write tools (`public`, `followers`, `private`, or
-`1`/`2`/`3`). Passing `privacy_setting_id` is now an error rather than being ignored, so an
-old call can't quietly create a public entry it meant to keep private.
+Every tool that sets privacy (`set_user_book`, `set_list`, `set_journal_entry`,
+`set_reading_goal`) takes a `privacy` argument with the same values: `public`, `followers`
+(or `followers_only`), or `private`, in any case, or `1`/`2`/`3`. Inputs that worked before
+still work; only code matching on returned values needs updating.
+
+`set_journal_entry` and `set_reading_goal` take `privacy` instead of `privacy_setting_id`.
+Passing `privacy_setting_id` is now an error rather than being ignored, so an old call can't
+quietly create a public entry it meant to keep private.
 
 ### Breaking: one shape for list results
 
@@ -72,8 +89,20 @@ extras: `get_book`'s edition lookup adds `subtitle`, `isbn_10`, and `book`; `get
   normal "No user found" result. The rule now: a write tool whose target doesn't exist
   fails; a read tool that finds nothing returns an empty page, or a short "No … found"
   answer for a single lookup.
+- `set_user_book` and `set_list` reject privacy values other than the ones above; before,
+  any number was sent to Hardcover.
 - `set_journal_entry` no longer passes an undocumented `tags` argument through to
   Hardcover.
+
+### Breaking: no automatic `.env`
+
+- The server no longer loads a `.env` file. It used to search upward from its install
+  directory, so a stray `.env` (for example in your home directory) could change its settings
+  or point it at another server. If you relied on a `.env`, set the variables in your MCP
+  client's `env` block, or name the file explicitly:
+  `uvx --env-file /path/to/hardcover.env hardcover-mcp`.
+- `HARDCOVER_API_URL` (now documented) must be an `https://` URL, since every request carries
+  your token.
 
 ### Fixed
 
@@ -123,13 +152,12 @@ extras: `get_book`'s edition lookup adds `subtitle`, `isbn_10`, and `book`; `get
   search results, `get_book`, library rows, `get_user_book`, list books, journal entries,
   and trending/vibe books. A book whose contributors have no author role shows its first
   contributor.
-- `get_user_library` paging no longer repeats or skips books when several share the sort
-  value (e.g. the same rating). Every sort now breaks ties by entry id. Books with no value
-  for the sort field (e.g. unrated books under `sort="rating"`) now come last in both
-  directions, instead of first under `desc`.
-- Same tiebreaker for the other paginated reads: the finished-date-range library query,
-  `get_reading_journal`, `get_activity_feed`, `get_list` (lists and their books), `get_vibes`,
-  and `get_prompts`.
+- Paging no longer repeats or skips items when several share the sort value (e.g. the same
+  rating): `get_user_library` (including date ranges), `get_reading_journal`,
+  `get_activity_feed`, `get_list` (lists and their books), `get_vibes`, and `get_prompts`
+  break ties by id. In `get_user_library`, books with no value for the sort field (e.g.
+  unrated books under `sort="rating"`) now come last in both directions, instead of first
+  under `desc`.
 
 ### Added
 
@@ -147,18 +175,11 @@ extras: `get_book`'s edition lookup adds `subtitle`, `isbn_10`, and `book`; `get
 
 ### Changed
 
-- The server no longer loads a `.env` file. It used to search upward from its install
-  directory, so a stray `.env` (for example in your home directory) could change its settings.
-  Set variables in your MCP client's `env` block, or name the file explicitly with
-  `uvx --env-file /path/to/hardcover.env hardcover-mcp`.
-- `HARDCOVER_API_URL` is documented, and only `https://` URLs are accepted, since every
-  request carries your token.
+- The README covers Claude Code setup (user scope, `--env-file`) and the current tool
+  capabilities, and a test checks that every setting the server reads is documented
+  (#95, thanks @tongwentao).
 - Dependency versions are capped below the next major releases (`mcp<3`, `httpx<1`), so a
   future breaking release of either can't break existing installs.
-- Every tool that sets privacy (`set_user_book`, `set_list`, `set_journal_entry`,
-  `set_reading_goal`) accepts the same values: `public`, `followers` (or `followers_only`),
-  or `private`, in any case, or `1`/`2`/`3`. Other values are an error listing the valid
-  ones; before, `set_user_book` and `set_list` passed any number through.
 - Requests reuse one HTTP connection, so tools that make several API calls are faster.
 
 ## [0.9.0] - 2026-10-20

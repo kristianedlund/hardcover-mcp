@@ -81,7 +81,7 @@ def _format_series(s: dict[str, Any]) -> dict[str, Any]:
 
 
 async def handle_get_series(arguments: dict[str, Any]) -> list[TextContent]:
-    """Fetch a series by id, slug, or exact name, including books in order.
+    """Fetch a series by id, slug, or name (the top search match), including books in order.
 
     Parameters
     ----------
@@ -147,7 +147,10 @@ TOOLS: list[ToolSpec] = [
                     },
                     "name": {
                         "type": "string",
-                        "description": "Exact series name (e.g. 'The Stormlight Archive').",
+                        "description": (
+                            "Series name, resolved to the top search match "
+                            "(e.g. 'The Stormlight Archive')."
+                        ),
                     },
                 },
             },
