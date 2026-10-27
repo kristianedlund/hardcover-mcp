@@ -7,7 +7,7 @@ from mcp.types import TextContent, Tool
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._results import list_result
-from hardcover_mcp.tools._validation import _require_int
+from hardcover_mcp.tools._validation import _require_count, _require_int
 
 _DEFAULT_LIMIT = 25
 _MAX_LIMIT = 100
@@ -112,8 +112,10 @@ async def handle_get_activity_feed(arguments: dict[str, Any]) -> list[TextConten
     list[TextContent]
         JSON ``{returned, offset, activities}``: event type, book, user, timestamp each.
     """
-    limit = min(_require_int(arguments.get("limit", _DEFAULT_LIMIT), "limit"), _MAX_LIMIT)
-    offset = _require_int(arguments.get("offset", 0), "offset")
+    limit = _require_count(
+        arguments.get("limit"), "limit", default=_DEFAULT_LIMIT, minimum=1, maximum=_MAX_LIMIT
+    )
+    offset = _require_count(arguments.get("offset"), "offset", default=0)
 
     user_id = arguments.get("user_id")
     username = arguments.get("username")

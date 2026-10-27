@@ -7,7 +7,7 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
-from hardcover_mcp.tools._validation import ToolError, _require_int
+from hardcover_mcp.tools._validation import ToolError, _require_count, _require_int, _require_str
 from hardcover_mcp.tools.editions import EDITION_FIELDS, format_edition, handle_get_edition
 
 # Older records leave the role empty; on those the contributions relation says "Author".
@@ -151,7 +151,7 @@ async def resolve_id_by_name(name: str, query_type: str) -> Any:
     hits = result["data"]["search"]["results"].get("hits", [])
     if not hits:
         return None
-    return hits[0].get("document", {}).get("id")
+    return (hits[0].get("document") or {}).get("id")
 
 
 # Per-type search-hit projection: output_key -> document_key.
@@ -203,7 +203,7 @@ def _format_search_hit(hit: dict[str, Any], query_type: str = "Book") -> dict[st
     dict[str, Any]
         Flattened dict of relevant fields for the given entity type.
     """
-    doc = hit.get("document", {})
+    doc = hit.get("document") or {}
     fields = _HIT_FIELDS.get(query_type, _HIT_FIELDS["Book"])
     out = {out_key: doc.get(doc_key) for out_key, doc_key in fields.items()}
     # ``author_names`` on the document lists every contributor; its contributions carry roles.
@@ -285,8 +285,12 @@ async def handle_search_books(arguments: dict[str, Any]) -> list[TextContent]:
         valid = ", ".join(sorted(VALID_QUERY_TYPES))
         raise ToolError(f"invalid query_type '{query_type}'. Must be one of: {valid}.")
 
-    per_page = min(arguments.get("per_page", 10), 25)
-    page = arguments.get("page", 1)
+    per_page = _require_count(
+        arguments.get("per_page"), "per_page", default=10, minimum=1, maximum=25
+    )
+    page = _require_count(arguments.get("page"), "page", default=1, minimum=1)
+    sort = _require_str(arguments.get("sort"), "sort")
+    filter_by = _require_str(arguments.get("filter_by"), "filter_by")
 
     result = await execute(
         SEARCH_QUERY,
@@ -295,8 +299,8 @@ async def handle_search_books(arguments: dict[str, Any]) -> list[TextContent]:
             "query_type": query_type,
             "per_page": per_page,
             "page": page,
-            "sort": arguments.get("sort"),
-            "filter_by": arguments.get("filter_by"),
+            "sort": sort,
+            "filter_by": filter_by,
         },
     )
 
@@ -362,9 +366,12 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
     if not book_id and not slug:
         raise ToolError(_ONE_KEY_ERROR)
 
-    editions_limit = min(
-        _require_int(arguments.get("editions_limit", _DEFAULT_EDITIONS_LIMIT), "editions_limit"),
-        _MAX_EDITIONS_LIMIT,
+    editions_limit = _require_count(
+        arguments.get("editions_limit"),
+        "editions_limit",
+        default=_DEFAULT_EDITIONS_LIMIT,
+        minimum=1,
+        maximum=_MAX_EDITIONS_LIMIT,
     )
     if book_id:
         result = await execute(GET_BOOK_BY_ID_QUERY, {"id": _require_int(book_id, "id")})

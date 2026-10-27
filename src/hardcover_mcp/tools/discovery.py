@@ -7,7 +7,7 @@ from mcp.types import TextContent, Tool
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._results import list_result
-from hardcover_mcp.tools._validation import ToolError, _require_int
+from hardcover_mcp.tools._validation import ToolError, _require_bool, _require_count
 from hardcover_mcp.tools.books import fetch_books_by_ids
 
 # ── Trending ──
@@ -47,11 +47,14 @@ async def handle_get_trending_books(arguments: dict[str, Any]) -> list[TextConte
         valid = ", ".join(sorted(_TRENDING_DURATIONS))
         raise ToolError(f"invalid duration '{duration}'. Must be one of: {valid}.")
 
-    limit = min(
-        _require_int(arguments.get("limit", _DEFAULT_TRENDING_LIMIT), "limit"),
-        _MAX_TRENDING_LIMIT,
+    limit = _require_count(
+        arguments.get("limit"),
+        "limit",
+        default=_DEFAULT_TRENDING_LIMIT,
+        minimum=1,
+        maximum=_MAX_TRENDING_LIMIT,
     )
-    offset = _require_int(arguments.get("offset", 0), "offset")
+    offset = _require_count(arguments.get("offset"), "offset", default=0)
 
     result = await execute(
         BOOKS_TRENDING_QUERY, {"duration": duration, "limit": limit, "offset": offset}
@@ -110,18 +113,23 @@ async def handle_get_vibes(arguments: dict[str, Any]) -> list[TextContent]:
     list[TextContent]
         JSON ``{returned, offset, vibes}``, each vibe with metadata and a ``books`` array.
     """
-    featured = arguments.get("featured", True)
-    limit = min(
-        _require_int(arguments.get("limit", _DEFAULT_VIBES_LIMIT), "limit"), _MAX_VIBES_LIMIT
+    featured = _require_bool(arguments.get("featured"), "featured", default=True)
+    limit = _require_count(
+        arguments.get("limit"),
+        "limit",
+        default=_DEFAULT_VIBES_LIMIT,
+        minimum=1,
+        maximum=_MAX_VIBES_LIMIT,
     )
-    offset = _require_int(arguments.get("offset", 0), "offset")
-    requested_bpv = arguments.get("books_per_vibe", _DEFAULT_BOOKS_PER_VIBE)
-    books_per_vibe = min(
-        _require_int(requested_bpv, "books_per_vibe"),
-        _MAX_BOOKS_PER_VIBE,
+    offset = _require_count(arguments.get("offset"), "offset", default=0)
+    books_per_vibe = _require_count(
+        arguments.get("books_per_vibe"),
+        "books_per_vibe",
+        default=_DEFAULT_BOOKS_PER_VIBE,
+        maximum=_MAX_BOOKS_PER_VIBE,
     )
 
-    result = await execute(_render_vibes_query(bool(featured)), {"limit": limit, "offset": offset})
+    result = await execute(_render_vibes_query(featured), {"limit": limit, "offset": offset})
     vibes = result["data"]["vibes"]
 
     # Hydrate every vibe's books in one query, then slot them back per vibe (avoids N+1).

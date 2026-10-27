@@ -82,7 +82,7 @@ class TestHandleGetReadingGoal:
     async def test_invalid_limit_returns_error(self):
         with pytest.raises(ToolError) as exc:
             await handle_get_reading_goal({"limit": 0})
-        assert str(exc.value) == "'limit' must be greater than 0."
+        assert str(exc.value) == "'limit' must be at least 1, got: 0"
 
 
 class TestHandleGetReadingGoalPaging:

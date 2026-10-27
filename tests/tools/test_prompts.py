@@ -241,3 +241,11 @@ class TestHandleSetPromptAnswer:
 
         assert "could not withdraw" in str(exc.value)
         assert "few seconds" in str(exc.value)
+
+
+async def test_featured_false_as_a_string_lists_all_prompts():
+    mock = AsyncMock(return_value={"data": {"prompts": []}})
+    with patch("hardcover_mcp.tools.prompts.execute", new=mock):
+        await handle_get_prompts({"featured": "false"})
+
+    assert mock.call_args[0][1]["where"] is None

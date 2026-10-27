@@ -7,7 +7,7 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
-from hardcover_mcp.tools._validation import ToolError, _require_int
+from hardcover_mcp.tools._validation import ToolError, _require_count, _require_int
 from hardcover_mcp.tools.books import resolve_id_by_name
 
 # ── Read: get_author by id, slug, or name ──
@@ -122,9 +122,12 @@ async def handle_get_author(arguments: dict[str, Any]) -> list[TextContent]:
     if not author_id and not slug and not name:
         raise ToolError("provide 'id', 'slug', or 'name'.")
 
-    books_limit = min(
-        _require_int(arguments.get("books_limit", _DEFAULT_BOOKS_LIMIT), "books_limit"),
-        _MAX_BOOKS_LIMIT,
+    books_limit = _require_count(
+        arguments.get("books_limit"),
+        "books_limit",
+        default=_DEFAULT_BOOKS_LIMIT,
+        minimum=1,
+        maximum=_MAX_BOOKS_LIMIT,
     )
 
     vars: dict[str, Any] = {"books_limit": books_limit}

@@ -7,11 +7,12 @@ from mcp.types import TextContent, Tool, ToolAnnotations
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import DELETE, READ, ToolSpec
-from hardcover_mcp.tools._results import list_result
+from hardcover_mcp.tools._results import list_result, mutation_payload
 from hardcover_mcp.tools._validation import (
     PRIVACY_DESCRIPTION,
     ToolError,
     _privacy_argument,
+    _require_count,
     _require_int,
     privacy_label,
 )
@@ -186,12 +187,8 @@ async def handle_get_reading_journal(arguments: dict[str, Any]) -> list[TextCont
 
     event = arguments.get("event")
 
-    limit_raw = arguments.get("limit", 25)
-    limit = _require_int(limit_raw, "limit")
-    limit = min(limit, 100)
-
-    offset_raw = arguments.get("offset", 0)
-    offset = _require_int(offset_raw, "offset")
+    limit = _require_count(arguments.get("limit"), "limit", default=25, minimum=1, maximum=100)
+    offset = _require_count(arguments.get("offset"), "offset", default=0)
 
     # --- 2. Fetch authenticated user
     user = await get_current_user()
@@ -291,7 +288,7 @@ async def _create_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
     # Auth gate — the API scopes the mutation to the authenticated user via token.
     await get_current_user()
     result = await execute(INSERT_READING_JOURNAL_MUTATION, {"object": obj})
-    created = result["data"]["insert_reading_journal"]["reading_journal"]
+    created = mutation_payload(result, "insert_reading_journal")["reading_journal"]
     if created is None:
         raise ToolError("journal entry not created.")
     return [TextContent(type="text", text=json.dumps(_format_written_entry(created), indent=2))]
@@ -349,7 +346,7 @@ async def _update_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
     obj.update(updates)
 
     result = await execute(UPDATE_READING_JOURNAL_MUTATION, {"id": entry_id, "object": obj})
-    payload = result["data"]["update_reading_journal"]
+    payload = mutation_payload(result, "update_reading_journal")
     if payload.get("errors"):
         raise ToolError("; ".join(payload["errors"]))
     updated = payload.get("reading_journal") or {**current, **obj, "id": entry_id}

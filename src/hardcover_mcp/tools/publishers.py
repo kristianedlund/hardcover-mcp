@@ -7,7 +7,7 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
-from hardcover_mcp.tools._validation import ToolError, _require_int
+from hardcover_mcp.tools._validation import ToolError, _require_count, _require_int
 from hardcover_mcp.tools.books import resolve_id_by_name
 from hardcover_mcp.tools.editions import EDITION_FIELDS, format_edition
 
@@ -110,11 +110,16 @@ async def handle_get_publisher(arguments: dict[str, Any]) -> list[TextContent]:
     if not publisher_id and not slug and not name:
         raise ToolError("provide 'id', 'slug', or 'name'.")
 
-    editions_limit = min(
-        _require_int(arguments.get("editions_limit", _DEFAULT_EDITIONS_LIMIT), "editions_limit"),
-        _MAX_EDITIONS_LIMIT,
+    editions_limit = _require_count(
+        arguments.get("editions_limit"),
+        "editions_limit",
+        default=_DEFAULT_EDITIONS_LIMIT,
+        minimum=1,
+        maximum=_MAX_EDITIONS_LIMIT,
     )
-    editions_offset = _require_int(arguments.get("editions_offset", 0), "editions_offset")
+    editions_offset = _require_count(
+        arguments.get("editions_offset"), "editions_offset", default=0
+    )
 
     variables: dict[str, Any] = {
         "editions_limit": editions_limit,

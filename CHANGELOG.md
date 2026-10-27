@@ -77,6 +77,17 @@ extras: `get_book`'s edition lookup adds `subtitle`, `isbn_10`, and `book`; `get
 
 ### Fixed
 
+- Bad `limit`, `offset`, `page`, and similar values (a string like `"x"`, a negative number,
+  `true`) get a clear error in every tool instead of a traceback; numeric strings like
+  `"10"` work. Values above a tool's maximum are capped as before. Flags such as `featured`,
+  `owned`, and `include_stats` accept `true`/`false` (also as strings) and reject anything
+  else; `featured="false"` used to count as true. `sort`, `order`, and `filter_by` must be
+  strings.
+- A timeout, a connection failure, or an HTTP error from Hardcover (including 429/503 that
+  persists after retries) is a short error instead of a traceback. A timed-out request isn't
+  retried, since a change may have been saved anyway; the message says to check.
+- When Hardcover answers a write without the expected result (a null payload), the tool says
+  so instead of failing with a traceback.
 - `get_user_library` with `start_date`/`end_date` applies `status` (e.g. books you finished
   in May that are marked Read); it used to ignore it, and an invalid status wasn't rejected.
   A date range is always sorted by finish date, newest first, so passing `sort` or `order`

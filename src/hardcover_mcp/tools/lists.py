@@ -7,10 +7,11 @@ from mcp.types import TextContent, Tool, ToolAnnotations
 
 from hardcover_mcp.client import HardcoverAPIError, execute
 from hardcover_mcp.tools._registry import DELETE, READ, UPDATE, ToolSpec
-from hardcover_mcp.tools._results import list_result
+from hardcover_mcp.tools._results import list_result, mutation_payload, returned_object
 from hardcover_mcp.tools._validation import (
     PRIVACY_DESCRIPTION,
     ToolError,
+    _require_count,
     _require_int,
     _require_privacy,
     privacy_label,
@@ -83,7 +84,7 @@ def _format_list_summary(lst: dict[str, Any]) -> dict[str, Any]:
 
 def _format_list_book(lb: dict[str, Any]) -> dict[str, Any]:
     """Format a list_book entry into a flat dict with position and book info."""
-    book = lb.get("book", {})
+    book = lb.get("book") or {}
     authors = author_names(book)
     return {
         "position": lb.get("position"),
@@ -110,8 +111,8 @@ async def _get_my_lists(arguments: dict[str, Any]) -> list[TextContent]:
     user = await get_current_user()
     user_id = user["id"]
 
-    limit = min(arguments.get("limit", 50), 200)
-    offset = arguments.get("offset", 0)
+    limit = _require_count(arguments.get("limit"), "limit", default=50, minimum=1, maximum=200)
+    offset = _require_count(arguments.get("offset"), "offset", default=0)
 
     result = await execute(
         GET_MY_LISTS_QUERY, {"user_id": user_id, "limit": limit, "offset": offset}
@@ -142,8 +143,10 @@ async def handle_get_list(arguments: dict[str, Any]) -> list[TextContent]:
     if list_id is None:
         return await _get_my_lists(arguments)
 
-    books_limit = min(arguments.get("books_limit", 25), 100)
-    books_offset = arguments.get("books_offset", 0)
+    books_limit = _require_count(
+        arguments.get("books_limit"), "books_limit", default=25, minimum=1, maximum=100
+    )
+    books_offset = _require_count(arguments.get("books_offset"), "books_offset", default=0)
 
     result = await execute(
         GET_LIST_BY_ID_QUERY,
@@ -246,9 +249,9 @@ async def _create_list(arguments: dict[str, Any]) -> list[TextContent]:
     obj = _build_list_input(arguments)
 
     result = await execute(CREATE_LIST_MUTATION, {"object": obj})
-    mutation_result = result["data"]["insert_list"]
+    mutation_result = mutation_payload(result, "insert_list")
 
-    lst = mutation_result.get("list", {})
+    lst = returned_object(mutation_result, "list", "list")
     output = {
         "id": lst.get("id"),
         "name": lst.get("name"),
@@ -284,9 +287,9 @@ async def _update_list(arguments: dict[str, Any]) -> list[TextContent]:
     result = await execute(
         UPDATE_LIST_MUTATION, {"id": _require_int(list_id, "id"), "object": obj}
     )
-    mutation_result = result["data"]["update_list"]
+    mutation_result = mutation_payload(result, "update_list")
 
-    lst = mutation_result.get("list", {})
+    lst = returned_object(mutation_result, "list", "list")
     output = {
         "id": lst.get("id"),
         "name": lst.get("name"),
@@ -434,7 +437,7 @@ async def handle_set_list_book(arguments: dict[str, Any]) -> list[TextContent]:
         if position is not None:
             obj["position"] = position
         result = await execute(INSERT_LIST_BOOK_MUTATION, {"object": obj})
-        lb = result["data"]["insert_list_book"].get("list_book") or {}
+        lb = mutation_payload(result, "insert_list_book").get("list_book") or {}
         output.update(changed=True, list_book_id=lb.get("id"), position=lb.get("position"))
     elif not on_list and existing_id is not None:
         await execute(DELETE_LIST_BOOK_MUTATION, {"id": existing_id})
@@ -488,7 +491,7 @@ async def _set_on_lists(raw_ids: Any, book_id: int, on_list: bool) -> list[TextC
                         INSERT_LIST_BOOK_MUTATION,
                         {"object": {"list_id": list_id, "book_id": book_id}},
                     )
-                    lb = result["data"]["insert_list_book"].get("list_book") or {}
+                    lb = mutation_payload(result, "insert_list_book").get("list_book") or {}
                     entry.update(changed=True, list_book_id=lb.get("id"))
                 else:
                     await execute(DELETE_LIST_BOOK_MUTATION, {"id": existing[list_id]})

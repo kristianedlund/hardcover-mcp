@@ -7,13 +7,16 @@ from mcp.types import TextContent, Tool, ToolAnnotations
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import DELETE, READ, UPDATE, ToolSpec
-from hardcover_mcp.tools._results import list_result
+from hardcover_mcp.tools._results import list_result, mutation_payload, returned_object
 from hardcover_mcp.tools._validation import (
     PRIVACY_DESCRIPTION,
     ToolError,
+    _require_bool,
+    _require_count,
     _require_float,
     _require_int,
     _require_privacy,
+    _require_str,
     privacy_label,
 )
 from hardcover_mcp.tools.books import author_names
@@ -239,7 +242,7 @@ query GetBookIdBySlug($slug: String!) {
 
 def _format_user_book(ub: dict[str, Any]) -> dict[str, Any]:
     """Format a user_book record into a flat summary dict."""
-    book = ub.get("book", {})
+    book = ub.get("book") or {}
     authors = author_names(book)
     result: dict[str, Any] = {
         "user_book_id": ub["id"],
@@ -274,7 +277,7 @@ def _list_memberships(list_books: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _format_user_book_detail(ub: dict[str, Any]) -> dict[str, Any]:
     """Format a user_book record into a detailed dict including reads, review, and edition."""
-    book = ub.get("book", {})
+    book = ub.get("book") or {}
     authors = author_names(book)
     return {
         "user_book_id": ub["id"],
@@ -315,15 +318,15 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
     list[TextContent]
         JSON with ``total`` count, ``returned``, ``offset``, and ``books`` list.
     """
-    limit = min(arguments.get("limit", 25), 100)
-    offset = arguments.get("offset", 0)
+    limit = _require_count(arguments.get("limit"), "limit", default=25, minimum=1, maximum=100)
+    offset = _require_count(arguments.get("offset"), "offset", default=0)
     status = arguments.get("status")
-    start_date = arguments.get("start_date")
-    end_date = arguments.get("end_date")
-    has_review = bool(arguments.get("has_review", False))
-    owned = bool(arguments.get("owned", False))
-    sort = arguments.get("sort", "reviewed" if has_review else "updated")
-    order = arguments.get("order", "desc")
+    start_date = _require_str(arguments.get("start_date"), "start_date")
+    end_date = _require_str(arguments.get("end_date"), "end_date")
+    has_review = _require_bool(arguments.get("has_review"), "has_review")
+    owned = _require_bool(arguments.get("owned"), "owned")
+    sort = _require_str(arguments.get("sort"), "sort") or ("reviewed" if has_review else "updated")
+    order = _require_str(arguments.get("order"), "order") or "desc"
 
     if sort not in LIBRARY_SORT_FIELDS:
         valid = ", ".join(LIBRARY_SORT_FIELDS)
@@ -675,7 +678,7 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
 
         ub_id = current["id"]
         result = await execute(UPDATE_USER_BOOK_MUTATION, {"id": ub_id, "object": obj})
-        mutation_result = result["data"]["update_user_book"]
+        mutation_result = mutation_payload(result, "update_user_book")
     else:
         obj = {}
         obj["book_id"] = book_id_int
@@ -697,12 +700,12 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
             obj["edition_id"] = edition_id
 
         result = await execute(INSERT_USER_BOOK_MUTATION, {"object": obj})
-        mutation_result = result["data"]["insert_user_book"]
+        mutation_result = mutation_payload(result, "insert_user_book")
 
     if mutation_result.get("error"):
         raise ToolError(str(mutation_result["error"]))
 
-    ub = mutation_result.get("user_book", {})
+    ub = returned_object(mutation_result, "user_book", "library entry")
     output = {
         "user_book_id": ub.get("id"),
         "book_id": ub.get("book_id"),
@@ -892,7 +895,7 @@ async def _add_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
                 "object": merged,
             },
         )
-        mutation_result = result["data"]["update_user_book_read"]
+        mutation_result = mutation_payload(result, "update_user_book_read")
     else:
         result = await execute(
             INSERT_USER_BOOK_READ_MUTATION,
@@ -901,14 +904,15 @@ async def _add_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
                 "userBookRead": read_input,
             },
         )
-        mutation_result = result["data"]["insert_user_book_read"]
+        mutation_result = mutation_payload(result, "insert_user_book_read")
 
     if mutation_result.get("error"):
         raise ToolError(str(mutation_result["error"]))
 
     return [
         TextContent(
-            type="text", text=json.dumps(mutation_result.get("user_book_read", {}), indent=2)
+            type="text",
+            text=json.dumps(returned_object(mutation_result, "user_book_read", "read"), indent=2),
         )
     ]
 
@@ -955,14 +959,15 @@ async def _update_user_book_read(arguments: dict[str, Any]) -> list[TextContent]
             "object": merged,
         },
     )
-    mutation_result = result["data"]["update_user_book_read"]
+    mutation_result = mutation_payload(result, "update_user_book_read")
 
     if mutation_result.get("error"):
         raise ToolError(str(mutation_result["error"]))
 
     return [
         TextContent(
-            type="text", text=json.dumps(mutation_result.get("user_book_read", {}), indent=2)
+            type="text",
+            text=json.dumps(returned_object(mutation_result, "user_book_read", "read"), indent=2),
         )
     ]
 
