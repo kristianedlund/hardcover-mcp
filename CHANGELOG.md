@@ -106,6 +106,23 @@ extras: `get_book`'s edition lookup adds `subtitle`, `isbn_10`, and `book`; `get
 
 ### Fixed
 
+- An API token with a space, line break, or other unusual character inside it (e.g. a
+  wrapped value in a config file) is refused with a clear message. Before, the request
+  failed with an error that quoted the whole authorization header, token included, into the
+  tool result.
+- `set_list_book` with a single `list_id` checks the list is yours, like `list_ids` already
+  did, instead of trying to change another user's list.
+- `set_list_book` with `list_ids`: if Hardcover doesn't confirm one list's change, that list
+  gets an `error` and the others still report their results; before, the whole call failed.
+- `set_user_book_read` without `id`, given only a finish date earlier than your unfinished
+  read's start (e.g. logging a past read), creates a new read instead of finishing the
+  current one before it started.
+- `get_book` reads `include_characters` / `include_editions` like other flags: `"false"`
+  is false, and other values are an error.
+- A goal whose description is still the generated "<goal> <metric>s" gets a new one when
+  its target changes. A rejected ownership change in `set_user_book` is reported instead of
+  `owned_changed: true`. Withdrawing a prompt answer reports timeouts, limits, and missing
+  scopes as themselves instead of "may already have been withdrawn".
 - Deletes and edits by id only act on your own records. `delete_journal_entry`,
   `delete_user_book_read`, `delete_list`, `set_list` with `id`, `set_user_book_read` with
   `id`, and any tool given a `user_book_id` now look the record up as yours first and fail

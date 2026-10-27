@@ -7,7 +7,13 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
-from hardcover_mcp.tools._validation import ToolError, _require_count, _require_int, _require_str
+from hardcover_mcp.tools._validation import (
+    ToolError,
+    _require_bool,
+    _require_count,
+    _require_int,
+    _require_str,
+)
 from hardcover_mcp.tools.editions import EDITION_FIELDS, format_edition, handle_get_edition
 
 # Older records leave the role empty; on those the contributions relation says "Author".
@@ -345,6 +351,8 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
     """
     book_id = arguments.get("id")
     slug = arguments.get("slug")
+    include_characters = _require_bool(arguments.get("include_characters"), "include_characters")
+    include_editions = _require_bool(arguments.get("include_editions"), "include_editions")
     edition_keys = {
         key: arguments[key]
         for key in _EDITION_KEYS
@@ -354,7 +362,7 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
     if edition_keys:
         if book_id or slug or len(edition_keys) > 1:
             raise ToolError(_ONE_KEY_ERROR)
-        if arguments.get("include_characters") or arguments.get("include_editions"):
+        if include_characters or include_editions:
             raise ToolError(
                 "include_characters and include_editions need a book key "
                 "('id' or 'slug'); the edition's result includes its book id."
@@ -388,11 +396,11 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
     book["contributors"] = contributors(book)
     del book["contributions"]
 
-    if arguments.get("include_characters"):
+    if include_characters:
         chars = await execute(GET_CHARACTERS_QUERY, {"book_id": book["id"]})
         book["characters"] = [_format_character(bc) for bc in chars["data"]["book_characters"]]
 
-    if arguments.get("include_editions"):
+    if include_editions:
         editions = await execute(
             GET_EDITIONS_QUERY, {"book_id": book["id"], "limit": editions_limit}
         )

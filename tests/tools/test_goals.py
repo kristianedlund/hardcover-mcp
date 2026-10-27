@@ -386,3 +386,34 @@ class TestGoalEditAndDelete:
 
         assert "no reading goal of yours" in str(exc.value)
         assert self.mock_exec.call_count == 1
+
+
+class TestGeneratedDescription:
+    async def _edit(self, stored_description: str, arguments: dict) -> dict:
+        mock_exec = AsyncMock(
+            side_effect=[
+                _own_goal(goal=40, description=stored_description),
+                {"data": {"update_goal": {"errors": None, "goal": None}}},
+            ]
+        )
+        with (
+            patch(
+                "hardcover_mcp.tools.goals.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch("hardcover_mcp.tools.goals.execute", new=mock_exec),
+        ):
+            await handle_set_reading_goal({"id": 7, **arguments})
+        return mock_exec.call_args_list[1][0][1]["object"]
+
+    async def test_generated_description_follows_the_new_target(self):
+        sent = await self._edit("40 books", {"goal": 50})
+        assert sent["description"] == "50 books"
+
+    async def test_custom_description_is_kept(self):
+        sent = await self._edit("2026 challenge", {"goal": 50})
+        assert sent["description"] == "2026 challenge"
+
+    async def test_passed_description_wins(self):
+        sent = await self._edit("40 books", {"goal": 50, "description": "40 books"})
+        assert sent["description"] == "40 books"

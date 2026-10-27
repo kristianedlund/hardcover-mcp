@@ -387,3 +387,31 @@ async def test_long_block_before_a_request_gives_up(monkeypatch):
         await client.execute("query { me { id } }")
 
     assert _FakeAsyncClient.captured_headers == []
+
+
+# ── Token never reaches an error message ──
+
+
+@pytest.mark.parametrize(
+    "token", ["SECRET\nX", "SEC RET", "SECRET\x01", "SÉCRET", "Bearer SECRET\tX"]
+)
+async def test_unusable_token_is_refused_without_quoting_it(monkeypatch, token):
+    monkeypatch.setenv("HARDCOVER_API_TOKEN", token)
+    _FakeAsyncClient.responses = [_response()]
+
+    with pytest.raises(client.HardcoverAPIError, match="Copy the key again") as exc:
+        await client.execute("query { me { id } }")
+
+    assert "SECRET" not in str(exc.value) and "SÉCRET" not in str(exc.value)
+    assert _FakeAsyncClient.captured_headers == []
+
+
+async def test_protocol_error_message_leaves_out_the_request_headers():
+    leak = httpx.LocalProtocolError("Illegal header value b'Bearer test-token-not-real'")
+    _FakeAsyncClient.responses = [leak]
+
+    with pytest.raises(client.HardcoverAPIError) as exc:
+        await client.execute("query { me { id } }")
+
+    assert "test-token-not-real" not in str(exc.value)
+    assert "connection to Hardcover failed" in str(exc.value)

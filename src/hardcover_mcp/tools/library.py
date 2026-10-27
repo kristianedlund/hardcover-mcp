@@ -469,7 +469,7 @@ async def _set_edition_owned(edition_id: int, owned: bool) -> bool:
     currently_owned = bool(lists and lists[0]["list_books"])
     if currently_owned == owned:
         return False
-    await execute(EDITION_OWNED_MUTATION, {"id": edition_id})
+    mutation_payload(await execute(EDITION_OWNED_MUTATION, {"id": edition_id}), "edition_owned")
     return True
 
 
@@ -825,11 +825,17 @@ def _build_read_input(arguments: dict[str, Any]) -> dict[str, Any]:
 def _continues_read(active: dict[str, Any], read_input: dict[str, Any]) -> bool:
     """Whether a call without a read id continues the unfinished read.
 
-    It does unless it gives a start date different from the unfinished read's: then it's
-    another read (e.g. logging a past read while you're reading the book again).
+    It doesn't when it gives a start date different from the unfinished read's, or a finish
+    date before that read started: then it's another read (e.g. logging a past read while
+    you're reading the book again).
     """
-    started, current = read_input.get("started_at"), active.get("started_at")
-    return started is None or current is None or str(started)[:10] == str(current)[:10]
+    current = active.get("started_at")
+    if current is None:
+        return True
+    started, finished = read_input.get("started_at"), read_input.get("finished_at")
+    if started is not None and str(started)[:10] != str(current)[:10]:
+        return False
+    return finished is None or str(finished)[:10] >= str(current)[:10]
 
 
 OWN_USER_BOOK_QUERY = """
@@ -1266,8 +1272,8 @@ TOOLS: list[ToolSpec] = [
                 "(a user_book_read id from get_user_book): edit that read, overwriting only the "
                 "fields you pass, e.g. to fix a past finish date. Without id: pass book_id or "
                 "user_book_id; if the book has an unfinished read it is updated (progress, a "
-                "finish date, or the same start date), otherwise a new read is created, e.g. "
-                "a re-read or a past read with its own start date. The book must already be "
+                "later finish date, or the same start date), otherwise a new read is created, "
+                "e.g. a re-read or a past read with its own dates. The book must already be "
                 "in your library (add it with set_user_book). Returns the read entry with its "
                 "id."
             ),

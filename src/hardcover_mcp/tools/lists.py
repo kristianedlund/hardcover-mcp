@@ -373,17 +373,6 @@ mutation DeleteListBook($id: Int!) {
 }
 """
 
-FIND_LIST_BOOK_QUERY = """
-query FindListBook($list_id: Int!, $book_id: Int!) {
-    list_books(
-        where: {list_id: {_eq: $list_id}, book_id: {_eq: $book_id}},
-        limit: 1
-    ) {
-        id
-    }
-}
-"""
-
 
 # For list_ids: which of the lists are yours, and the book's entries on them, in one request.
 FIND_OWN_LIST_BOOKS_QUERY = """
@@ -444,7 +433,13 @@ async def handle_set_list_book(arguments: dict[str, Any]) -> list[TextContent]:
         else None
     )
 
-    found = await execute(FIND_LIST_BOOK_QUERY, {"list_id": list_id, "book_id": book_id})
+    user = await get_current_user()
+    found = await execute(
+        FIND_OWN_LIST_BOOKS_QUERY,
+        {"list_ids": [list_id], "book_id": book_id, "user_id": user["id"]},
+    )
+    if not found["data"]["lists"]:
+        raise ToolError("no list of yours with that id.")
     existing = found["data"]["list_books"]
     existing_id = existing[0]["id"] if existing else None
 
@@ -514,7 +509,7 @@ async def _set_on_lists(raw_ids: Any, book_id: int, on_list: bool) -> list[TextC
                 else:
                     await execute(DELETE_LIST_BOOK_MUTATION, {"id": existing[list_id]})
                     entry.update(changed=True, list_book_id=None)
-            except HardcoverAPIError as exc:
+            except (HardcoverAPIError, ToolError) as exc:
                 entry["error"] = str(exc)
         results.append(entry)
 

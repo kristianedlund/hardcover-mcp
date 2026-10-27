@@ -169,10 +169,13 @@ async def handle_set_prompt_answer(arguments: dict[str, Any]) -> list[TextConten
     elif not answered and existing_id is not None:
         try:
             await execute(DELETE_PROMPT_ANSWER_MUTATION, {"id": existing_id})
-        except RuntimeError:
+        except RuntimeError as exc:
             # Reads of prompt answers lag a few seconds behind writes, so the lookup can
             # return an answer that was just withdrawn; deleting it again fails on
-            # Hardcover's side with an opaque webhook error.
+            # Hardcover's side with an opaque GraphQL (webhook) error. Anything else, such
+            # as a timeout or the daily limit, keeps its own message.
+            if not str(exc).startswith("GraphQL error"):
+                raise
             raise ToolError(
                 "Hardcover could not withdraw that answer. It may already have "
                 "been withdrawn moments ago; changes to prompt answers can take a few "

@@ -34,8 +34,9 @@ _daily_reset_at: float | None = None
 _MAX_RETRIES = 5
 _RETRY_BACKOFF = 3.0  # seconds, doubles each retry
 _RETRYABLE_STATUSES = {429, 503}
-# Longest the client waits for the rate limit before giving up with a message, so a tool
-# call never hangs on a long Retry-After or RateLimit reset.
+# Longest single wait for the rate limit before giving up with a message, so a long
+# Retry-After or RateLimit reset can't stall a tool call. (Each wait is capped, not the whole
+# call: several retries can still add up to about a minute and a half.)
 _MAX_WAIT = 60.0
 
 # One HTTP client per event loop, so requests reuse open connections (keep-alive).
@@ -205,11 +206,21 @@ def _api_url() -> str:
 
 
 def _get_token() -> str:
-    """Read the API token from the environment."""
+    """Read the API token from the environment.
+
+    Rejects a token with spaces, line breaks, or other unusual characters inside it: httpx
+    would refuse the header with an error that quotes the whole header, token included.
+    """
     token = os.environ.get("HARDCOVER_API_TOKEN", "").strip()
     if not token:
         raise HardcoverAPIError(
             f"HARDCOVER_API_TOKEN is not set. Create a key at {NEW_API_KEY_URL}"
+        )
+    key = token.removeprefix("Bearer ")
+    if not key.isascii() or not key.isprintable() or any(c.isspace() for c in key):
+        raise HardcoverAPIError(
+            "HARDCOVER_API_TOKEN contains spaces, line breaks, or other characters an API key "
+            "can't have. Copy the key again as one line."
         )
     return token
 
@@ -266,6 +277,11 @@ async def execute(
             raise HardcoverAPIError(
                 "Hardcover didn't answer within 30 seconds. If you asked for a change, check "
                 "whether it was saved before trying again."
+            ) from None
+        except httpx.ProtocolError:
+            # Its message can quote request headers, token included, so don't pass it on.
+            raise HardcoverAPIError(
+                "The connection to Hardcover failed while sending the request. Try again."
             ) from None
         except httpx.HTTPError as exc:
             raise HardcoverAPIError(f"Couldn't reach Hardcover: {exc}") from None

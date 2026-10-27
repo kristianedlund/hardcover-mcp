@@ -90,10 +90,27 @@ class TestBuildListInput:
 
 
 def _found(*ids: int) -> dict:
-    return {"data": {"list_books": [{"id": i} for i in ids]}}
+    """FindOwnListBooks response for list 1 (yours) with the book's entries ``ids``."""
+    return {"data": {"lists": [{"id": 1}], "list_books": [{"id": i} for i in ids]}}
 
 
 class TestHandleSetListBook:
+    @pytest.fixture(autouse=True)
+    def _signed_in(self):
+        with patch(
+            "hardcover_mcp.tools.lists.get_current_user", new=AsyncMock(return_value={"id": 7})
+        ):
+            yield
+
+    async def test_list_that_isnt_yours_is_an_error_and_not_changed(self):
+        mock = AsyncMock(return_value={"data": {"lists": [], "list_books": [{"id": 9}]}})
+        with (
+            patch("hardcover_mcp.tools.lists.execute", new=mock),
+            pytest.raises(ToolError, match="no list of yours with that id"),
+        ):
+            await handle_set_list_book({"list_id": 1, "book_id": 2, "on_list": False})
+        assert mock.call_count == 1  # lookup only; their entry isn't deleted
+
     async def test_rejects_missing_on_list(self):
         with pytest.raises(ToolError) as exc:
             await handle_set_list_book({"list_id": 1, "book_id": 2})
@@ -386,3 +403,24 @@ async def test_a_list_that_isnt_yours_is_an_error_and_not_changed(call):
     ):
         await call()
     assert mock.call_count == 1
+
+
+async def test_list_ids_null_result_is_reported_on_that_list_only():
+    found = {"data": {"lists": [{"id": 1}, {"id": 2}], "list_books": []}}
+    mock = AsyncMock(
+        side_effect=[
+            found,
+            {"data": {"insert_list_book": {"list_book": {"id": 900}}}},
+            {"data": {"insert_list_book": None}},
+        ]
+    )
+    with (
+        patch("hardcover_mcp.tools.lists.get_current_user", new=AsyncMock(return_value={"id": 7})),
+        patch("hardcover_mcp.tools.lists.execute", new=mock),
+    ):
+        result = await handle_set_list_book({"list_ids": [1, 2], "book_id": 42, "on_list": True})
+
+    first, second = json.loads(result[0].text)["results"]
+    assert first == {"list_id": 1, "changed": True, "list_book_id": 900}
+    assert second["changed"] is False
+    assert "didn't confirm the change" in second["error"]
