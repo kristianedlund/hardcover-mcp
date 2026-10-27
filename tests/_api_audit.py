@@ -31,7 +31,9 @@ _RENDERERS: dict[str, list[dict]] = {
         }
         for s, r, o in itertools.product([False, True], repeat=3)
     ],
-    "_render_library_by_date_query": [{"with_owned": o} for o in (False, True)],
+    "_render_library_by_date_query": [
+        {"with_status": s, "with_owned": o} for s, o in itertools.product([False, True], repeat=2)
+    ],
     "_render_user_query": [
         {
             "by": by,

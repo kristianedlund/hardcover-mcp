@@ -125,6 +125,16 @@ class TestGetUserLibrary:
             assert isinstance(data["books"], list), args
             assert data["total"] >= data["returned"], args
 
+    async def test_date_range_filters_by_status(self):
+        from hardcover_mcp.tools.library import handle_get_user_library
+
+        window = {"start_date": "2000-01-01", "end_date": "2100-12-31", "limit": 20}
+        everything = json.loads((await handle_get_user_library(window))[0].text)
+        read = json.loads((await handle_get_user_library({**window, "status": "Read"}))[0].text)
+
+        assert read["total"] <= everything["total"]
+        assert all(b["status"] == "Read" for b in read["books"])
+
     async def test_returns_library_entries(self):
         from hardcover_mcp.tools.library import handle_get_user_library
 
