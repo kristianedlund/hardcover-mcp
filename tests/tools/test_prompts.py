@@ -249,3 +249,19 @@ async def test_featured_false_as_a_string_lists_all_prompts():
         await handle_get_prompts({"featured": "false"})
 
     assert mock.call_args[0][1]["where"] is None
+
+
+async def test_withdraw_keeps_other_errors_own_message():
+    from hardcover_mcp.client import HardcoverAPIError
+
+    mock_exec = AsyncMock(
+        side_effect=[_existing(99), HardcoverAPIError("Hardcover's daily API limit … is used up.")]
+    )
+    with (
+        patch(
+            "hardcover_mcp.tools.prompts.get_current_user", new=AsyncMock(return_value={"id": 5})
+        ),
+        patch("hardcover_mcp.tools.prompts.execute", new=mock_exec),
+        pytest.raises(HardcoverAPIError, match="daily API limit"),
+    ):
+        await handle_set_prompt_answer({"prompt_id": 1, "book_id": 2, "answered": False})

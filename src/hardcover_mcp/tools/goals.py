@@ -324,7 +324,12 @@ async def _edit_reading_goal(arguments: dict[str, Any]) -> list[TextContent]:
     archived = pick("archived")
     if not isinstance(archived, bool):
         raise ToolError("'archived' must be true or false")
-    description = pick("description") or f"{goal} {metric}s"
+    description = pick("description")
+    if arguments.get("description") is None and description == (
+        f"{current.get('goal')} {current.get('metric')}s"
+    ):
+        description = None  # still the generated default: describe the new target instead
+    description = description or f"{goal} {metric}s"
     if not isinstance(description, str):
         raise ToolError("'description' must be a string")
 

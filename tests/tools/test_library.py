@@ -1709,3 +1709,46 @@ class TestOnlyYourRecords:
                 handle_delete_user_book, {"user_book_id": 9}, {"data": {"user_books": []}}
             )
         assert self.mock_exec.call_count == 1
+
+
+class TestFinishOnlyReads:
+    async def _run(self, finished_at: str, written: dict) -> AsyncMock:
+        own = {"data": {"user_books": [{"id": 5}]}}
+        open_read = {"data": {"user_book_reads": [{"id": 3, "started_at": "2026-10-01"}]}}
+        mock_exec = AsyncMock(side_effect=[own, open_read, written])
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch("hardcover_mcp.tools.library.execute", new=mock_exec),
+        ):
+            await handle_set_user_book_read({"user_book_id": 5, "finished_at": finished_at})
+        return mock_exec
+
+    async def test_finish_before_the_open_read_started_is_another_read(self):
+        mock_exec = await self._run("2020-05-01", _READ_INSERTED)
+
+        sent = mock_exec.call_args_list[2][0][1]
+        assert sent == {"userBookId": 5, "userBookRead": {"finished_at": "2020-05-01"}}
+
+    async def test_finish_after_the_start_finishes_the_open_read(self):
+        mock_exec = await self._run("2026-10-20", _READ_UPDATED)
+
+        assert mock_exec.call_args_list[2][0][1]["id"] == 3
+
+
+async def test_rejected_owned_toggle_is_an_error():
+    from hardcover_mcp.tools.library import _set_edition_owned
+
+    mock_exec = AsyncMock(
+        side_effect=[{"data": {"lists": [{"list_books": []}]}}, {"data": {"edition_owned": None}}]
+    )
+    with (
+        patch(
+            "hardcover_mcp.tools.library.get_current_user", new=AsyncMock(return_value={"id": 1})
+        ),
+        patch("hardcover_mcp.tools.library.execute", new=mock_exec),
+        pytest.raises(ToolError, match="didn't confirm the change"),
+    ):
+        await _set_edition_owned(55, True)

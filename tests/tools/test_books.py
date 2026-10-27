@@ -535,3 +535,24 @@ class TestHandleGetBookEditionKeys:
             await handle_get_book({})
 
         assert "provide one of 'id' or 'slug'" in str(exc.value)
+
+
+class TestGetBookFlags:
+    @patch("hardcover_mcp.tools.books.execute", new_callable=AsyncMock)
+    async def test_false_as_a_string_leaves_the_extras_out(self, mock_execute):
+        mock_execute.return_value = _book()
+
+        data = json.loads(
+            (
+                await handle_get_book(
+                    {"id": 123, "include_characters": "false", "include_editions": "false"}
+                )
+            )[0].text
+        )
+
+        assert mock_execute.call_count == 1
+        assert "characters" not in data and "editions" not in data
+
+    async def test_other_values_are_an_error(self):
+        with pytest.raises(ToolError, match="'include_editions' must be true or false"):
+            await handle_get_book({"id": 123, "include_editions": "maybe"})
