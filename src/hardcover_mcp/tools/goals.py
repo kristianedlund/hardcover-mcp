@@ -196,7 +196,9 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
         Required: ``goal`` (int), ``metric`` (str: books/pages), ``start_date`` (str),
         and ``end_date`` (str), both as ISO 8601 dates.
         Optional: ``description`` (str), ``privacy`` (public/followers/private or 1/2/3).
-        With ``id`` (int), edits that goal instead — see ``_edit_reading_goal``.
+        With ``id`` (int), edits that goal instead — see ``_edit_reading_goal``. An active
+        goal with the same metric and dates is edited the same way (only passed fields
+        change) instead of creating a duplicate.
 
     Returns
     -------
@@ -225,24 +227,11 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
     description_raw = arguments.get("description")
     if description_raw is not None and not isinstance(description_raw, str):
         raise ToolError("'description' must be a string")
-    description = description_raw if description_raw else f"{goal} {metric}s"
-
     privacy_setting_id = _privacy_argument(arguments)
 
-    # --- 2. Build mutation input
+    # --- 2. A matching active goal is updated like an edit by id: only the fields passed
+    #        change, so its description and privacy aren't reset to the defaults.
     user = await get_current_user()
-    goal_input: dict[str, Any] = {
-        "goal": goal,
-        "metric": metric,
-        "start_date": start_date,
-        "end_date": end_date,
-        "description": description,
-        "conditions": {},
-    }
-    if privacy_setting_id is not None:
-        goal_input["privacy_setting_id"] = privacy_setting_id
-
-    # --- 3. Update a matching active goal if present; otherwise create one
     existing_result = await execute(
         FIND_MATCHING_READING_GOAL_QUERY,
         {
@@ -253,34 +242,31 @@ async def handle_set_reading_goal(arguments: dict[str, Any]) -> list[TextContent
         },
     )
     existing_goals = existing_result["data"]["goals"]
-
     if existing_goals:
-        mutation_result = await execute(
-            UPDATE_READING_GOAL_MUTATION,
-            {"id": existing_goals[0]["id"], "object": goal_input},
-        )
-        update_payload = mutation_result["data"]["update_goal"]
-        if update_payload.get("errors"):
-            errors = "; ".join(update_payload["errors"])
-            raise ToolError(errors)
-        raw_goal = update_payload.get("goal") or {
-            **goal_input,
-            "id": existing_goals[0]["id"],
-            "progress": None,
-            "state": None,
-        }
-    else:
-        mutation_result = await execute(INSERT_READING_GOAL_MUTATION, {"object": goal_input})
-        insert_payload = mutation_result["data"]["insert_goal"]
-        if insert_payload.get("errors"):
-            errors = "; ".join(insert_payload["errors"])
-            raise ToolError(errors)
-        raw_goal = insert_payload.get("goal") or {
-            **goal_input,
-            "id": insert_payload.get("id"),
-            "progress": None,
-            "state": None,
-        }
+        return await _edit_reading_goal({**arguments, "id": existing_goals[0]["id"]})
+
+    # --- 3. Otherwise create one
+    goal_input: dict[str, Any] = {
+        "goal": goal,
+        "metric": metric,
+        "start_date": start_date,
+        "end_date": end_date,
+        "description": description_raw or f"{goal} {metric}s",
+        "conditions": {},
+    }
+    if privacy_setting_id is not None:
+        goal_input["privacy_setting_id"] = privacy_setting_id
+
+    mutation_result = await execute(INSERT_READING_GOAL_MUTATION, {"object": goal_input})
+    insert_payload = mutation_result["data"]["insert_goal"]
+    if insert_payload.get("errors"):
+        raise ToolError("; ".join(insert_payload["errors"]))
+    raw_goal = insert_payload.get("goal") or {
+        **goal_input,
+        "id": insert_payload.get("id"),
+        "progress": None,
+        "state": None,
+    }
 
     # --- 4. Format and return
     return [TextContent(type="text", text=json.dumps(_format_reading_goal(raw_goal), indent=2))]
@@ -432,8 +418,8 @@ TOOLS: list[ToolSpec] = [
             description=(
                 "Create, update, or archive a reading goal. Without id: goal, metric, "
                 "start_date, and end_date are required; if an active goal with the same "
-                "metric and dates exists its target, description, and privacy are "
-                "overwritten, otherwise a new goal is created. With id (from "
+                "metric and dates exists it is updated (only the fields you pass change), "
+                "otherwise a new goal is created. With id (from "
                 "get_reading_goal): edit that goal, changing only the fields you pass; "
                 "archived=true hides it from get_reading_goal and archived=false brings it "
                 "back. Returns the goal with id, target, progress, state, and archived. To "

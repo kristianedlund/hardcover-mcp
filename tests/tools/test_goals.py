@@ -196,30 +196,31 @@ class TestHandleSetReadingGoal:
         assert insert_vars["description"] == "Read one per week"
         assert insert_vars["privacy_setting_id"] == 2
 
+    @pytest.mark.parametrize(
+        ("passed", "expected_description"),
+        [({}, "Books for the 2026 challenge"), ({"description": "New"}, "New")],
+        ids=["keeps-description", "changes-description"],
+    )
     @patch("hardcover_mcp.tools.goals.get_current_user", new_callable=AsyncMock)
     @patch("hardcover_mcp.tools.goals.execute", new_callable=AsyncMock)
-    async def test_updates_goal_when_match_exists(self, mock_execute, mock_user):
+    async def test_match_is_updated_keeping_unpassed_fields(
+        self, mock_execute, mock_user, passed, expected_description
+    ):
         mock_user.return_value = {"id": 1}
+        stored = {
+            "id": 12,
+            "goal": 52,
+            "metric": "book",
+            "start_date": "2026-01-01",
+            "end_date": "2026-12-31",
+            "description": "Books for the 2026 challenge",
+            "privacy_setting_id": 3,
+            "archived": False,
+        }
         mock_execute.side_effect = [
-            {"data": {"goals": [{"id": 12}]}},
-            {
-                "data": {
-                    "update_goal": {
-                        "id": 12,
-                        "errors": None,
-                        "goal": {
-                            "id": 12,
-                            "goal": 60,
-                            "metric": "book",
-                            "progress": 14,
-                            "start_date": "2026-01-01",
-                            "end_date": "2026-12-31",
-                            "state": "active",
-                            "privacy_setting_id": 1,
-                        },
-                    }
-                }
-            },
+            {"data": {"goals": [{"id": 12}]}},  # matching active goal
+            {"data": {"goals": [stored]}},  # its stored fields
+            {"data": {"update_goal": {"errors": None, "goal": None}}},
         ]
 
         result = await handle_set_reading_goal(
@@ -228,17 +229,16 @@ class TestHandleSetReadingGoal:
                 "metric": "book",
                 "start_date": "2026-01-01",
                 "end_date": "2026-12-31",
+                **passed,
             }
         )
-        data = json.loads(result[0].text)
 
-        assert data["id"] == 12
-        assert data["goal"] == 60
-        assert data["metric"] == "book"
-
-        update_vars = mock_execute.call_args_list[1][0][1]
+        assert json.loads(result[0].text)["id"] == 12
+        update_vars = mock_execute.call_args_list[2][0][1]
         assert update_vars["id"] == 12
         assert update_vars["object"]["goal"] == 60
+        assert update_vars["object"]["description"] == expected_description
+        assert update_vars["object"]["privacy_setting_id"] == 3
 
 
 def _own_goal(**overrides) -> dict:

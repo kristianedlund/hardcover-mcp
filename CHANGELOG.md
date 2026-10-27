@@ -77,6 +77,13 @@ extras: `get_book`'s edition lookup adds `subtitle`, `isbn_10`, and `book`; `get
 
 ### Fixed
 
+- `set_reading_goal` without `id`, for a goal with the same metric and dates as an
+  existing one, no longer resets that goal's description to "<goal> <metric>s". It's
+  updated like an edit by `id`: only the fields you pass change.
+- `set_user_book_read` without `id` no longer rewrites your current read when you log a
+  different read. It continues the unfinished read only for progress, a finish date, or the
+  same start date; a different start date (e.g. a past read while you're reading the book
+  again) creates a new read.
 - Tool errors (bad input, or an action Hardcover rejected) now set MCP's `isError` flag,
   so clients and models can tell a failed call from a successful one. The message text is
   unchanged (`Error: …`). Answers like `No book found.` or `Book not in your library.` are

@@ -816,6 +816,16 @@ def _build_read_input(arguments: dict[str, Any]) -> dict[str, Any]:
     return read_input
 
 
+def _continues_read(active: dict[str, Any], read_input: dict[str, Any]) -> bool:
+    """Whether a call without a read id continues the unfinished read.
+
+    It does unless it gives a start date different from the unfinished read's: then it's
+    another read (e.g. logging a past read while you're reading the book again).
+    """
+    started, current = read_input.get("started_at"), active.get("started_at")
+    return started is None or current is None or str(started)[:10] == str(current)[:10]
+
+
 async def _resolve_user_book_id(arguments: dict[str, Any]) -> int:
     """Resolve user_book_id from arguments.
 
@@ -846,8 +856,8 @@ async def _resolve_user_book_id(arguments: dict[str, Any]) -> int:
 async def _add_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
     """Add or update a reading date entry for a book.
 
-    If an active (unfinished) read exists, it is updated rather than
-    creating a duplicate.
+    If an unfinished read exists and the call continues it (see ``_continues_read``), it is
+    updated rather than creating a duplicate; otherwise a new read is inserted.
 
     Parameters
     ----------
@@ -869,11 +879,11 @@ async def _add_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
             "provide 'started_at', 'finished_at', 'progress_pages', or 'progress_seconds'."
         )
 
-    # Check for an active (unfinished) read entry — update it instead of creating a duplicate
+    # Continue an unfinished read instead of creating a duplicate, unless this is another read
     active = await execute(FIND_ACTIVE_READ_QUERY, {"user_book_id": user_book_id})
     active_reads = active["data"]["user_book_reads"]
 
-    if active_reads:
+    if active_reads and _continues_read(active_reads[0], read_input):
         existing_read = active_reads[0]
         merged = _merge_read_input(existing_read, read_input)
         result = await execute(
@@ -1224,9 +1234,11 @@ TOOLS: list[ToolSpec] = [
                 "Log or edit reading dates and progress (pages or audiobook seconds). With id "
                 "(a user_book_read id from get_user_book): edit that read, overwriting only the "
                 "fields you pass, e.g. to fix a past finish date. Without id: pass book_id or "
-                "user_book_id; if the book has an unfinished read it is updated, otherwise a "
-                "new read (e.g. a re-read) is created. The book must already be in your library "
-                "(add it with set_user_book). Returns the read entry with its id."
+                "user_book_id; if the book has an unfinished read it is updated (progress, a "
+                "finish date, or the same start date), otherwise a new read is created, e.g. "
+                "a re-read or a past read with its own start date. The book must already be "
+                "in your library (add it with set_user_book). Returns the read entry with its "
+                "id."
             ),
             inputSchema={
                 "type": "object",
