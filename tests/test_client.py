@@ -334,3 +334,56 @@ async def test_other_http_errors_are_clear_errors(status):
 
     with pytest.raises(client.HardcoverAPIError, match=f"HTTP {status}"):
         await client.execute("query { me { id } }")
+
+
+# ── Retry waits ──
+
+
+async def test_long_retry_after_gives_up_instead_of_waiting(sleeps):
+    _FakeAsyncClient.responses = [_response(429, {}, {"retry-after": "86400"}), _response()]
+
+    with pytest.raises(client.HardcoverAPIError, match="wait 86400 seconds"):
+        await client.execute("query { me { id } }")
+
+    assert len(_FakeAsyncClient.captured_headers) == 1  # no retry sent
+    assert all(s <= client._MAX_WAIT for s in sleeps)
+
+
+async def test_retry_waits_for_the_ratelimit_reset(sleeps):
+    # No Retry-After, but the RateLimit header says the bucket resets in 30 s: waiting only
+    # the 3 s backoff would send a retry that's sure to fail.
+    blocked = _response(429, {}, {"ratelimit": '"Free";r=0;t=30'})
+    _FakeAsyncClient.responses = [blocked, _response()]
+
+    await client.execute("query { me { id } }")
+
+    assert len(_FakeAsyncClient.captured_headers) == 2
+    assert any(29 <= s <= 30 for s in sleeps)
+
+
+async def test_long_ratelimit_reset_gives_up(sleeps):
+    blocked = _response(429, {}, {"ratelimit": '"Free";r=0;t=600'})
+    _FakeAsyncClient.responses = [blocked, _response()]
+
+    with pytest.raises(client.HardcoverAPIError, match="Try again then"):
+        await client.execute("query { me { id } }")
+
+    assert len(_FakeAsyncClient.captured_headers) == 1
+
+
+async def test_retries_count_toward_the_per_minute_window():
+    _FakeAsyncClient.responses = [_response(503, {}), _response()]
+
+    await client.execute("query { me { id } }")
+
+    assert len(client._request_timestamps) == 2
+
+
+async def test_long_block_before_a_request_gives_up(monkeypatch):
+    monkeypatch.setattr(client, "_blocked_until", client.time.monotonic() + 600)
+    _FakeAsyncClient.responses = [_response()]
+
+    with pytest.raises(client.HardcoverAPIError, match="rate limit asks to wait"):
+        await client.execute("query { me { id } }")
+
+    assert _FakeAsyncClient.captured_headers == []

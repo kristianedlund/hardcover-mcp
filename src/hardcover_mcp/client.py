@@ -34,6 +34,9 @@ _daily_reset_at: float | None = None
 _MAX_RETRIES = 5
 _RETRY_BACKOFF = 3.0  # seconds, doubles each retry
 _RETRYABLE_STATUSES = {429, 503}
+# Longest the client waits for the rate limit before giving up with a message, so a tool
+# call never hangs on a long Retry-After or RateLimit reset.
+_MAX_WAIT = 60.0
 
 # One HTTP client per event loop, so requests reuse open connections (keep-alive).
 _client: httpx.AsyncClient | None = None
@@ -63,6 +66,7 @@ async def _wait_for_rate_limit() -> None:
             )
         _daily_reset_at = None
     if now < _blocked_until:
+        _check_wait(_blocked_until - now)
         await asyncio.sleep(_blocked_until - now)
         now = time.monotonic()
     # Prune timestamps older than the window
@@ -72,6 +76,15 @@ async def _wait_for_rate_limit() -> None:
         sleep_until = _request_timestamps[0] + _RATE_WINDOW
         await asyncio.sleep(sleep_until - now)
     _request_timestamps.append(time.monotonic())
+
+
+def _check_wait(seconds: float) -> None:
+    """Raise instead of waiting longer than ``_MAX_WAIT`` for the rate limit."""
+    if seconds > _MAX_WAIT:
+        raise HardcoverAPIError(
+            f"Hardcover's rate limit asks to wait {round(seconds)} seconds before the next "
+            "request. Try again then."
+        )
 
 
 def _parse_ratelimit(header: str) -> dict[str, dict[str, int]]:
@@ -263,7 +276,11 @@ async def execute(
             if _daily_reset_at is not None:
                 await _wait_for_rate_limit()  # raises the daily-limit error
             if attempt < _MAX_RETRIES:
-                await asyncio.sleep(_retry_delay(response, backoff))
+                delay = _retry_delay(response, backoff)
+                # The RateLimit header may block for longer than Retry-After / the backoff.
+                _check_wait(max(delay, _blocked_until - time.monotonic()))
+                await asyncio.sleep(delay)
+                await _wait_for_rate_limit()  # waits out any block and counts the retry
                 backoff *= 2
                 continue
             raise HardcoverAPIError(

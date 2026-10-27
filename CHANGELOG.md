@@ -77,6 +77,11 @@ extras: `get_book`'s edition lookup adds `subtitle`, `isbn_10`, and `book`; `get
 
 ### Fixed
 
+- A tool call no longer waits more than a minute for Hardcover's rate limit. If
+  `Retry-After` or the `RateLimit` header asks for longer, the call stops with a message
+  saying how long to wait (a `Retry-After: 86400` used to block the call for a day).
+  Retries also wait for the `RateLimit` reset instead of only the 3/6/12 s backoff, and count
+  toward the per-minute limit, so they no longer fire early and fail again.
 - Bad `limit`, `offset`, `page`, and similar values (a string like `"x"`, a negative number,
   `true`) get a clear error in every tool instead of a traceback; numeric strings like
   `"10"` work. Values above a tool's maximum are capped as before. Flags such as `featured`,
