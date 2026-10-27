@@ -51,11 +51,19 @@ def test_tool_tables_list_every_tool_and_mark_writes():
     tables = text[text.index("## Tools") : text.index("## Development")]
     listed: set[str] = set()
     marked: set[str] = set()
+    groups: dict[str, str] = {}
+    toolset = ""
     for line in tables.splitlines():
+        if line.startswith("### "):
+            toolset = line.removeprefix("### ").split()[0]
+            continue
         if line.count("|") < 3:
             continue
         names = set(re.findall(r"`([a-z_]+)`", line.split("|")[-2]))
         listed |= names
+        for name in names:
+            assert name not in groups, f"Tool {name} is listed more than once"
+            groups[name] = toolset
         if "✏️" in line:
             marked |= names
 
@@ -63,3 +71,12 @@ def test_tool_tables_list_every_tool_and_mark_writes():
     writes = {s.tool.name for s in server.TOOL_REGISTRY if not s.tool.annotations.read_only_hint}
     assert listed == registry
     assert marked == writes
+    assert groups == {s.tool.name: s.toolset for s in server.TOOL_REGISTRY}
+
+
+def test_configuration_table_lists_every_toolset():
+    text = _readme()
+    table = text.split("| Toolset | What it covers |", 1)[1].split("\n\n", 1)[0]
+    listed = re.findall(r"^\| `([a-z_]+)` \|", table, re.MULTILINE)
+    assert len(listed) == len(set(listed)), "Toolset table contains duplicate rows"
+    assert set(listed) == set(TOOLSETS)
