@@ -517,7 +517,7 @@ class TestOwnedBooksLifecycle:
         initially_owned = book_id in await owned_book_ids()
 
         try:
-            # 1. Mark as owned (idempotent — won't double-toggle)
+            # 1. Mark as owned
             result = await handle_set_user_book(
                 {"book_id": book_id, "edition_id": edition_id, "owned": True}
             )
@@ -535,6 +535,18 @@ class TestOwnedBooksLifecycle:
             result2 = await handle_set_user_book({"book_id": book_id, "owned": True})
             output2 = json.loads(result2[0].text)
             assert output2["owned_changed"] is False
+
+            # 4. owned=False really removes ownership (it deletes the Owned-list row)
+            if not initially_owned:
+                result3 = await handle_set_user_book(
+                    {"book_id": book_id, "edition_id": edition_id, "owned": False}
+                )
+                assert json.loads(result3[0].text)["owned_changed"] is True
+
+                async def not_owned() -> bool:
+                    return book_id not in await owned_book_ids()
+
+                assert await eventually(not_owned)
 
         finally:
             # Restore original state

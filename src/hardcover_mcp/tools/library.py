@@ -21,6 +21,7 @@ from hardcover_mcp.tools._validation import (
 )
 from hardcover_mcp.tools.books import author_names
 from hardcover_mcp.tools.editions import EDITION_FIELDS, format_edition
+from hardcover_mcp.tools.lists import delete_list_book
 from hardcover_mcp.tools.user import get_current_user
 
 STATUS_MAP: dict[int, str] = {
@@ -446,7 +447,7 @@ mutation EditionOwned($id: Int!) {
 CHECK_EDITION_OWNED_QUERY = """
 query CheckEditionOwned($user_id: Int!, $edition_id: Int!) {
     lists(where: {slug: {_eq: "owned"}, user_id: {_eq: $user_id}}, limit: 1) {
-        list_books(where: {edition_id: {_eq: $edition_id}}, limit: 1) {
+        list_books(where: {edition_id: {_eq: $edition_id}}) {
             id
         }
     }
@@ -457,8 +458,8 @@ query CheckEditionOwned($user_id: Int!, $edition_id: Int!) {
 async def _set_edition_owned(edition_id: int, owned: bool) -> bool:
     """Make an edition's ownership match ``owned``; return whether anything changed.
 
-    ``edition_owned`` is a toggle, so the Owned list is checked first — repeating a call is a
-    no-op.
+    Ownership is a row in your Owned list. ``edition_owned`` only adds that row (checked live:
+    despite the name it isn't a toggle), so un-owning deletes the row instead.
     """
     user = await get_current_user()
     existing = await execute(
@@ -466,11 +467,16 @@ async def _set_edition_owned(edition_id: int, owned: bool) -> bool:
         {"user_id": user["id"], "edition_id": edition_id},
     )
     lists = existing["data"]["lists"]
-    currently_owned = bool(lists and lists[0]["list_books"])
-    if currently_owned == owned:
-        return False
-    mutation_payload(await execute(EDITION_OWNED_MUTATION, {"id": edition_id}), "edition_owned")
-    return True
+    rows = lists[0]["list_books"] if lists else []
+    if owned:
+        if rows:
+            return False
+        result = await execute(EDITION_OWNED_MUTATION, {"id": edition_id})
+        returned_object(mutation_payload(result, "edition_owned"), "list_book", "owned edition")
+        return True
+    for row in rows:
+        await delete_list_book(row["id"])
+    return bool(rows)
 
 
 # ── Write: set_user_book ──
@@ -483,13 +489,10 @@ query FindUserBook($user_id: Int!, $book_id: Int!) {
         order_by: {updated_at: desc}
     ) {
         id
+        book_id
         status_id
         privacy_setting_id
         rating
-        review_slate
-        review_has_spoilers
-        reviewed_at
-        private_notes
         edition_id
     }
 }
@@ -619,8 +622,6 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
     review_slate = _text_to_slate(review_raw) if review_raw is not None else None
 
     book_id_int = _require_int(book_id, "book_id")
-    if rating is not None:
-        _require_float(rating, "rating")
     if edition_id is not None:
         edition_id = _require_int(edition_id, "edition_id")
 
@@ -644,68 +645,34 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
             "with get_book(include_editions=true))."
         )
 
-    if existing_books:
-        # Merge: preserve existing fields the caller didn't specify
-        current = existing_books[0]
-        obj: dict[str, Any] = {}
-        obj["status_id"] = status_id if status_id is not None else current["status_id"]
-        if rating is not None:
-            obj["rating"] = _require_float(rating, "rating")
-        elif current.get("rating") is not None:
-            obj["rating"] = current["rating"]
-
-        # Review fields are only sent when the caller changes them: sending any of them
-        # requires the write:reviews scope, and update_user_book leaves omitted fields as
-        # they are (verified by the integration review test).
-        if review_slate is not None:
-            obj["review_slate"] = review_slate
-        if review_has_spoilers is not None:
-            obj["review_has_spoilers"] = review_has_spoilers
-        if reviewed_at is not None:
-            obj["reviewed_at"] = reviewed_at
-        if private_notes is not None:
-            obj["private_notes"] = private_notes
-        elif current.get("private_notes") is not None:
-            obj["private_notes"] = current["private_notes"]
-        if privacy_setting_id is not None:
-            obj["privacy_setting_id"] = privacy_setting_id
-        elif current.get("privacy_setting_id") is not None:
-            obj["privacy_setting_id"] = current["privacy_setting_id"]
-        if edition_id is not None:
-            obj["edition_id"] = edition_id
-        elif current.get("edition_id") is not None:
-            obj["edition_id"] = current["edition_id"]
-
-        ub_id = current["id"]
-        result = await execute(UPDATE_USER_BOOK_MUTATION, {"id": ub_id, "object": obj})
-        mutation_result = mutation_payload(result, "update_user_book")
+    # Only the fields passed are sent: update_user_book keeps the ones it isn't sent (checked
+    # live), and re-sending values read a moment ago could undo a newer change (reads lag).
+    fields = {
+        "status_id": status_id,
+        "rating": None if rating is None else _require_float(rating, "rating"),
+        "review_slate": review_slate,
+        "review_has_spoilers": review_has_spoilers,
+        "reviewed_at": reviewed_at,
+        "private_notes": private_notes,
+        "privacy_setting_id": privacy_setting_id,
+        "edition_id": edition_id,
+    }
+    obj = {key: value for key, value in fields.items() if value is not None}
+    if existing_books and not obj:
+        ub = existing_books[0]  # only ownership changes
     else:
-        obj = {}
-        obj["book_id"] = book_id_int
-        if status_id is not None:
-            obj["status_id"] = status_id
-        if rating is not None:
-            obj["rating"] = _require_float(rating, "rating")
-        if review_slate is not None:
-            obj["review_slate"] = review_slate
-        if review_has_spoilers is not None:
-            obj["review_has_spoilers"] = review_has_spoilers
-        if reviewed_at is not None:
-            obj["reviewed_at"] = reviewed_at
-        if private_notes is not None:
-            obj["private_notes"] = private_notes
-        if privacy_setting_id is not None:
-            obj["privacy_setting_id"] = privacy_setting_id
-        if edition_id is not None:
-            obj["edition_id"] = edition_id
-
-        result = await execute(INSERT_USER_BOOK_MUTATION, {"object": obj})
-        mutation_result = mutation_payload(result, "insert_user_book")
-
-    if mutation_result.get("error"):
-        raise ToolError(str(mutation_result["error"]))
-
-    ub = returned_object(mutation_result, "user_book", "library entry")
+        if existing_books:
+            variables = {"id": existing_books[0]["id"], "object": obj}
+            result = await execute(UPDATE_USER_BOOK_MUTATION, variables)
+            mutation_result = mutation_payload(result, "update_user_book")
+        else:
+            result = await execute(
+                INSERT_USER_BOOK_MUTATION, {"object": {"book_id": book_id_int, **obj}}
+            )
+            mutation_result = mutation_payload(result, "insert_user_book")
+        if mutation_result.get("error"):
+            raise ToolError(str(mutation_result["error"]))
+        ub = returned_object(mutation_result, "user_book", "library entry")
     output = {
         "user_book_id": ub.get("id"),
         "book_id": ub.get("book_id"),
@@ -1015,7 +982,8 @@ async def handle_set_user_book_read(arguments: dict[str, Any]) -> list[TextConte
 DELETE_USER_BOOK_READ_MUTATION = """
 mutation DeleteUserBookRead($id: Int!) {
     delete_user_book_read(id: $id) {
-        __typename
+        error
+        id
     }
 }
 """
@@ -1023,7 +991,8 @@ mutation DeleteUserBookRead($id: Int!) {
 DELETE_USER_BOOK_MUTATION = """
 mutation DeleteUserBook($id: Int!) {
     delete_user_book(id: $id) {
-        __typename
+        id
+        book_id
     }
 }
 """
@@ -1049,7 +1018,10 @@ async def handle_delete_user_book_read(arguments: dict[str, Any]) -> list[TextCo
     read_id_int = _require_int(read_id, "id")
 
     await _own_read(read_id_int)
-    await execute(DELETE_USER_BOOK_READ_MUTATION, {"id": read_id_int})
+    # The answer can't tell a deleted read from one already gone; _own_read checked it exists.
+    result = await execute(DELETE_USER_BOOK_READ_MUTATION, {"id": read_id_int})
+    if mutation_payload(result, "delete_user_book_read").get("error"):
+        raise ToolError(str(result["data"]["delete_user_book_read"]["error"]))
     return [TextContent(type="text", text=json.dumps({"deleted": True, "id": read_id_int}))]
 
 
@@ -1068,7 +1040,10 @@ async def handle_delete_user_book(arguments: dict[str, Any]) -> list[TextContent
     """
     resolved = await _resolve_user_book_id(arguments)
 
-    await execute(DELETE_USER_BOOK_MUTATION, {"id": resolved})
+    result = await execute(DELETE_USER_BOOK_MUTATION, {"id": resolved})
+    # Hardcover answers a delete of an entry that's already gone with book_id: null.
+    if mutation_payload(result, "delete_user_book").get("book_id") is None:
+        raise ToolError("Hardcover didn't delete the library entry; it may already be gone.")
     return [TextContent(type="text", text=json.dumps({"deleted": True, "user_book_id": resolved}))]
 
 
@@ -1268,7 +1243,14 @@ TOOLS: list[ToolSpec] = [
         ),
         handle_set_user_book,
         toolset="library",
-        scopes=("read:library", "read:lists", "read:me", "write:library", "write:reviews"),
+        scopes=(
+            "read:library",
+            "read:lists",
+            "read:me",
+            "write:library",
+            "write:lists",
+            "write:reviews",
+        ),
     ),
     ToolSpec(
         Tool(

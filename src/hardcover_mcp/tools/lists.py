@@ -203,15 +203,19 @@ mutation UpdateList($id: Int!, $object: ListInput!) {
 DELETE_LIST_MUTATION = """
 mutation DeleteList($id: Int!) {
     delete_list(id: $id) {
-        __typename
+        success
     }
 }
 """
 
 
+# Your custom lists only: the internal Owned list (ownership per edition) isn't one of them.
 OWN_LIST_QUERY = """
 query OwnList($id: Int!, $user_id: Int!) {
-    lists(where: {id: {_eq: $id}, user_id: {_eq: $user_id}}, limit: 1) {
+    lists(
+        where: {id: {_eq: $id}, user_id: {_eq: $user_id}, slug: {_neq: "owned"}},
+        limit: 1
+    ) {
         id
     }
 }
@@ -344,7 +348,9 @@ async def handle_delete_list(arguments: dict[str, Any]) -> list[TextContent]:
     list_id_int = _require_int(list_id, "id")
 
     await _require_own_list(list_id_int)
-    await execute(DELETE_LIST_MUTATION, {"id": list_id_int})
+    result = await execute(DELETE_LIST_MUTATION, {"id": list_id_int})
+    if not mutation_payload(result, "delete_list").get("success"):
+        raise ToolError("Hardcover didn't delete the list.")
 
     return [TextContent(type="text", text=json.dumps({"deleted": True, "id": list_id_int}))]
 
@@ -368,16 +374,27 @@ mutation InsertListBook($object: ListBookInput!) {
 DELETE_LIST_BOOK_MUTATION = """
 mutation DeleteListBook($id: Int!) {
     delete_list_book(id: $id) {
-        __typename
+        id
+        list_id
     }
 }
 """
 
 
+async def delete_list_book(list_book_id: int) -> None:
+    """Delete one list entry; ``ToolError`` if Hardcover reports nothing was deleted.
+
+    Hardcover answers a delete of an entry that's already gone with ``list_id: null``.
+    """
+    result = await execute(DELETE_LIST_BOOK_MUTATION, {"id": list_book_id})
+    if mutation_payload(result, "delete_list_book").get("list_id") is None:
+        raise ToolError("Hardcover didn't remove that list entry; it may already be gone.")
+
+
 # For list_ids: which of the lists are yours, and the book's entries on them, in one request.
 FIND_OWN_LIST_BOOKS_QUERY = """
 query FindOwnListBooks($list_ids: [Int!], $book_id: Int!, $user_id: Int!) {
-    lists(where: {id: {_in: $list_ids}, user_id: {_eq: $user_id}}) {
+    lists(where: {id: {_in: $list_ids}, user_id: {_eq: $user_id}, slug: {_neq: "owned"}}) {
         id
     }
     list_books(where: {list_id: {_in: $list_ids}, book_id: {_eq: $book_id}}) {
@@ -440,8 +457,9 @@ async def handle_set_list_book(arguments: dict[str, Any]) -> list[TextContent]:
     )
     if not found["data"]["lists"]:
         raise ToolError("no list of yours with that id.")
-    existing = found["data"]["list_books"]
-    existing_id = existing[0]["id"] if existing else None
+    # A book can be on a list more than once (several editions, or a duplicate add).
+    entry_ids = [lb["id"] for lb in found["data"]["list_books"]]
+    existing_id = entry_ids[0] if entry_ids else None
 
     output: dict[str, Any] = {"list_id": list_id, "book_id": book_id, "on_list": on_list}
 
@@ -453,7 +471,8 @@ async def handle_set_list_book(arguments: dict[str, Any]) -> list[TextContent]:
         lb = mutation_payload(result, "insert_list_book").get("list_book") or {}
         output.update(changed=True, list_book_id=lb.get("id"), position=lb.get("position"))
     elif not on_list and existing_id is not None:
-        await execute(DELETE_LIST_BOOK_MUTATION, {"id": existing_id})
+        for entry_id in entry_ids:
+            await delete_list_book(entry_id)
         output.update(changed=True, list_book_id=None)
     else:
         output.update(changed=False, list_book_id=existing_id)
@@ -486,9 +505,9 @@ async def _set_on_lists(raw_ids: Any, book_id: int, on_list: bool) -> list[TextC
         {"list_ids": list_ids, "book_id": book_id, "user_id": user["id"]},
     )
     own = {lst["id"] for lst in found["data"]["lists"]}
-    existing: dict[int, int] = {}
+    existing: dict[int, list[int]] = {}
     for lb in found["data"]["list_books"]:
-        existing.setdefault(lb["list_id"], lb["id"])
+        existing.setdefault(lb["list_id"], []).append(lb["id"])
 
     results: list[dict[str, Any]] = []
     for list_id in list_ids:
@@ -496,7 +515,7 @@ async def _set_on_lists(raw_ids: Any, book_id: int, on_list: bool) -> list[TextC
         if list_id not in own:
             entry["error"] = "not one of your lists."
         elif on_list == (list_id in existing):
-            entry["list_book_id"] = existing.get(list_id)
+            entry["list_book_id"] = existing.get(list_id, [None])[0]
         else:
             try:
                 if on_list:
@@ -507,7 +526,8 @@ async def _set_on_lists(raw_ids: Any, book_id: int, on_list: bool) -> list[TextC
                     lb = mutation_payload(result, "insert_list_book").get("list_book") or {}
                     entry.update(changed=True, list_book_id=lb.get("id"))
                 else:
-                    await execute(DELETE_LIST_BOOK_MUTATION, {"id": existing[list_id]})
+                    for entry_id in existing[list_id]:
+                        await delete_list_book(entry_id)
                     entry.update(changed=True, list_book_id=None)
             except (HardcoverAPIError, ToolError) as exc:
                 entry["error"] = str(exc)
