@@ -92,10 +92,13 @@ class TestSetFollowingState:
         assert str(exc.value) == "nope"
 
     async def test_unknown_username_is_an_error(self):
-        mock = AsyncMock(return_value={"data": {"users": []}})
+        lookup = AsyncMock(return_value={"data": {"users": []}})
+        follow = AsyncMock()
         with (
-            patch("hardcover_mcp.tools.follow.execute", new=mock),
+            patch("hardcover_mcp.tools.activity.execute", new=lookup),
+            patch("hardcover_mcp.tools.follow.execute", new=follow),
             pytest.raises(ToolError, match="no user found for username 'ghost'"),
         ):
             await handle_set_following({"username": "ghost", "following": True})
-        mock.assert_awaited_once()  # only the lookup; no follow mutation
+        lookup.assert_awaited_once()
+        follow.assert_not_awaited()  # no follow mutation

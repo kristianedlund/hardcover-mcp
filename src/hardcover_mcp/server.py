@@ -116,13 +116,8 @@ def select_tools(specs: list[ToolSpec], env: Mapping[str, str]) -> list[ToolSpec
     return [
         spec
         for spec in specs
-        if spec.toolset in enabled and (not read_only or _is_read_only(spec))
+        if spec.toolset in enabled and (not read_only or spec.tool.annotations.read_only_hint)
     ]
-
-
-def _is_read_only(spec: ToolSpec) -> bool:
-    """Whether a tool is annotated as read-only."""
-    return bool(spec.tool.annotations and spec.tool.annotations.read_only_hint)
 
 
 _active_tools: list[ToolSpec] = TOOL_REGISTRY

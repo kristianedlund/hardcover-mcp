@@ -90,6 +90,49 @@ def _require_iso_date(value: Any, name: str) -> str:
         ) from None
 
 
+# Reading statuses, by Hardcover's status_id.
+STATUS_MAP: dict[int, str] = {
+    1: "Want to Read",
+    2: "Currently Reading",
+    3: "Read",
+    4: "Paused",
+    5: "Did Not Finish",
+    6: "Ignored",
+}
+
+STATUS_NAME_TO_ID: dict[str, int] = {v.lower(): k for k, v in STATUS_MAP.items()}
+# The status names, for the ``enum`` of every status argument's schema.
+STATUS_NAMES: list[str] = list(STATUS_MAP.values())
+
+
+def _resolve_status_id(status: Any, name: str = "status") -> int | None:
+    """A status name (any case) or id 1-6 as its id, or None if not given.
+
+    Raises
+    ------
+    ToolError
+        For anything else, listing the valid names.
+    """
+    if status is None:
+        return None
+    if isinstance(status, int) and not isinstance(status, bool) and status in STATUS_MAP:
+        return status
+    if isinstance(status, str):
+        key = status.strip().lower()
+        if key.isdigit() and int(key) in STATUS_MAP:
+            return int(key)
+        if key in STATUS_NAME_TO_ID:
+            return STATUS_NAME_TO_ID[key]
+    raise ToolError(f"unknown {name} {status!r}. Valid: {', '.join(STATUS_NAMES)} (or 1-6).")
+
+
+def status_label(status_id: int | None) -> str | None:
+    """The output label for a status id, e.g. 'Read'; ``unknown (<id>)`` if unrecognised."""
+    if status_id is None:
+        return None
+    return STATUS_MAP.get(status_id, f"unknown ({status_id})")
+
+
 # Privacy settings are the same everywhere in the API: 1 public, 2 followers, 3 private.
 PRIVACY_LABELS: dict[int, str] = {1: "public", 2: "followers", 3: "private"}
 _PRIVACY_IDS: dict[str, int] = {

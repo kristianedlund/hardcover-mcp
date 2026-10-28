@@ -94,7 +94,7 @@ def _format_reading_stats(data: dict[str, Any], year: int) -> dict[str, Any]:
 
     return {
         "total_books": data["total"]["aggregate"]["count"],
-        # Keyed by status name, like status everywhere else (tools.library.STATUS_MAP).
+        # Keyed by status name, like status everywhere else (STATUS_MAP in tools._validation).
         "by_status": {
             "Want to Read": data["want_to_read"]["aggregate"]["count"],
             "Currently Reading": data["currently_reading"]["aggregate"]["count"],

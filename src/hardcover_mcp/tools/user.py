@@ -9,14 +9,17 @@ from mcp.types import TextContent, Tool
 from hardcover_mcp.client import NEW_API_KEY_URL, HardcoverAPIError, execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
 from hardcover_mcp.tools._validation import (
+    STATUS_NAMES,
     ToolError,
     _require_bool,
     _require_count,
     _require_int,
     _require_str,
+    _resolve_status_id,
     privacy_label,
+    status_label,
 )
-from hardcover_mcp.tools.books import resolve_id_by_name
+from hardcover_mcp.tools.books import book_summary, resolve_id_by_name
 from hardcover_mcp.tools.stats import fetch_reading_stats
 
 # Cached after first call — used by other tools that need user_id.
@@ -156,7 +159,6 @@ def _format_user(raw: dict[str, Any]) -> dict[str, Any]:
     (i.e. the caller requested it). Library entries respect the API's own
     privacy enforcement — a private user returns an empty list to non-followers.
     """
-    from hardcover_mcp.tools.library import status_label
 
     image = raw.get("cached_image") or {}
     privacy_id = raw.get("account_privacy_setting_id")
@@ -177,11 +179,7 @@ def _format_user(raw: dict[str, Any]) -> dict[str, Any]:
     if "user_books" in raw:
         profile["library"] = [
             {
-                "book_id": ub["book"]["id"],
-                "slug": ub["book"].get("slug"),
-                "title": ub["book"].get("title"),
-                "release_year": ub["book"].get("release_year"),
-                "rating": ub["book"].get("rating"),
+                **book_summary(ub["book"]),
                 "user_rating": ub.get("rating"),
                 "status": status_label(ub["status_id"]),
             }
@@ -233,8 +231,6 @@ async def handle_get_user(arguments: dict[str, Any]) -> list[TextContent]:
 
     if user_id is None and username is None and name is None:
         user_id = (await get_current_user())["id"]
-
-    from hardcover_mcp.tools.library import _resolve_status_id
 
     include_library = _require_bool(arguments.get("include_library"), "include_library")
     status_id = _resolve_status_id(arguments.get("library_status"), "library_status")
@@ -343,16 +339,7 @@ TOOLS: list[ToolSpec] = [
                     },
                     "library_status": {
                         "type": "string",
-                        # Same names as tools.library.STATUS_NAMES; not imported here to avoid
-                        # an import cycle (library imports this module).
-                        "enum": [
-                            "Want to Read",
-                            "Currently Reading",
-                            "Read",
-                            "Paused",
-                            "Did Not Finish",
-                            "Ignored",
-                        ],
+                        "enum": STATUS_NAMES,
                         "description": "Only library entries with this status.",
                     },
                     "library_limit": {

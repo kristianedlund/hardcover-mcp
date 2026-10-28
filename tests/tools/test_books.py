@@ -513,26 +513,26 @@ class TestHandleGetBookIncludeEditions:
 
 
 class TestHandleGetBookEditionKeys:
-    @patch("hardcover_mcp.tools.books.handle_get_edition", new_callable=AsyncMock)
+    @patch("hardcover_mcp.tools.books.fetch_edition", new_callable=AsyncMock)
     async def test_isbn_returns_the_edition(self, mock_edition):
         mock_edition.return_value = ["edition result"]
 
         result = await handle_get_book({"isbn_13": "9780593135204"})
 
         assert result == ["edition result"]
-        mock_edition.assert_awaited_once_with({"isbn_13": "9780593135204"})
+        mock_edition.assert_awaited_once_with("isbn_13", "9780593135204")
 
-    @patch("hardcover_mcp.tools.books.handle_get_edition", new_callable=AsyncMock)
+    @patch("hardcover_mcp.tools.books.fetch_edition", new_callable=AsyncMock)
     async def test_edition_id_maps_to_edition_lookup_id(self, mock_edition):
         await handle_get_book({"edition_id": 30405492})
 
-        mock_edition.assert_awaited_once_with({"id": 30405492})
+        mock_edition.assert_awaited_once_with("edition_id", 30405492)
 
-    @patch("hardcover_mcp.tools.books.handle_get_edition", new_callable=AsyncMock)
+    @patch("hardcover_mcp.tools.books.fetch_edition", new_callable=AsyncMock)
     async def test_asin_returns_the_edition(self, mock_edition):
         await handle_get_book({"asin": "B08FHBV4ZX"})
 
-        mock_edition.assert_awaited_once_with({"asin": "B08FHBV4ZX"})
+        mock_edition.assert_awaited_once_with("asin", "B08FHBV4ZX")
 
     async def test_rejects_book_and_edition_keys_together(self):
         with pytest.raises(ToolError) as exc:
@@ -631,15 +631,35 @@ class TestFetchBooksByIds:
         mock.assert_not_awaited()
 
 
-def test_slug_queries_look_up_by_slug():
-    """The slug queries are built by .replace() on the id queries; check it still matched."""
-    from graphql import parse
+class TestLookupWhere:
+    async def test_id_wins_then_slug(self):
+        from hardcover_mcp.tools.books import lookup_where
 
-    from hardcover_mcp.tools.books import GET_BOOK_BY_SLUG_QUERY
-    from hardcover_mcp.tools.series import GET_SERIES_BY_SLUG_QUERY
+        assert await lookup_where({"id": "5", "slug": "x"}, "Author") == {"id": {"_eq": 5}}
+        assert await lookup_where({"slug": "x"}, "Author") == {"slug": {"_eq": "x"}}
 
-    for query in (GET_BOOK_BY_SLUG_QUERY, GET_SERIES_BY_SLUG_QUERY):
-        parse(query)
-        assert "$slug: String!" in query
-        assert "{slug: {_eq: $slug}}" in query
-        assert "$id" not in query
+    async def test_name_resolves_to_the_top_match(self):
+        from hardcover_mcp.tools.books import lookup_where
+
+        with patch("hardcover_mcp.tools.books.resolve_id_by_name", new=AsyncMock(return_value=9)):
+            assert await lookup_where({"name": "X"}, "Series") == {"id": {"_eq": 9}}
+        with patch(
+            "hardcover_mcp.tools.books.resolve_id_by_name", new=AsyncMock(return_value=None)
+        ):
+            assert await lookup_where({"name": "X"}, "Series") is None
+
+    @patch("hardcover_mcp.tools.books.execute", new_callable=AsyncMock)
+    async def test_get_book_by_slug_filters_by_slug(self, mock_execute):
+        mock_execute.return_value = {"data": {"books": []}}
+
+        await handle_get_book({"slug": "dune"})
+
+        assert mock_execute.call_args[0][1] == {"where": {"slug": {"_eq": "dune"}}}
+
+
+def test_every_search_type_has_hit_fields_and_is_in_the_schema():
+    from hardcover_mcp.tools.books import _HIT_FIELDS, _RESULT_KEY, TOOLS
+
+    tool = next(spec.tool for spec in TOOLS if spec.tool.name == "search_books")
+    assert set(_HIT_FIELDS) == set(_RESULT_KEY)
+    assert tool.input_schema["properties"]["query_type"]["enum"] == list(_RESULT_KEY)

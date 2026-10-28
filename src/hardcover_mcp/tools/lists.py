@@ -249,6 +249,18 @@ def _build_list_input(arguments: dict[str, Any]) -> dict[str, Any]:
     return obj
 
 
+def _saved_list(lst: dict[str, Any]) -> list[TextContent]:
+    """The result of creating or updating a list: id, name, slug, description, privacy."""
+    output = {
+        "id": lst.get("id"),
+        "name": lst.get("name"),
+        "slug": lst.get("slug"),
+        "description": lst.get("description"),
+        "privacy": privacy_label(lst.get("privacy_setting_id")),
+    }
+    return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+
 async def _create_list(arguments: dict[str, Any]) -> list[TextContent]:
     """Create a new Hardcover list.
 
@@ -273,14 +285,7 @@ async def _create_list(arguments: dict[str, Any]) -> list[TextContent]:
     mutation_result = mutation_payload(result, "insert_list")
 
     lst = returned_object(mutation_result, "list", "list")
-    output = {
-        "id": lst.get("id"),
-        "name": lst.get("name"),
-        "slug": lst.get("slug"),
-        "description": lst.get("description"),
-        "privacy": privacy_label(lst.get("privacy_setting_id")),
-    }
-    return [TextContent(type="text", text=json.dumps(output, indent=2))]
+    return _saved_list(lst)
 
 
 async def _update_list(arguments: dict[str, Any]) -> list[TextContent]:
@@ -311,14 +316,7 @@ async def _update_list(arguments: dict[str, Any]) -> list[TextContent]:
     mutation_result = mutation_payload(result, "update_list")
 
     lst = returned_object(mutation_result, "list", "list")
-    output = {
-        "id": lst.get("id"),
-        "name": lst.get("name"),
-        "slug": lst.get("slug"),
-        "description": lst.get("description"),
-        "privacy": privacy_label(lst.get("privacy_setting_id")),
-    }
-    return [TextContent(type="text", text=json.dumps(output, indent=2))]
+    return _saved_list(lst)
 
 
 async def handle_set_list(arguments: dict[str, Any]) -> list[TextContent]:

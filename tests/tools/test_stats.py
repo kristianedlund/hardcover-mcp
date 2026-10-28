@@ -39,7 +39,7 @@ class TestFormatReadingStats:
         assert by_status["Ignored"] == 0
 
     def test_by_status_keys_are_the_status_names(self):
-        from hardcover_mcp.tools.library import STATUS_NAMES
+        from hardcover_mcp.tools._validation import STATUS_NAMES
 
         assert list(_format_reading_stats(_AGGREGATE_RESPONSE, 2026)["by_status"]) == STATUS_NAMES
 

@@ -7,8 +7,8 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
-from hardcover_mcp.tools._validation import ToolError, _require_count, _require_int
-from hardcover_mcp.tools.books import resolve_id_by_name
+from hardcover_mcp.tools._validation import ToolError, _require_count
+from hardcover_mcp.tools.books import book_summary, lookup_where
 
 # ── Read: get_author by id, slug, or name ──
 
@@ -37,20 +37,10 @@ _AUTHOR_FIELDS = """
         }
 """
 
-GET_AUTHOR_BY_ID_QUERY = (
+GET_AUTHOR_QUERY = (
     """
-query GetAuthorById($id: Int!, $books_limit: Int!) {
-    authors(where: {id: {_eq: $id}}, limit: 1) {"""
-    + _AUTHOR_FIELDS
-    + """    }
-}
-"""
-)
-
-GET_AUTHOR_BY_SLUG_QUERY = (
-    """
-query GetAuthorBySlug($slug: String!, $books_limit: Int!) {
-    authors(where: {slug: {_eq: $slug}}, limit: 1) {"""
+query GetAuthor($where: authors_bool_exp!, $books_limit: Int!) {
+    authors(where: $where, limit: 1) {"""
     + _AUTHOR_FIELDS
     + """    }
 }
@@ -83,13 +73,7 @@ def _format_author(a: dict[str, Any]) -> dict[str, Any]:
     for c in a.get("contributions", []):
         book = c.get("book")
         if book and book["id"] not in books:
-            books[book["id"]] = {
-                "book_id": book["id"],
-                "slug": book["slug"],
-                "title": book["title"],
-                "release_year": book.get("release_year"),
-                "rating": book.get("rating"),
-            }
+            books[book["id"]] = book_summary(book)
     return {
         "id": a["id"],
         "slug": a["slug"],
@@ -132,19 +116,10 @@ async def handle_get_author(arguments: dict[str, Any]) -> list[TextContent]:
         maximum=_MAX_BOOKS_LIMIT,
     )
 
-    vars: dict[str, Any] = {"books_limit": books_limit}
-    if author_id:
-        vars["id"] = _require_int(author_id, "id")
-        result = await execute(GET_AUTHOR_BY_ID_QUERY, vars)
-    elif slug:
-        vars["slug"] = slug
-        result = await execute(GET_AUTHOR_BY_SLUG_QUERY, vars)
-    else:
-        author_id = await resolve_id_by_name(name, "Author")
-        if not author_id:
-            return [TextContent(type="text", text="No author found.")]
-        vars["id"] = author_id
-        result = await execute(GET_AUTHOR_BY_ID_QUERY, vars)
+    where = await lookup_where(arguments, "Author")
+    if where is None:
+        return [TextContent(type="text", text="No author found.")]
+    result = await execute(GET_AUTHOR_QUERY, {"where": where, "books_limit": books_limit})
 
     authors = result["data"]["authors"]
     if not authors:

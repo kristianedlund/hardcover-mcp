@@ -12,7 +12,7 @@ from hardcover_mcp.tools.books import fetch_books_by_ids
 
 # ── Trending ──
 
-_TRENDING_DURATIONS = frozenset({"all", "week", "month", "three_month", "one_year"})
+_TRENDING_DURATIONS = ("all", "week", "month", "three_month", "one_year")
 _DEFAULT_TRENDING_LIMIT = 25
 _MAX_TRENDING_LIMIT = 100
 
@@ -44,7 +44,7 @@ async def handle_get_trending_books(arguments: dict[str, Any]) -> list[TextConte
     """
     duration = arguments.get("duration", "week")
     if duration not in _TRENDING_DURATIONS:
-        valid = ", ".join(sorted(_TRENDING_DURATIONS))
+        valid = ", ".join(_TRENDING_DURATIONS)
         raise ToolError(f"invalid duration '{duration}'. Must be one of: {valid}.")
 
     limit = _require_count(
@@ -172,7 +172,7 @@ TOOLS: list[ToolSpec] = [
                     "duration": {
                         "type": "string",
                         "description": "Time window (default 'week').",
-                        "enum": ["all", "week", "month", "three_month", "one_year"],
+                        "enum": list(_TRENDING_DURATIONS),
                     },
                     "limit": {
                         "type": "integer",

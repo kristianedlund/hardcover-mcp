@@ -7,14 +7,14 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
-from hardcover_mcp.tools._validation import ToolError, _require_int
-from hardcover_mcp.tools.books import resolve_id_by_name
+from hardcover_mcp.tools._validation import ToolError
+from hardcover_mcp.tools.books import book_summary, lookup_where
 
 # ── Read: get_series by id or slug ──
 
-GET_SERIES_BY_ID_QUERY = """
-query GetSeriesById($id: Int!) {
-    series(where: {id: {_eq: $id}}, limit: 1) {
+GET_SERIES_QUERY = """
+query GetSeries($where: series_bool_exp!) {
+    series(where: $where, limit: 1) {
         id
         name
         slug
@@ -47,10 +47,6 @@ query GetSeriesById($id: Int!) {
 }
 """
 
-GET_SERIES_BY_SLUG_QUERY = GET_SERIES_BY_ID_QUERY.replace(
-    "GetSeriesById($id: Int!)", "GetSeriesBySlug($slug: String!)"
-).replace("{id: {_eq: $id}}", "{slug: {_eq: $slug}}")
-
 
 def _format_series(s: dict[str, Any]) -> dict[str, Any]:
     """Format a raw series record into a structured response dict."""
@@ -63,16 +59,7 @@ def _format_series(s: dict[str, Any]) -> dict[str, Any]:
         if not book or (position is not None and position in seen):
             continue
         seen.add(position)
-        books.append(
-            {
-                "position": position,
-                "book_id": book["id"],
-                "slug": book["slug"],
-                "title": book["title"],
-                "release_year": book.get("release_year"),
-                "rating": book.get("rating"),
-            }
-        )
+        books.append({"position": position, **book_summary(book)})
     return {
         "id": s["id"],
         "name": s["name"],
@@ -106,18 +93,10 @@ async def handle_get_series(arguments: dict[str, Any]) -> list[TextContent]:
     if not series_id and not slug and not name:
         raise ToolError("provide 'id', 'slug', or 'name'.")
 
-    if series_id:
-        result = await execute(GET_SERIES_BY_ID_QUERY, {"id": _require_int(series_id, "id")})
-        series_list = result["data"]["series"]
-    elif slug:
-        result = await execute(GET_SERIES_BY_SLUG_QUERY, {"slug": slug})
-        series_list = result["data"]["series"]
-    else:
-        series_id = await resolve_id_by_name(name, "Series")
-        if not series_id:
-            return [TextContent(type="text", text="No series found.")]
-        result = await execute(GET_SERIES_BY_ID_QUERY, {"id": series_id})
-        series_list = result["data"]["series"]
+    where = await lookup_where(arguments, "Series")
+    if where is None:
+        return [TextContent(type="text", text="No series found.")]
+    series_list = (await execute(GET_SERIES_QUERY, {"where": where}))["data"]["series"]
 
     if not series_list:
         return [TextContent(type="text", text="No series found.")]

@@ -14,7 +14,7 @@ from hardcover_mcp.tools._validation import (
     _require_int,
     _require_str,
 )
-from hardcover_mcp.tools.editions import EDITION_FIELDS, format_edition, handle_get_edition
+from hardcover_mcp.tools.editions import EDITION_FIELDS, fetch_edition, format_edition
 
 # Older records leave the role empty; on those the contributions relation says "Author".
 _AUTHOR_ROLES = {None, "Author"}
@@ -63,12 +63,8 @@ query Search(
 }
 """
 
-# All entity types supported by the Hardcover search endpoint
-VALID_QUERY_TYPES: frozenset[str] = frozenset(
-    {"Book", "Author", "Series", "List", "User", "Publisher", "Character", "Prompt"}
-)
-
-# Map each query_type to the output list key in the response JSON
+# Every entity type the search endpoint supports, and the key its hits are returned under.
+# The single list of search types: the schema enum and the validation come from it.
 _RESULT_KEY: dict[str, str] = {
     "Book": "books",
     "Author": "authors",
@@ -79,10 +75,11 @@ _RESULT_KEY: dict[str, str] = {
     "Character": "characters",
     "Prompt": "prompts",
 }
+VALID_QUERY_TYPES: frozenset[str] = frozenset(_RESULT_KEY)
 
-GET_BOOK_BY_ID_QUERY = """
-query GetBookById($id: Int!) {
-    books(where: {id: {_eq: $id}}, limit: 1) {
+GET_BOOK_QUERY = """
+query GetBook($where: books_bool_exp!) {
+    books(where: $where, limit: 1) {
         id
         title
         slug
@@ -102,10 +99,6 @@ query GetBookById($id: Int!) {
     }
 }
 """
-
-GET_BOOK_BY_SLUG_QUERY = GET_BOOK_BY_ID_QUERY.replace(
-    "GetBookById($id: Int!)", "GetBookBySlug($slug: String!)"
-).replace("{id: {_eq: $id}}", "{slug: {_eq: $slug}}")
 
 GET_EDITIONS_QUERY = f"""
 query GetBookEditions($book_id: Int!, $limit: Int!) {{
@@ -141,6 +134,33 @@ query GetCharacters($book_id: bigint!) {
     }
 }
 """
+
+
+def book_summary(book: dict[str, Any]) -> dict[str, Any]:
+    """The fields every list of books shows: ``book_id``, ``slug``, ``title``, ``release_year``,
+    and the community ``rating``."""
+    return {
+        "book_id": book["id"],
+        "slug": book.get("slug"),
+        "title": book.get("title"),
+        "release_year": book.get("release_year"),
+        "rating": book.get("rating"),
+    }
+
+
+async def lookup_where(arguments: dict[str, Any], query_type: str) -> dict[str, Any] | None:
+    """A ``where`` filter for the entity a tool's ``id``, ``slug``, or ``name`` names.
+
+    ``id`` wins, then ``slug``; a ``name`` resolves to the top search match. Returns None when
+    no entity has that name, so the caller can answer "No … found.". The caller checks that
+    at least one key was given.
+    """
+    if arguments.get("id"):
+        return {"id": {"_eq": _require_int(arguments["id"], "id")}}
+    if arguments.get("slug"):
+        return {"slug": {"_eq": arguments["slug"]}}
+    found = await resolve_id_by_name(arguments["name"], query_type)
+    return None if found is None else {"id": {"_eq": found}}
 
 
 async def resolve_id_by_name(name: str, query_type: str) -> Any:
@@ -210,7 +230,7 @@ def _format_search_hit(hit: dict[str, Any], query_type: str = "Book") -> dict[st
         Flattened dict of relevant fields for the given entity type.
     """
     doc = hit.get("document") or {}
-    fields = _HIT_FIELDS.get(query_type, _HIT_FIELDS["Book"])
+    fields = _HIT_FIELDS[query_type]
     out = {out_key: doc.get(doc_key) for out_key, doc_key in fields.items()}
     # Search documents carry ids as strings; every other tool returns them as numbers.
     for key in ("id", "book_id"):
@@ -222,7 +242,7 @@ def _format_search_hit(hit: dict[str, Any], query_type: str = "Book") -> dict[st
     if out.get("authors") is None and "authors" in out:
         out["authors"] = []
     # Hardcover's nested objects, reduced to the fields worth keeping.
-    if query_type == "Book" or query_type not in _HIT_FIELDS:
+    if query_type == "Book":
         out["series"] = _featured_series(doc.get("featured_series"))
     elif query_type == "Author":
         out["image_url"] = (doc.get("image") or {}).get("url")
@@ -278,15 +298,7 @@ async def fetch_books_by_ids(ids: list[int]) -> list[dict[str, Any]]:
         return []
     result = await execute(BOOKS_BY_IDS_QUERY, {"ids": ids})
     by_id = {
-        b["id"]: {
-            "book_id": b["id"],
-            "slug": b.get("slug"),
-            "title": b.get("title"),
-            "rating": b.get("rating"),
-            "release_year": b.get("release_year"),
-            "authors": author_names(b),
-        }
-        for b in result["data"]["books"]
+        b["id"]: {**book_summary(b), "authors": author_names(b)} for b in result["data"]["books"]
     }
     return [by_id[i] for i in ids if i in by_id]
 
@@ -341,7 +353,7 @@ async def handle_search_books(arguments: dict[str, Any]) -> list[TextContent]:
     hits = raw_results.get("hits", [])
     found = raw_results.get("found", 0)
 
-    result_key = _RESULT_KEY.get(query_type, "results")
+    result_key = _RESULT_KEY[query_type]
     items = [_format_search_hit(h, query_type) for h in hits]
     output = {"total": found, "returned": len(items), "page": page, result_key: items}
     return [TextContent(type="text", text=json.dumps(output, indent=2))]
@@ -363,7 +375,7 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
         Tool arguments. Provide ``id`` (int) or ``slug`` (str) for the book (``id``
         wins if both are given), or exactly one edition key — ``isbn_13`` (str),
         ``asin`` (str), or ``edition_id`` (int) — for that edition (see
-        ``handle_get_edition``). Edition keys can't be combined with book keys.
+        ``fetch_edition``). Edition keys can't be combined with book keys.
         Optional: ``include_characters`` (bool, default false),
         ``include_editions`` (bool, default false), ``editions_limit``
         (int, default 10, max 50).
@@ -394,9 +406,7 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
                 "include_characters and include_editions need a book key "
                 "('id' or 'slug'); the edition's result includes its book id."
             )
-        # The edition lookup calls its id key 'id'; here 'id' means the book.
-        key, value = next(iter(edition_keys.items()))
-        return await handle_get_edition({"id" if key == "edition_id" else key: value})
+        return await fetch_edition(*next(iter(edition_keys.items())))
 
     if not book_id and not slug:
         raise ToolError(_ONE_KEY_ERROR)
@@ -408,10 +418,8 @@ async def handle_get_book(arguments: dict[str, Any]) -> list[TextContent]:
         minimum=1,
         maximum=_MAX_EDITIONS_LIMIT,
     )
-    if book_id:
-        result = await execute(GET_BOOK_BY_ID_QUERY, {"id": _require_int(book_id, "id")})
-    else:
-        result = await execute(GET_BOOK_BY_SLUG_QUERY, {"slug": slug})
+    where = await lookup_where({"id": book_id, "slug": slug}, "Book")
+    result = await execute(GET_BOOK_QUERY, {"where": where})
 
     books = result["data"]["books"]
     if not books:
@@ -487,16 +495,7 @@ TOOLS: list[ToolSpec] = [
                     "query_type": {
                         "type": "string",
                         "description": "Entity type to search (default: 'Book').",
-                        "enum": [
-                            "Book",
-                            "Author",
-                            "Series",
-                            "List",
-                            "User",
-                            "Publisher",
-                            "Character",
-                            "Prompt",
-                        ],
+                        "enum": list(_RESULT_KEY),
                     },
                     "per_page": {
                         "type": "integer",
