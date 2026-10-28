@@ -117,6 +117,20 @@ extras: `get_book`'s edition lookup adds `subtitle`, `isbn_10`, and `book`; `get
 
 ### Fixed
 
+- `set_user_book(owned=false)` now removes ownership. It used to call Hardcover's
+  `edition_owned`, which only ever marks an edition owned, so un-owning silently did
+  nothing; it now deletes the edition's row from your Owned list. This needs the
+  `write:lists` scope, now listed for the `library` toolset.
+- `set_user_book` sends only the fields you pass. It used to re-send your current rating,
+  notes, privacy, edition, and status, read a moment earlier; because Hardcover's reads lag
+  its writes, two changes in quick succession could undo the first.
+- `set_list_book(on_list=false)` removes every entry of the book on that list (e.g. two
+  editions), not just the first.
+- Deletes check Hardcover's answer where it says whether anything was deleted: removing a
+  list entry or library entry that's already gone, or a list Hardcover didn't delete, is an
+  error instead of `deleted: true`.
+- The internal Owned list is no longer treated as one of your lists by `set_list`,
+  `delete_list`, or `set_list_book`, so it can't be renamed, deleted, or filled by mistake.
 - An API token with a space, line break, or other unusual character inside it (e.g. a
   wrapped value in a config file) is refused with a clear message. Before, the request
   failed with an error that quoted the whole authorization header, token included, into the

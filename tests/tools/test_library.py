@@ -344,11 +344,9 @@ class TestHandleSetUserBookReview:
             await handle_set_user_book({"book_id": 42, "status": "Read", "rating": 4.0})
 
         update_call_obj = mock_exec.call_args_list[1][0][1]["object"]
-        assert update_call_obj["status_id"] == 3
-        assert update_call_obj["rating"] == 4.0
-        assert update_call_obj["private_notes"] == "mine"
-        for field in ("review_slate", "review_has_spoilers", "reviewed_at"):
-            assert field not in update_call_obj
+        # Only what was passed: Hardcover keeps the rest, and re-sending read values could
+        # undo a newer change.
+        assert update_call_obj == {"status_id": 3, "rating": 4.0}
 
 
 class TestFormatUserBookDetailReview:
@@ -585,7 +583,7 @@ class TestHandleSetUserBookEdition:
             await handle_set_user_book({"book_id": 42, "rating": 5.0})
 
         update_call_obj = mock_exec.call_args_list[1][0][1]["object"]
-        assert update_call_obj["edition_id"] == 555
+        assert "edition_id" not in update_call_obj
 
     async def test_edition_id_updated(self):
         mock_user = {"id": 1}
@@ -994,7 +992,7 @@ class TestHandleSetUserBookPrivacy:
             await handle_set_user_book({"book_id": 42, "rating": 5.0})
 
         update_obj = mock_exec.call_args_list[1][0][1]["object"]
-        assert update_obj["privacy_setting_id"] == 1
+        assert update_obj == {"rating": 5.0}
 
     async def test_privacy_numeric_string_accepted(self):
         mock_user = {"id": 1}
@@ -1066,6 +1064,7 @@ class TestSetEditionOwnedHelper:
                 new=AsyncMock(return_value={"id": 1}),
             ),
             patch("hardcover_mcp.tools.library.execute", new=mock_exec),
+            patch("hardcover_mcp.tools.lists.execute", new=mock_exec),
         ):
             changed = await _set_edition_owned(500, owned)
         return changed, mock_exec
@@ -1080,9 +1079,19 @@ class TestSetEditionOwnedHelper:
         assert changed is False
         assert mock_exec.call_count == 1
 
-    async def test_un_owns_when_owned(self):
-        changed, _ = await self._run(False, self._check(True), self._toggle())
+    async def test_un_owns_by_deleting_the_owned_row(self):
+        # edition_owned only adds; removing ownership deletes the row from the Owned list.
+        deleted = {"data": {"delete_list_book": {"id": 10, "list_id": 3}}}
+        changed, mock_exec = await self._run(False, self._check(True), deleted)
         assert changed is True
+        assert "delete_list_book" in mock_exec.call_args_list[1][0][0]
+        assert mock_exec.call_args_list[1][0][1] == {"id": 10}
+
+    async def test_owning_reports_a_missing_list_book(self):
+        with pytest.raises(ToolError, match="didn't return the owned edition"):
+            await self._run(
+                True, self._check(False), {"data": {"edition_owned": {"id": 1, "list_book": None}}}
+            )
 
     async def test_no_toggle_when_already_not_owned(self):
         changed, mock_exec = await self._run(False, self._check(False))
@@ -1140,13 +1149,14 @@ class TestHandleSetUserBookOwned:
         text, mock_exec = await self._run(
             {"book_id": 42, "owned": False},
             _existing_entry(777),
-            _UPDATED,
             TestSetEditionOwnedHelper._check(False),
         )
         data = json.loads(text)
         assert data["owned"] is False
         assert data["owned_changed"] is False
-        assert mock_exec.call_args_list[2][0][1]["edition_id"] == 777
+        # Nothing else changes, so no update is sent; the ownership check uses edition 777.
+        assert mock_exec.call_count == 2
+        assert mock_exec.call_args_list[1][0][1]["edition_id"] == 777
 
     async def test_owned_without_any_edition_errors_before_writing(self):
         with pytest.raises(ToolError) as exc:
@@ -1785,3 +1795,28 @@ class TestUserRating:
         assert data["user_rating"] == 4.0
         assert "rating" not in data
         assert mock_exec.call_args_list[1][0][1]["object"]["rating"] == 4.0  # input unchanged
+
+
+class TestDeletesCheckTheAnswer:
+    async def _delete_user_book(self, answer: dict):
+        mock_exec = AsyncMock(side_effect=[{"data": {"user_books": [{"id": 9}]}}, answer])
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch("hardcover_mcp.tools.library.execute", new=mock_exec),
+        ):
+            return await handle_delete_user_book({"user_book_id": 9})
+
+    async def test_library_entry_deleted(self):
+        result = await self._delete_user_book(
+            {"data": {"delete_user_book": {"id": 9, "book_id": 42}}}
+        )
+        assert json.loads(result[0].text) == {"deleted": True, "user_book_id": 9}
+
+    async def test_library_entry_already_gone_is_an_error(self):
+        with pytest.raises(ToolError, match="didn't delete the library entry"):
+            await self._delete_user_book(
+                {"data": {"delete_user_book": {"id": "9", "book_id": None}}}
+            )

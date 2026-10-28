@@ -158,7 +158,9 @@ class TestHandleSetListBook:
         assert mock.call_count == 1
 
     async def test_removes_when_present(self):
-        mock = AsyncMock(side_effect=[_found(9), {"data": {"delete_list_book": {}}}])
+        mock = AsyncMock(
+            side_effect=[_found(9), {"data": {"delete_list_book": {"id": 9, "list_id": 1}}}]
+        )
         with patch("hardcover_mcp.tools.lists.execute", new=mock):
             result = await handle_set_list_book({"list_id": 1, "book_id": 2, "on_list": False})
 
@@ -304,7 +306,7 @@ class TestHandleSetListBookMany:
         data, mock = await self._run(
             {"list_ids": [1, 2], "on_list": False},
             _own([1, 2], {1: 512}),
-            {"data": {"delete_list_book": {}}},
+            {"data": {"delete_list_book": {"id": 9, "list_id": 1}}},
         )
 
         assert data["results"] == [
@@ -424,3 +426,44 @@ async def test_list_ids_null_result_is_reported_on_that_list_only():
     assert first == {"list_id": 1, "changed": True, "list_book_id": 900}
     assert second["changed"] is False
     assert "didn't confirm the change" in second["error"]
+
+
+async def test_removing_a_book_on_a_list_twice_deletes_both_entries():
+    found = {"data": {"lists": [{"id": 1}], "list_books": [{"id": 8}, {"id": 9}]}}
+    mock = AsyncMock(
+        side_effect=[
+            found,
+            {"data": {"delete_list_book": {"id": 8, "list_id": 1}}},
+            {"data": {"delete_list_book": {"id": 9, "list_id": 1}}},
+        ]
+    )
+    with (
+        patch("hardcover_mcp.tools.lists.get_current_user", new=AsyncMock(return_value={"id": 7})),
+        patch("hardcover_mcp.tools.lists.execute", new=mock),
+    ):
+        result = await handle_set_list_book({"list_id": 1, "book_id": 2, "on_list": False})
+
+    assert json.loads(result[0].text)["changed"] is True
+    assert [c[0][1] for c in mock.call_args_list[1:]] == [{"id": 8}, {"id": 9}]
+
+
+async def test_owned_list_is_not_one_of_your_lists():
+    from hardcover_mcp.tools.lists import FIND_OWN_LIST_BOOKS_QUERY, OWN_LIST_QUERY
+
+    for query in (OWN_LIST_QUERY, FIND_OWN_LIST_BOOKS_QUERY):
+        assert 'slug: {_neq: "owned"}' in query
+
+
+async def test_delete_list_without_success_is_an_error():
+    mock = AsyncMock(
+        side_effect=[
+            {"data": {"lists": [{"id": 5}]}},
+            {"data": {"delete_list": {"success": False}}},
+        ]
+    )
+    with (
+        patch("hardcover_mcp.tools.lists.get_current_user", new=AsyncMock(return_value={"id": 7})),
+        patch("hardcover_mcp.tools.lists.execute", new=mock),
+        pytest.raises(ToolError, match="didn't delete the list"),
+    ):
+        await handle_delete_list({"id": 5})

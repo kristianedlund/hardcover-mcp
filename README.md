@@ -137,7 +137,7 @@ scopes this server needs (the links open Hardcover's key form with them pre-sele
 |---------|---------------|
 | `core` | `read:catalog`, `read:library`, `read:me`, `read:social`, `read:users` |
 | `catalog` | `read:catalog`, `read:vibes` |
-| `library` | `read:catalog`, `read:goals`, `read:library`, `read:lists`, `read:me`, `write:goals`, `write:library`, `write:reviews` |
+| `library` | `read:catalog`, `read:goals`, `read:library`, `read:lists`, `read:me`, `write:goals`, `write:library`, `write:lists`, `write:reviews` |
 | `lists` | `read:lists`, `read:me`, `write:lists` |
 | `journal` | `read:journal`, `read:me`, `write:library` |
 | `social` | `read:me`, `read:prompts`, `read:social`, `read:users`, `write:prompts`, `write:social` |

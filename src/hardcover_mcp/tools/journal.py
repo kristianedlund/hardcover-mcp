@@ -109,7 +109,7 @@ mutation UpdateReadingJournal($id: Int!, $object: ReadingJournalUpdateType!) {
 DELETE_READING_JOURNAL_MUTATION = """
 mutation DeleteReadingJournal($id: Int!) {
     delete_reading_journal(id: $id) {
-        __typename
+        id
     }
 }
 """
@@ -422,7 +422,11 @@ async def handle_delete_journal_entry(arguments: dict[str, Any]) -> list[TextCon
     found = await execute(GET_OWN_JOURNAL_ENTRY_QUERY, {"id": entry_id_int, "user_id": user["id"]})
     if not found["data"]["reading_journals"]:
         raise ToolError("no journal entry of yours with that id.")
-    await execute(DELETE_READING_JOURNAL_MUTATION, {"id": entry_id_int})
+    # The answer can't tell a deleted entry from one already gone; the lookup above checked.
+    mutation_payload(
+        await execute(DELETE_READING_JOURNAL_MUTATION, {"id": entry_id_int}),
+        "delete_reading_journal",
+    )
     return [TextContent(type="text", text=json.dumps({"deleted": True, "id": entry_id_int}))]
 
 

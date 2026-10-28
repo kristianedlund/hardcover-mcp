@@ -376,7 +376,7 @@ async def handle_delete_reading_goal(arguments: dict[str, Any]) -> list[TextCont
     current = await _find_own_goal(arguments["id"])
 
     result = await execute(DELETE_READING_GOAL_MUTATION, {"id": current["id"]})
-    payload = result["data"]["delete_goal"] or {}
+    payload = mutation_payload(result, "delete_goal")  # success is {id: null, errors: null}
     if payload.get("errors"):
         raise ToolError("; ".join(payload["errors"]))
     return [TextContent(type="text", text=json.dumps({"deleted": True, "id": current["id"]}))]
