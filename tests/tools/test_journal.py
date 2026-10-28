@@ -51,7 +51,8 @@ class TestFormatJournalEntry:
         assert result["event"] == "note"
         assert result["entry"] == "Really liked the ending."
         assert result["action_at"] == "2025-03-15T10:00:00+00:00"
-        assert result["metadata"] is None
+        assert result["details"] == {}
+        assert "metadata" not in result
         assert result["privacy"] == "public"
         assert "privacy_setting_id" not in result
 
@@ -93,12 +94,12 @@ class TestFormatJournalEntry:
 
         assert result["book"]["authors"] == ["Author A", "Author B"]
 
-    def test_handles_none_entry_and_metadata(self):
+    def test_handles_none_entry_and_unknown_metadata(self):
         raw = {**_RAW_ENTRY, "entry": None, "metadata": {"page": 150}}
         result = _format_journal_entry(raw)
 
         assert result["entry"] is None
-        assert result["metadata"] == {"page": 150}
+        assert result["details"] == {}  # a note has no details; the raw blob isn't passed on
 
     def test_handles_none_edition_id(self):
         raw = {**_RAW_ENTRY, "edition_id": None}
@@ -496,3 +497,52 @@ class TestHandleDeleteJournalEntry:
         assert "'id' must be an integer" in str(exc.value)
         mock_user.assert_not_awaited()
         mock_execute.assert_not_awaited()
+
+
+class TestDetails:
+    @pytest.mark.parametrize(
+        ("event", "metadata", "expected"),
+        [
+            (
+                "progress_updated",
+                {
+                    "progress": 34,
+                    "progress_pages": 150,
+                    "source": "completion",
+                    "pages_delta": 9,
+                    "progress_seconds": None,
+                    "user_book_read_id": 7,
+                },
+                {
+                    "progress_percent": 34,
+                    "progress_pages": 150,
+                    "progress_seconds": None,
+                    "user_book_read_id": 7,
+                },
+            ),
+            ("rated", {"rating": "3.5"}, {"rating": 3.5}),
+            (
+                "user_book_read_finished",
+                {"started_at": None, "finished_at": "2026-10-22", "user_book_read_id": 7},
+                {"started_at": None, "finished_at": "2026-10-22", "user_book_read_id": 7},
+            ),
+            (
+                "list_book",
+                {"list_id": 5, "list_name": "Faves", "slug": "faves", "username": "me"},
+                {"list_id": 5, "list_name": "Faves"},
+            ),
+            (
+                "prompt_book",
+                {"prompt_id": 1, "prompt": "Q?", "slug": "q"},
+                {"prompt_id": 1, "prompt": "Q?"},
+            ),
+            ("reviewed", {"review": "<p>long</p>", "review_slate": []}, {}),
+            ("status_read", {}, {}),
+            ("rated", None, {"rating": None}),
+            ("rated", {"rating": "n/a"}, {"rating": None}),
+        ],
+    )
+    def test_keeps_only_the_named_fields(self, event, metadata, expected):
+        from hardcover_mcp.tools.journal import _details
+
+        assert _details(event, metadata) == expected

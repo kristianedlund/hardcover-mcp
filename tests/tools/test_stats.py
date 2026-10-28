@@ -31,12 +31,17 @@ class TestFormatReadingStats:
         result = _format_reading_stats(_AGGREGATE_RESPONSE, 2025)
 
         by_status = result["by_status"]
-        assert by_status["want_to_read"] == 35
-        assert by_status["currently_reading"] == 3
-        assert by_status["read"] == 98
-        assert by_status["did_not_finish"] == 6
-        assert by_status["paused"] == 0
-        assert by_status["ignored"] == 0
+        assert by_status["Want to Read"] == 35
+        assert by_status["Currently Reading"] == 3
+        assert by_status["Read"] == 98
+        assert by_status["Did Not Finish"] == 6
+        assert by_status["Paused"] == 0
+        assert by_status["Ignored"] == 0
+
+    def test_by_status_keys_are_the_status_names(self):
+        from hardcover_mcp.tools.library import STATUS_NAMES
+
+        assert list(_format_reading_stats(_AGGREGATE_RESPONSE, 2026)["by_status"]) == STATUS_NAMES
 
     def test_rounds_average_rating_to_two_decimal_places(self):
         result = _format_reading_stats(_AGGREGATE_RESPONSE, 2025)
@@ -79,7 +84,7 @@ class TestFetchReadingStats:
         data = await fetch_reading_stats(1)
 
         assert data["total_books"] == 142
-        assert data["by_status"]["read"] == 98
+        assert data["by_status"]["Read"] == 98
         assert data["average_rating"] == 3.83
         assert data["books_read_this_year"] == 12
 

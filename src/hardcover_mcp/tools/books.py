@@ -162,22 +162,22 @@ async def resolve_id_by_name(name: str, query_type: str) -> Any:
 
 # Per-type search-hit projection: output_key -> document_key.
 _HIT_FIELDS: dict[str, dict[str, str]] = {
+    # Book rows use book_id, like every other list of books; series is added below.
     "Book": {
-        "id": "id",
+        "book_id": "id",
         "title": "title",
         "slug": "slug",
         "authors": "author_names",
         "release_year": "release_year",
         "rating": "rating",
         "pages": "pages",
-        "series": "featured_series",
     },
+    # image_url is added below.
     "Author": {
         "id": "id",
         "name": "name",
         "slug": "slug",
         "books_count": "books_count",
-        "image": "image",
     },
     "Series": {"id": "id", "name": "name", "slug": "slug", "books_count": "books_count"},
     "List": {
@@ -185,7 +185,7 @@ _HIT_FIELDS: dict[str, dict[str, str]] = {
         "name": "name",
         "slug": "slug",
         "books_count": "books_count",
-        "user": "user_username",
+        "username": "user_username",
     },
     "User": {"id": "id", "username": "username", "name": "name"},
     "Publisher": {"id": "id", "name": "name", "slug": "slug"},
@@ -217,7 +217,25 @@ def _format_search_hit(hit: dict[str, Any], query_type: str = "Book") -> dict[st
         out["authors"] = author_names(doc)
     if out.get("authors") is None and "authors" in out:
         out["authors"] = []
+    # Hardcover's nested objects, reduced to the fields worth keeping.
+    if query_type == "Book" or query_type not in _HIT_FIELDS:
+        out["series"] = _featured_series(doc.get("featured_series"))
+    elif query_type == "Author":
+        out["image_url"] = (doc.get("image") or {}).get("url")
     return out
+
+
+def _featured_series(featured: Any) -> dict[str, Any] | None:
+    """A book hit's main series as ``{id, name, slug, position}``, or None."""
+    if not isinstance(featured, dict) or not isinstance(featured.get("series"), dict):
+        return None
+    series = featured["series"]
+    return {
+        "id": series.get("id"),
+        "name": series.get("name"),
+        "slug": series.get("slug"),
+        "position": featured.get("position"),
+    }
 
 
 BOOKS_BY_IDS_QUERY = """
@@ -444,8 +462,9 @@ TOOLS: list[ToolSpec] = [
                 "Full-text search across Hardcover's catalog by title, author, ISBN, or keyword; "
                 "set query_type to search authors, series, lists, users, publishers, characters, "
                 "or prompts instead of books. Read-only. Returns {total, returned, page, <type>} "
-                "(e.g. 'books', 'authors') with compact hits (id, slug, name/title, plus "
-                "type-specific fields) ranked by relevance unless 'sort' is given. Use it to "
+                "(e.g. 'books', 'authors') with compact hits (book hits: book_id, "
+                "title, authors, series; others: id, name, slug, plus type-specific fields) "
+                "ranked by relevance unless 'sort' is given. Use it to "
                 "discover ids, then call get_book, get_author, get_series, etc. for full details. "
                 "If you already have an id, slug, or ISBN, call the matching get_* tool directly."
             ),

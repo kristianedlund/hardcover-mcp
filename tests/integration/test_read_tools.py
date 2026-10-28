@@ -51,6 +51,24 @@ class TestSearchBooks:
         assert len(data["books"]) <= 2
 
 
+class TestSearchHitShapes:
+    async def test_book_hit_series_and_author_image_are_flattened(self):
+        from hardcover_mcp.tools.books import handle_search_books
+
+        books = json.loads((await handle_search_books({"query": "Mistborn"}))[0].text)["books"]
+        series = next(b["series"] for b in books if b["series"])
+        assert set(series) == {"id", "name", "slug", "position"}
+        assert all("book_id" in b and "id" not in b for b in books)
+
+        authors = json.loads(
+            (await handle_search_books({"query": "Brandon Sanderson", "query_type": "Author"}))[
+                0
+            ].text
+        )["authors"]
+        assert authors[0]["image_url"].startswith("https://")
+        assert "image" not in authors[0]
+
+
 class TestGetBook:
     async def test_get_book_by_slug(self):
         from hardcover_mcp.tools.books import handle_get_book
@@ -80,7 +98,7 @@ class TestGetBook:
         assert {"name": "Julia Whelan", "role": "Narrator"} in book["contributors"]
 
         search = json.loads((await handle_search_books({"query": "Educated: A Memoir"}))[0].text)
-        hit = next(b for b in search["books"] if str(b["id"]) == "44186")
+        hit = next(b for b in search["books"] if str(b["book_id"]) == "44186")
         assert hit["authors"] == ["Tara Westover"]
 
     async def test_edition_key_returns_that_edition(self):
@@ -437,12 +455,9 @@ class TestGetUserIncludeStats:
 
         data = json.loads(result[0].text)["stats"]
         by_status = data["by_status"]
-        assert "want_to_read" in by_status
-        assert "currently_reading" in by_status
-        assert "read" in by_status
-        assert "did_not_finish" in by_status
-        assert "paused" in by_status
-        assert "ignored" in by_status
+        from hardcover_mcp.tools.library import STATUS_NAMES
+
+        assert list(by_status) == STATUS_NAMES
 
     async def test_total_books_is_non_negative(self):
         from hardcover_mcp.tools.user import handle_get_user
@@ -477,7 +492,7 @@ class TestGetUserFollowLists:
             assert isinstance(data[key], list)
             assert len(data[key]) <= 5
             for person in data[key]:
-                assert {"id", "username", "name", "since"} <= person.keys()
+                assert {"id", "username", "name", "created_at"} <= person.keys()
 
 
 class TestGetUserLibraryHasReview:

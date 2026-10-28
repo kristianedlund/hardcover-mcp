@@ -85,7 +85,7 @@ def _format_reading_stats(data: dict[str, Any], year: int) -> dict[str, Any]:
     Returns
     -------
     dict[str, Any]
-        Dict with keys ``total_books``, ``by_status`` (nested counts per status),
+        Dict with keys ``total_books``, ``by_status`` (counts per status name),
         ``average_rating`` (rounded to 2 dp, or ``None`` if no ratings exist),
         and ``books_read_this_year``.
     """
@@ -94,13 +94,14 @@ def _format_reading_stats(data: dict[str, Any], year: int) -> dict[str, Any]:
 
     return {
         "total_books": data["total"]["aggregate"]["count"],
+        # Keyed by status name, like status everywhere else (tools.library.STATUS_MAP).
         "by_status": {
-            "want_to_read": data["want_to_read"]["aggregate"]["count"],
-            "currently_reading": data["currently_reading"]["aggregate"]["count"],
-            "read": data["read"]["aggregate"]["count"],
-            "did_not_finish": data["did_not_finish"]["aggregate"]["count"],
-            "paused": data["paused"]["aggregate"]["count"],
-            "ignored": data["ignored"]["aggregate"]["count"],
+            "Want to Read": data["want_to_read"]["aggregate"]["count"],
+            "Currently Reading": data["currently_reading"]["aggregate"]["count"],
+            "Read": data["read"]["aggregate"]["count"],
+            "Paused": data["paused"]["aggregate"]["count"],
+            "Did Not Finish": data["did_not_finish"]["aggregate"]["count"],
+            "Ignored": data["ignored"]["aggregate"]["count"],
         },
         "average_rating": avg_rating,
         "books_read_this_year": data["read_in_year"]["aggregate"]["count"],
