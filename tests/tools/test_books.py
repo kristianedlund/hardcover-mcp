@@ -587,3 +587,23 @@ def test_list_hits_name_the_owner_username():
 
     assert result["username"] == "edlund"
     assert "user" not in result
+
+
+class TestSearchIds:
+    def test_hit_ids_are_numbers(self):
+        book = _format_search_hit({"document": {"id": "44186", "title": "Educated"}})
+        author = _format_search_hit({"document": {"id": "100", "name": "A"}}, query_type="Author")
+
+        assert book["book_id"] == 44186
+        assert author["id"] == 100
+
+    async def test_name_lookup_returns_a_number(self):
+        from hardcover_mcp.tools.books import resolve_id_by_name
+
+        hits = {"data": {"search": {"results": {"hits": [{"document": {"id": "185"}}]}}}}
+        with patch("hardcover_mcp.tools.books.execute", new=AsyncMock(return_value=hits)):
+            assert await resolve_id_by_name("Tor", "Publisher") == 185
+
+    async def test_non_string_query_is_a_clear_error(self):
+        with pytest.raises(ToolError, match="'query' must be a string"):
+            await handle_search_books({"query": 9780593135204})

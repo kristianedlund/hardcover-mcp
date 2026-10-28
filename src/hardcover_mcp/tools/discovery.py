@@ -59,7 +59,7 @@ async def handle_get_trending_books(arguments: dict[str, Any]) -> list[TextConte
     result = await execute(
         BOOKS_TRENDING_QUERY, {"duration": duration, "limit": limit, "offset": offset}
     )
-    trending = result["data"]["books_trending"]
+    trending = result["data"]["books_trending"] or {}
     if trending.get("error"):
         raise ToolError(str(trending["error"]))
 

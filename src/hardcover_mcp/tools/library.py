@@ -15,6 +15,7 @@ from hardcover_mcp.tools._validation import (
     _require_count,
     _require_float,
     _require_int,
+    _require_iso_date,
     _require_privacy,
     _require_str,
     privacy_label,
@@ -611,7 +612,11 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
     rating = arguments.get("rating")
     review_raw = arguments.get("review_raw")
     review_has_spoilers = arguments.get("review_has_spoilers")
-    reviewed_at = arguments.get("reviewed_at")
+    reviewed_at = (
+        _require_iso_date(arguments["reviewed_at"], "reviewed_at")
+        if arguments.get("reviewed_at")
+        else None
+    )
     private_notes = arguments.get("private_notes")
     edition_id = arguments.get("edition_id")
     owned = arguments.get("owned")
@@ -774,10 +779,9 @@ def _merge_read_input(existing: dict[str, Any], updates: dict[str, Any]) -> dict
 def _build_read_input(arguments: dict[str, Any]) -> dict[str, Any]:
     """Extract read fields from tool arguments."""
     read_input: dict[str, Any] = {}
-    if arguments.get("started_at"):
-        read_input["started_at"] = arguments["started_at"]
-    if arguments.get("finished_at"):
-        read_input["finished_at"] = arguments["finished_at"]
+    for key in ("started_at", "finished_at"):
+        if arguments.get(key):
+            read_input[key] = _require_iso_date(arguments[key], key)
     if arguments.get("progress_pages") is not None:
         read_input["progress_pages"] = _require_int(arguments["progress_pages"], "progress_pages")
     if arguments.get("progress_seconds") is not None:

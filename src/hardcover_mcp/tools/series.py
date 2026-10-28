@@ -27,8 +27,7 @@ query GetSeriesById($id: Int!) {
             slug
         }
         book_series(
-            distinct_on: position
-            order_by: [{position: asc}, {book: {users_count: desc}}]
+            order_by: [{position: asc_nulls_last}, {book: {users_count: desc}}, {id: asc}]
             where: {
                 book: {canonical_id: {_is_null: true}, is_partial_book: {_eq: false}},
                 compilation: {_eq: false}
@@ -56,17 +55,24 @@ GET_SERIES_BY_SLUG_QUERY = GET_SERIES_BY_ID_QUERY.replace(
 def _format_series(s: dict[str, Any]) -> dict[str, Any]:
     """Format a raw series record into a structured response dict."""
     author = s.get("author") or {}
-    books = [
-        {
-            "position": bs.get("position"),
-            "book_id": bs["book"]["id"],
-            "slug": bs["book"]["slug"],
-            "title": bs["book"]["title"],
-            "release_year": bs["book"].get("release_year"),
-            "rating": bs["book"].get("rating"),
-        }
-        for bs in s.get("book_series", [])
-    ]
+    # One book per numbered position (the most read, as the query sorts), plus every book
+    # without a position; distinct_on in the query would keep just one of those.
+    books, seen = [], set()
+    for bs in s.get("book_series", []):
+        position, book = bs.get("position"), bs.get("book")
+        if not book or (position is not None and position in seen):
+            continue
+        seen.add(position)
+        books.append(
+            {
+                "position": position,
+                "book_id": book["id"],
+                "slug": book["slug"],
+                "title": book["title"],
+                "release_year": book.get("release_year"),
+                "rating": book.get("rating"),
+            }
+        )
     return {
         "id": s["id"],
         "name": s["name"],

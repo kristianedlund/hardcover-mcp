@@ -1820,3 +1820,19 @@ class TestDeletesCheckTheAnswer:
             await self._delete_user_book(
                 {"data": {"delete_user_book": {"id": "9", "book_id": None}}}
             )
+
+
+class TestReadDates:
+    def test_read_dates_are_normalized(self):
+        from hardcover_mcp.tools.library import _build_read_input
+
+        assert _build_read_input({"started_at": "20250301", "finished_at": "2025-04-01"}) == {
+            "started_at": "2025-03-01",
+            "finished_at": "2025-04-01",
+        }
+
+    def test_bad_read_date_is_an_error(self):
+        from hardcover_mcp.tools.library import _build_read_input
+
+        with pytest.raises(ToolError, match="'started_at' must be an ISO 8601 date"):
+            _build_read_input({"started_at": "March 1st"})

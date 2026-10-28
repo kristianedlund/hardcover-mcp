@@ -1,5 +1,7 @@
 """Shared input validation helpers for tool handlers."""
 
+import math
+from datetime import date
 from typing import Any
 
 
@@ -21,7 +23,7 @@ def _require_int(value: Any, name: str) -> int:
     """Convert a value to int or raise ToolError with a user-friendly message."""
     try:
         return int(value)
-    except (ValueError, TypeError):  # fmt: skip
+    except (ValueError, TypeError, OverflowError):  # fmt: skip
         raise ToolError(f"'{name}' must be an integer, got: {value!r}") from None
 
 
@@ -62,27 +64,30 @@ def _require_str(value: Any, name: str) -> str | None:
 
 
 def _require_float(value: Any, name: str) -> float:
-    """Convert a value to float or raise ToolError with a user-friendly message."""
+    """Convert a value to a finite float or raise ToolError with a user-friendly message."""
     try:
-        return float(value)
+        number = float(value)
     except (ValueError, TypeError):  # fmt: skip
         raise ToolError(f"'{name}' must be a number, got: {value!r}") from None
+    if not math.isfinite(number):
+        raise ToolError(f"'{name}' must be a number, got: {value!r}")
+    return number
 
 
 def _require_iso_date(value: Any, name: str) -> str:
-    """Validate and return an ISO 8601 date string (YYYY-MM-DD)."""
-    from datetime import date as _date
+    """Validate a date and return it as ``YYYY-MM-DD``.
 
+    Normalised, because Python also accepts forms like ``20260101`` and dates are compared as
+    text later on.
+    """
     if not isinstance(value, str) or not value.strip():
         raise ToolError(f"'{name}' must be a non-empty ISO 8601 date string")
-    normalized = value.strip()
     try:
-        _date.fromisoformat(normalized)
+        return date.fromisoformat(value.strip()).isoformat()
     except ValueError:
         raise ToolError(
             f"'{name}' must be an ISO 8601 date (YYYY-MM-DD), got: {value!r}"
         ) from None
-    return normalized
 
 
 # Privacy settings are the same everywhere in the API: 1 public, 2 followers, 3 private.

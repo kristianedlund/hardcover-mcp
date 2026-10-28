@@ -415,3 +415,27 @@ async def test_protocol_error_message_leaves_out_the_request_headers():
 
     assert "test-token-not-real" not in str(exc.value)
     assert "connection to Hardcover failed" in str(exc.value)
+
+
+async def test_bad_api_url_error_doesnt_repeat_the_value(monkeypatch):
+    monkeypatch.setenv("HARDCOVER_API_URL", "http://user:hunter2@proxy.example")
+
+    with pytest.raises(client.HardcoverAPIError) as exc:
+        await client.execute("query { me { id } }")
+
+    assert "hunter2" not in str(exc.value)
+
+
+@pytest.mark.parametrize("content", [b"null", b'["x"]', b'"text"'])
+async def test_unexpected_response_body_is_a_clear_error(content):
+    _FakeAsyncClient.responses = [httpx.Response(200, content=content, request=_REQUEST)]
+
+    with pytest.raises(client.HardcoverAPIError, match="unexpected response"):
+        await client.execute("query { me { id } }")
+
+
+async def test_graphql_errors_that_arent_objects_are_reported():
+    _FakeAsyncClient.responses = [_response(200, {"errors": ["boom"]})]
+
+    with pytest.raises(client.HardcoverAPIError, match="GraphQL error: boom"):
+        await client.execute("query { me { id } }")
