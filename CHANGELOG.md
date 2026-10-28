@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-28
+
 1.0.0 settles the tool interface: from here on, tool names, arguments, and result shapes only
 change incompatibly in a major release. Most of this release makes the tools consistent with
 each other. If you're upgrading from 0.9, read the two Breaking sections; the changes most
@@ -472,7 +474,8 @@ Initial release.
 - `add_book_to_list` / `remove_book_from_list` — manage books within a list.
 - Ruff linter configuration, `.env.example`, and initial README.
 
-[Unreleased]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/kristianedlund/hardcover-mcp/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/kristianedlund/hardcover-mcp/compare/v0.7.1...v0.7.2
