@@ -21,7 +21,9 @@ _AUTHOR_FIELDS = """
         users_count
         born_year
         death_year
+        # Books they wrote: older records leave the role empty, as in author_names().
         contributions(
+            where: {_or: [{contribution: {_eq: "Author"}}, {contribution: {_is_null: true}}]},
             order_by: {book: {users_count: desc_nulls_last}},
             limit: $books_limit
         ) {
@@ -77,17 +79,17 @@ def _format_author(a: dict[str, Any]) -> dict[str, Any]:
         ``book`` are silently dropped. ``users_count`` is excluded from each
         book entry — it is used for ordering only and is not user-facing.
     """
-    books = [
-        {
-            "book_id": c["book"]["id"],
-            "slug": c["book"]["slug"],
-            "title": c["book"]["title"],
-            "release_year": c["book"].get("release_year"),
-            "rating": c["book"].get("rating"),
-        }
-        for c in a.get("contributions", [])
-        if c.get("book")
-    ]
+    books: dict[int, dict[str, Any]] = {}
+    for c in a.get("contributions", []):
+        book = c.get("book")
+        if book and book["id"] not in books:
+            books[book["id"]] = {
+                "book_id": book["id"],
+                "slug": book["slug"],
+                "title": book["title"],
+                "release_year": book.get("release_year"),
+                "rating": book.get("rating"),
+            }
     return {
         "id": a["id"],
         "slug": a["slug"],
@@ -97,7 +99,7 @@ def _format_author(a: dict[str, Any]) -> dict[str, Any]:
         "users_count": a.get("users_count"),
         "born_year": a.get("born_year"),
         "death_year": a.get("death_year"),
-        "books": books,
+        "books": list(books.values()),
     }
 
 

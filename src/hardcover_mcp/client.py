@@ -201,7 +201,8 @@ def _api_url() -> str:
     """
     url = os.environ.get("HARDCOVER_API_URL", "").strip() or DEFAULT_API_URL
     if not url.startswith("https://"):
-        raise HardcoverAPIError(f"HARDCOVER_API_URL must be an https:// URL, got: {url!r}")
+        # The value isn't repeated: a misplaced token or a URL with a password would leak.
+        raise HardcoverAPIError("HARDCOVER_API_URL must be an https:// URL.")
     return url
 
 
@@ -318,8 +319,13 @@ async def execute(
         except ValueError as exc:
             raise HardcoverAPIError(f"Invalid JSON from API: {exc}") from exc
 
+        if not isinstance(data, dict):
+            raise HardcoverAPIError("Hardcover returned an unexpected response.")
         if "errors" in data:
-            messages = "; ".join(e.get("message", str(e)) for e in data["errors"])
+            messages = "; ".join(
+                e.get("message", str(e)) if isinstance(e, dict) else str(e)
+                for e in data["errors"] or []
+            )
             raise HardcoverAPIError(f"GraphQL error: {messages}")
 
         return data

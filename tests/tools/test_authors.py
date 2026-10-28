@@ -125,3 +125,24 @@ class TestFormatAuthor:
         result = _format_author(raw)
 
         assert "users_count" not in result["books"][0]
+
+
+class TestAuthorBooks:
+    def test_each_book_listed_once(self):
+        from hardcover_mcp.tools.authors import _format_author
+
+        book = {"id": 9, "slug": "b", "title": "B"}
+        raw = {
+            "id": 1,
+            "slug": "a",
+            "name": "A",
+            "contributions": [{"book": book}, {"book": book}],
+        }
+
+        assert [b["book_id"] for b in _format_author(raw)["books"]] == [9]
+
+    def test_query_keeps_author_role_contributions_only(self):
+        from hardcover_mcp.tools.authors import GET_AUTHOR_BY_ID_QUERY
+
+        assert '{contribution: {_eq: "Author"}}' in GET_AUTHOR_BY_ID_QUERY
+        assert "{contribution: {_is_null: true}}" in GET_AUTHOR_BY_ID_QUERY

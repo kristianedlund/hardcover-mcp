@@ -9,6 +9,7 @@ from hardcover_mcp.tools._validation import (
     _require_count,
     _require_float,
     _require_int,
+    _require_iso_date,
     _require_privacy,
     _require_str,
     privacy_label,
@@ -159,3 +160,24 @@ class TestRequireStr:
     def test_rejects_other_types(self):
         with pytest.raises(ToolError, match="'sort' must be a string"):
             _require_str(["rating"], "sort")
+
+
+class TestFiniteNumbers:
+    def test_huge_integer_is_a_clear_error(self):
+        with pytest.raises(ToolError, match="'id' must be an integer"):
+            _require_int(float("inf"), "id")
+
+    @pytest.mark.parametrize("value", ["nan", "inf", float("-inf")])
+    def test_non_finite_float_is_rejected(self, value):
+        with pytest.raises(ToolError, match="'rating' must be a number"):
+            _require_float(value, "rating")
+
+
+class TestIsoDates:
+    @pytest.mark.parametrize("value", ["2026-01-01", "20260101", " 2026-01-01 "])
+    def test_normalized_to_yyyy_mm_dd(self, value):
+        assert _require_iso_date(value, "d") == "2026-01-01"
+
+    def test_single_digit_parts_are_rejected(self):
+        with pytest.raises(ToolError, match="ISO 8601 date"):
+            _require_iso_date("2025-3-1", "d")

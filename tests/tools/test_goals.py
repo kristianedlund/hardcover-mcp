@@ -417,3 +417,10 @@ class TestGeneratedDescription:
     async def test_passed_description_wins(self):
         sent = await self._edit("40 books", {"goal": 50, "description": "40 books"})
         assert sent["description"] == "40 books"
+
+
+async def test_compact_end_date_before_the_start_is_caught():
+    with pytest.raises(ToolError, match="on or after 'start_date'"):
+        await handle_set_reading_goal(
+            {"goal": 5, "metric": "book", "start_date": "2026-06-01", "end_date": "20260101"}
+        )

@@ -13,6 +13,7 @@ from hardcover_mcp.tools._validation import (
     _require_bool,
     _require_count,
     _require_int,
+    _require_str,
     privacy_label,
 )
 from hardcover_mcp.tools.books import resolve_id_by_name
@@ -227,10 +228,10 @@ async def handle_get_user(arguments: dict[str, Any]) -> list[TextContent]:
         target user's privacy setting.
     """
     user_id = arguments.get("id")
-    username = arguments.get("username")
-    name = arguments.get("name")
+    username = _require_str(arguments.get("username"), "username")
+    name = _require_str(arguments.get("name"), "name")
 
-    if not user_id and not username and not name:
+    if user_id is None and username is None and name is None:
         user_id = (await get_current_user())["id"]
 
     from hardcover_mcp.tools.library import _resolve_status_id
@@ -269,12 +270,12 @@ async def handle_get_user(arguments: dict[str, Any]) -> list[TextContent]:
             variables["status_id"] = status_id
 
     # Resolve name → id via search; then always look up by a concrete key.
-    if not user_id and not username:
+    if user_id is None and username is None:
         user_id = await resolve_id_by_name(name, "User")
-        if not user_id:
+        if user_id is None:
             return [TextContent(type="text", text="No user found.")]
 
-    if user_id:
+    if user_id is not None:
         variables["id"] = _require_int(user_id, "id")
         by = "id"
     else:

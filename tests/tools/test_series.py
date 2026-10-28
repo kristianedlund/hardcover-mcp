@@ -97,3 +97,27 @@ class TestFormatSeries:
         result = _format_series(raw)
 
         assert "users_count" not in result["books"][0]
+
+
+class TestSeriesPositions:
+    def test_unnumbered_books_are_all_kept_and_positions_once(self):
+        from hardcover_mcp.tools.series import _format_series
+
+        def entry(position, book_id):
+            return {"position": position, "book": {"id": book_id, "slug": "s", "title": "T"}}
+
+        raw = {
+            "id": 1,
+            "name": "S",
+            "slug": "s",
+            "books_count": 5,
+            "book_series": [
+                entry(1, 10),
+                entry(1, 11),
+                entry(2, 12),
+                entry(None, 13),
+                entry(None, 14),
+            ],
+        }
+
+        assert [b["book_id"] for b in _format_series(raw)["books"]] == [10, 12, 13, 14]

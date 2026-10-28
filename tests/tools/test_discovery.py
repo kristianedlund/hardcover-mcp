@@ -78,3 +78,16 @@ class TestResultShapes:
         data = json.loads(result[0].text)
         assert {k: data[k] for k in ("returned", "offset")} == {"returned": 1, "offset": 0}
         assert data["vibes"][0]["books"] == [_BOOK]
+
+
+async def test_null_trending_result_is_an_empty_page():
+    with (
+        patch(
+            "hardcover_mcp.tools.discovery.execute",
+            new=AsyncMock(return_value={"data": {"books_trending": None}}),
+        ),
+        patch("hardcover_mcp.tools.discovery.fetch_books_by_ids", new=AsyncMock(return_value=[])),
+    ):
+        result = await handle_get_trending_books({})
+
+    assert json.loads(result[0].text) == {"returned": 0, "offset": 0, "books": []}

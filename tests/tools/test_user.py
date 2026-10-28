@@ -157,3 +157,21 @@ class TestHandleGetUserSections:
         data = json.loads(text)
         assert not {"stats", "following", "followers", "library"} & data.keys()
         assert "followed_users(" not in mock_exec.call_args[0][0]
+
+
+class TestWhoIsAsked:
+    async def test_id_zero_is_looked_up_not_treated_as_me(self):
+        me = AsyncMock(return_value={"id": 1})
+        mock_exec = AsyncMock(return_value={"data": {"users": []}})
+        with (
+            patch("hardcover_mcp.tools.user.get_current_user", new=me),
+            patch("hardcover_mcp.tools.user.execute", new=mock_exec),
+        ):
+            result = await handle_get_user({"id": 0})
+
+        assert result[0].text == "No user found."
+        me.assert_not_awaited()
+
+    async def test_non_string_username_is_a_clear_error(self):
+        with pytest.raises(ToolError, match="'username' must be a string"):
+            await handle_get_user({"username": ["adam"]})

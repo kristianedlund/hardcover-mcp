@@ -157,7 +157,7 @@ async def resolve_id_by_name(name: str, query_type: str) -> Any:
     hits = result["data"]["search"]["results"].get("hits", [])
     if not hits:
         return None
-    return (hits[0].get("document") or {}).get("id")
+    return _as_id((hits[0].get("document") or {}).get("id"))
 
 
 # Per-type search-hit projection: output_key -> document_key.
@@ -212,6 +212,10 @@ def _format_search_hit(hit: dict[str, Any], query_type: str = "Book") -> dict[st
     doc = hit.get("document") or {}
     fields = _HIT_FIELDS.get(query_type, _HIT_FIELDS["Book"])
     out = {out_key: doc.get(doc_key) for out_key, doc_key in fields.items()}
+    # Search documents carry ids as strings; every other tool returns them as numbers.
+    for key in ("id", "book_id"):
+        if key in out:
+            out[key] = _as_id(out[key])
     # ``author_names`` on the document lists every contributor; its contributions carry roles.
     if "authors" in out and doc.get("contributions"):
         out["authors"] = author_names(doc)
@@ -223,6 +227,11 @@ def _format_search_hit(hit: dict[str, Any], query_type: str = "Book") -> dict[st
     elif query_type == "Author":
         out["image_url"] = (doc.get("image") or {}).get("url")
     return out
+
+
+def _as_id(value: Any) -> Any:
+    """A search document id as an int (Typesense stores ids as strings)."""
+    return int(value) if isinstance(value, str) and value.isdigit() else value
 
 
 def _featured_series(featured: Any) -> dict[str, Any] | None:
@@ -300,7 +309,7 @@ async def handle_search_books(arguments: dict[str, Any]) -> list[TextContent]:
         JSON with ``found`` count, ``page`` number, and a type-keyed results list
         (e.g. ``"books"`` for ``Book``, ``"authors"`` for ``Author``).
     """
-    query = arguments.get("query", "").strip()
+    query = (_require_str(arguments.get("query"), "query") or "").strip()
     if not query:
         raise ToolError("'query' is required.")
 

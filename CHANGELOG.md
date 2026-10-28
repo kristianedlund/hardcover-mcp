@@ -117,6 +117,21 @@ extras: `get_book`'s edition lookup adds `subtitle`, `isbn_10`, and `book`; `get
 
 ### Fixed
 
+- Looking up an author, series, publisher, or user by name works with the newer scoped API
+  keys. Search returns ids as text, which those keys reject where a number is expected;
+  ids from search (including `search_books` results) are now numbers.
+- `get_author` lists the books the author wrote, each once. It used to include books they
+  only narrated, translated, or illustrated, and list a book twice when they had two roles
+  on it.
+- `get_series` keeps every book without a series position (e.g. unnumbered novellas); it
+  used to keep only one of them.
+- `get_user(id=0)` or an empty `username` no longer returns your own profile.
+- Dates are checked and normalised to `YYYY-MM-DD` everywhere: read dates and `reviewed_at`
+  are now validated, and a compact date like `20260101` no longer slips past "end date
+  after start date" checks. Infinite or NaN numbers, a huge id, a non-text `query`, and
+  unusual responses from Hardcover give a clear error instead of a traceback.
+- The error for a non-https `HARDCOVER_API_URL` no longer repeats the configured value, so
+  a token pasted there by mistake isn't shown.
 - `set_user_book(owned=false)` now removes ownership. It used to call Hardcover's
   `edition_owned`, which only ever marks an edition owned, so un-owning silently did
   nothing; it now deletes the edition's row from your Owned list. This needs the
