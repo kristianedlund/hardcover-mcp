@@ -457,7 +457,7 @@ class TestPrivacyControls:
             # 2. Verify privacy is returned by get_user_book
             assert await _library_entry(book_id, lambda d: d["privacy"] == "private")
 
-            # 3. Update to Public — privacy_setting_id must change
+            # 3. Update to Public — the privacy must change
             result = await handle_set_user_book(
                 {
                     "book_id": book_id,

@@ -67,7 +67,8 @@ class TestJournalEntryLifecycle:
             assert edited["id"] == entry_id
             assert edited["entry"] == edited_note
             assert edited["event"] == "note"
-            assert edited["privacy_setting_id"] == 3
+            assert edited["privacy"] == "private"
+            assert "privacy_setting_id" not in edited
 
             # Delete and verify removal in the same block so cleanup is
             # guaranteed by the finally even if verification fails.
