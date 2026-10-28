@@ -251,7 +251,7 @@ def _format_user_book(ub: dict[str, Any]) -> dict[str, Any]:
         "slug": book.get("slug"),
         "authors": authors,
         "status": status_label(ub["status_id"]),
-        "rating": ub.get("rating"),
+        "user_rating": ub.get("rating"),
         "updated_at": ub.get("updated_at"),
     }
     reads = ub.get("user_book_reads")
@@ -288,7 +288,7 @@ def _format_user_book_detail(ub: dict[str, Any]) -> dict[str, Any]:
         "authors": authors,
         "status": status_label(ub["status_id"]),
         "privacy": privacy_label(ub.get("privacy_setting_id")),
-        "rating": ub.get("rating"),
+        "user_rating": ub.get("rating"),
         "updated_at": ub.get("updated_at"),
         "review_raw": ub.get("review_raw"),
         "review_has_spoilers": ub.get("review_has_spoilers"),
@@ -711,7 +711,7 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
         "book_id": ub.get("book_id"),
         "status": status_label(ub.get("status_id")),
         "privacy": privacy_label(ub.get("privacy_setting_id")),
-        "rating": ub.get("rating"),
+        "user_rating": ub.get("rating"),
         "edition_id": ub.get("edition_id"),
     }
     if owned is not None:
@@ -1084,7 +1084,8 @@ TOOLS: list[ToolSpec] = [
                 "or has_review=true for books you have reviewed (adds review text, spoiler "
                 "flag, and review date; newest review first). Sort by updated, rating, "
                 "date_added, or reviewed. Returns user_book_id, book_id, title, authors, "
-                "status, and rating per book (with a date range, also the read's dates). "
+                "status, and user_rating (your rating) per book (with a date range, also the "
+                "read's dates). "
                 "E.g. sort='rating' for top-rated; "
                 "a date range answers 'what did I read in May?' (always newest finish first, "
                 "so it can't take sort/order). owned=true keeps only books "
@@ -1163,7 +1164,8 @@ TOOLS: list[ToolSpec] = [
             description=(
                 "Get your own library entry for one book: pass book_id or slug (book_id wins "
                 "if both are given). Read-only. "
-                "Returns user_book_id, status, rating, privacy, review, private notes, chosen "
+                "Returns user_book_id, status, user_rating (your rating), privacy, review, "
+                "private notes, chosen "
                 "edition, and every read entry (with their ids, needed by "
                 "set_user_book_read/delete_user_book_read), plus the lists of yours it's on "
                 "(not Owned; change them with set_list_book). Returns 'Book not in your "
@@ -1198,10 +1200,11 @@ TOOLS: list[ToolSpec] = [
                 "Add a book to your library or update your entry for it: status, rating, "
                 "review, privacy, private notes, edition, and whether you own it. Upsert: "
                 "creates the entry if the book isn't in your library yet, otherwise overwrites "
-                "only the fields you pass. owned=true/false marks ownership of edition_id (or of "
+                "only the fields you pass (null leaves a field as it is; clearing one isn't "
+                "supported). owned=true/false marks ownership of edition_id (or of "
                 "the entry's current edition if edition_id is omitted; errors if there is "
                 "none); passing edition_id also makes it the edition you're reading. Ownership "
-                "changes are idempotent. Returns user_book_id, status, privacy, rating, "
+                "changes are idempotent. Returns user_book_id, status, privacy, user_rating, "
                 "edition_id, and owned/owned_changed when owned was given. Use "
                 "set_user_book_read for start/finish dates and progress, set_list_book for "
                 "custom lists, and delete_user_book to remove the book."
@@ -1220,7 +1223,10 @@ TOOLS: list[ToolSpec] = [
                     },
                     "rating": {
                         "type": "number",
-                        "description": "Rating (e.g. 4.0, 3.5). Omit to leave unchanged.",
+                        "description": (
+                            "Your rating (e.g. 4.0, 3.5); returned as user_rating. Omit to leave "
+                            "unchanged."
+                        ),
                     },
                     "review_raw": {
                         "type": "string",

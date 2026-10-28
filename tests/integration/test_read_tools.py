@@ -196,7 +196,7 @@ class TestGetUserLibrary:
 
         result = await handle_get_user_library({"sort": "rating", "order": "desc", "limit": 50})
 
-        ratings = [b["rating"] for b in json.loads(result[0].text)["books"]]
+        ratings = [b["user_rating"] for b in json.loads(result[0].text)["books"]]
         rated = [r is not None for r in ratings]
         assert rated == sorted(rated, reverse=True)
 
@@ -521,7 +521,7 @@ class TestGetUserLibraryHasReview:
             assert "title" in review
             assert "slug" in review
             assert "authors" in review
-            assert "rating" in review
+            assert "user_rating" in review
             assert "review_raw" in review
             assert "review_has_spoilers" in review
             assert "reviewed_at" in review

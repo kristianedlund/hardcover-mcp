@@ -16,8 +16,9 @@ to affect you:
 - Privacy values are lowercase (`public` / `followers` / `private`) everywhere, and
   `set_journal_entry` / `set_reading_goal` take `privacy` instead of `privacy_setting_id`.
 - `get_list` pages books with `books_limit` / `books_offset`; editions, ratings, and series
-  authors have one name and shape in every tool. Search book hits use `book_id`, and journal
-  entries have `details` instead of Hardcover's raw `metadata`.
+  authors have one name and shape in every tool. Your rating is `user_rating` (`rating` is
+  the community rating). Search book hits use `book_id`, and journal entries have `details`
+  instead of Hardcover's raw `metadata`.
 - `status` must be one of the status names (or 1–6).
 - The server no longer reads a `.env` file; set variables in your MCP client's config.
 
@@ -75,6 +76,7 @@ extras: `get_book`'s edition lookup adds `subtitle`, `isbn_10`, and `book`; `get
 | `get_publisher` editions | `edition_id`, `format`, `book_id`, `book_title`, `book_slug`, `rating`, `release_year` | edition fields above, plus `book: {id, title, slug, rating, release_year}` |
 | `get_user_book` | `edition.language` was `{"language": "English"}`; fewer fields | the edition fields above |
 | `get_user(include_library=true)` | `your_rating` (the profiled user's rating) | `user_rating` |
+| `get_user_library`, `get_user_book`, `set_user_book` results | `rating` (your rating) | `user_rating`; `rating` now always means the community rating (`set_user_book`'s input is still `rating`) |
 | `get_series` | `author` (name) and `author_slug` | `authors` (list of names), like other tools |
 | `search_books` book hits | `id`; `series` was Hardcover's raw object | `book_id`, like other lists of books; `series` is `{id, name, slug, position}` |
 | `search_books` author hits | `image` was Hardcover's raw image object | `image_url` |
@@ -93,9 +95,11 @@ extras: `get_book`'s edition lookup adds `subtitle`, `isbn_10`, and `book`; `get
 - An unrecognised status id in results reads `unknown (<id>)`, like privacy (was
   `Unknown (<id>)`, or just the id in `set_user_book`).
 - `set_following` with an unknown username is an error (with `isError` set) instead of a
-  normal "No user found" result. The rule now: a write tool whose target doesn't exist
+  normal "No user found" result, and `get_activity_feed` with an unknown username returns
+  an empty page instead of that text. The rule now: a write tool whose target doesn't exist
   fails; a read tool that finds nothing returns an empty page, or a short "No … found"
-  answer for a single lookup.
+  answer for a single lookup. Leaving a field out of a write tool, or passing `null`, keeps
+  its current value (the README lists these rules).
 - `set_user_book` and `set_list` reject privacy values other than the ones above; before,
   any number was sent to Hardcover.
 - `set_journal_entry` no longer passes an undocumented `tags` argument through to

@@ -35,14 +35,14 @@ class TestActivityFeed:
         assert isinstance(events, list)
         assert events[0]["user"]["id"] == 1
 
-    async def test_unknown_username_reports_not_found(self):
+    async def test_unknown_username_is_an_empty_page(self):
         from hardcover_mcp.tools.activity import handle_get_activity_feed
 
         result = await handle_get_activity_feed(
             {"username": "definitely-not-a-real-user-xyz-9999"}
         )
 
-        assert "No user found" in result[0].text
+        assert json.loads(result[0].text) == {"returned": 0, "offset": 0, "activities": []}
 
     async def test_followed_feed_returns_a_page(self):
         from hardcover_mcp.tools.activity import handle_get_activity_feed

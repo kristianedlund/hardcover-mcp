@@ -124,7 +124,7 @@ async def handle_get_activity_feed(arguments: dict[str, Any]) -> list[TextConten
         found = await execute(GET_USER_ID_BY_USERNAME_QUERY, {"username": username})
         users = found["data"]["users"]
         if not users:
-            return [TextContent(type="text", text=f"No user found for username '{username}'.")]
+            return list_result("activities", [], offset=offset)  # nobody by that name
         user_id = users[0]["id"]
 
     if user_id:
