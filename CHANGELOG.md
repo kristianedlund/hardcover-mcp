@@ -16,7 +16,8 @@ to affect you:
 - Privacy values are lowercase (`public` / `followers` / `private`) everywhere, and
   `set_journal_entry` / `set_reading_goal` take `privacy` instead of `privacy_setting_id`.
 - `get_list` pages books with `books_limit` / `books_offset`; editions, ratings, and series
-  authors have one name and shape in every tool.
+  authors have one name and shape in every tool. Search book hits use `book_id`, and journal
+  entries have `details` instead of Hardcover's raw `metadata`.
 - `status` must be one of the status names (or 1–6).
 - The server no longer reads a `.env` file; set variables in your MCP client's config.
 
@@ -75,6 +76,12 @@ extras: `get_book`'s edition lookup adds `subtitle`, `isbn_10`, and `book`; `get
 | `get_user_book` | `edition.language` was `{"language": "English"}`; fewer fields | the edition fields above |
 | `get_user(include_library=true)` | `your_rating` (the profiled user's rating) | `user_rating` |
 | `get_series` | `author` (name) and `author_slug` | `authors` (list of names), like other tools |
+| `search_books` book hits | `id`; `series` was Hardcover's raw object | `book_id`, like other lists of books; `series` is `{id, name, slug, position}` |
+| `search_books` author hits | `image` was Hardcover's raw image object | `image_url` |
+| `search_books` list hits | `user` (the owner's username) | `username` |
+| `get_reading_journal`, `set_journal_entry` | `metadata`, Hardcover's raw blob | `details`: named fields per event (e.g. `rating`, `progress_pages`, `list_name`) |
+| `get_user` follow rows | `since` | `created_at` |
+| `get_user(include_stats=true)` `by_status` | snake_case keys (`want_to_read`) | status names (`Want to Read`) |
 
 ### Breaking: stricter inputs and errors
 

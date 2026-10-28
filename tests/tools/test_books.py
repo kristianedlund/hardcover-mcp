@@ -27,16 +27,36 @@ class TestFormatSearchHit:
                 "release_year": 2021,
                 "rating": 4.5,
                 "pages": 476,
-                "featured_series": "Standalone",
+                "featured_series": {
+                    "collection": False,
+                    "details": "1",
+                    "featured": True,
+                    "id": 16593,
+                    "position": 1.0,
+                    "series": {
+                        "books_count": 8,
+                        "id": 10001,
+                        "name": "The Mistborn Saga",
+                        "primary_books_count": 3,
+                        "slug": "the-mistborn-saga",
+                    },
+                    "unreleased": False,
+                },
             }
         }
         result = _format_search_hit(hit)
 
-        assert result["id"] == 42
+        assert result["book_id"] == 42
+        assert "id" not in result
         assert result["title"] == "Project Hail Mary"
         assert result["authors"] == ["Andy Weir"]
         assert result["pages"] == 476
-        assert result["series"] == "Standalone"
+        assert result["series"] == {
+            "id": 10001,
+            "name": "The Mistborn Saga",
+            "slug": "the-mistborn-saga",
+            "position": 1.0,
+        }
 
     def test_book_authors_leave_out_narrators(self):
         hit = {
@@ -59,7 +79,7 @@ class TestFormatSearchHit:
                 "name": "Brandon Sanderson",
                 "slug": "brandon-sanderson",
                 "books_count": 50,
-                "image": "https://example.com/img.jpg",
+                "image": {"id": 1, "url": "https://example.com/img.jpg", "width": 9, "height": 9},
             }
         }
         result = _format_search_hit(hit, query_type="Author")
@@ -67,7 +87,8 @@ class TestFormatSearchHit:
         assert result["id"] == 100
         assert result["name"] == "Brandon Sanderson"
         assert result["books_count"] == 50
-        assert result["image"] == "https://example.com/img.jpg"
+        assert result["image_url"] == "https://example.com/img.jpg"
+        assert "image" not in result
 
     def test_series_extracts_fields_from_document(self):
         hit = {
@@ -95,14 +116,14 @@ class TestFormatSearchHit:
                 "release_year": 2021,
                 "rating": 4.5,
                 "pages": 476,
-                "featured_series": "Standalone",
             }
         }
         result = _format_search_hit(hit)
 
-        assert result["id"] == 42
+        assert result["book_id"] == 42
         assert result["title"] == "Project Hail Mary"
         assert result["authors"] == ["Andy Weir"]
+        assert result["series"] is None
 
     def test_dispatches_to_author_formatter(self):
         hit = {"document": {"id": 1, "name": "Andy Weir", "slug": "andy-weir"}}
@@ -122,7 +143,8 @@ class TestFormatSearchHit:
     def test_handles_missing_document_gracefully(self):
         result = _format_search_hit({})
 
-        assert result["id"] is None
+        assert result["book_id"] is None
+        assert result["series"] is None
         assert result["title"] is None
         assert result["authors"] == []
 
@@ -556,3 +578,12 @@ class TestGetBookFlags:
     async def test_other_values_are_an_error(self):
         with pytest.raises(ToolError, match="'include_editions' must be true or false"):
             await handle_get_book({"id": 123, "include_editions": "maybe"})
+
+
+def test_list_hits_name_the_owner_username():
+    hit = {"document": {"id": 3, "name": "Faves", "slug": "faves", "user_username": "edlund"}}
+
+    result = _format_search_hit(hit, query_type="List")
+
+    assert result["username"] == "edlund"
+    assert "user" not in result

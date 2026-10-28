@@ -197,7 +197,7 @@ def _format_user(raw: dict[str, Any]) -> dict[str, Any]:
                     "id": (row.get(person) or {}).get("id"),
                     "username": (row.get(person) or {}).get("username"),
                     "name": (row.get(person) or {}).get("name"),
-                    "since": row.get("created_at"),
+                    "created_at": row.get("created_at"),
                 }
                 for row in raw[rel]
             ]

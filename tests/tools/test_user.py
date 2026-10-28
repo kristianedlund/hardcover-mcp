@@ -144,7 +144,7 @@ class TestHandleGetUserSections:
 
         data = json.loads(text)
         assert data["following"] == [
-            {"id": 5, "username": "a", "name": None, "since": "2025-01-02"}
+            {"id": 5, "username": "a", "name": None, "created_at": "2025-01-02"}
         ]
         assert data["followers"][0]["username"] == "b"
         assert mock_exec.call_args[0][1]["follow_limit"] == 100

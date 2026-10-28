@@ -115,6 +115,45 @@ mutation DeleteReadingJournal($id: Int!) {
 """
 
 
+# The metadata fields worth keeping, per event, as (output key, Hardcover's key).
+_DETAIL_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
+    "progress_updated": (
+        ("progress_percent", "progress"),
+        ("progress_pages", "progress_pages"),
+        ("progress_seconds", "progress_seconds"),
+        ("user_book_read_id", "user_book_read_id"),
+    ),
+    "rated": (("rating", "rating"),),
+    "user_book_read_started": (
+        ("started_at", "started_at"),
+        ("user_book_read_id", "user_book_read_id"),
+    ),
+    "user_book_read_finished": (
+        ("started_at", "started_at"),
+        ("finished_at", "finished_at"),
+        ("user_book_read_id", "user_book_read_id"),
+    ),
+    "list_book": (("list_id", "list_id"), ("list_name", "list_name")),
+    "prompt_book": (("prompt_id", "prompt_id"), ("prompt", "prompt")),
+}
+
+
+def _details(event: str | None, metadata: Any) -> dict[str, Any]:
+    """An entry's event-specific fields from Hardcover's ``metadata`` blob.
+
+    Only the fields listed in ``_DETAIL_FIELDS`` are kept, so the output shape is ours rather
+    than Hardcover's; other events (status changes, reviews) have no details.
+    """
+    metadata = metadata if isinstance(metadata, dict) else {}
+    details = {out: metadata.get(key) for out, key in _DETAIL_FIELDS.get(event or "", ())}
+    if details.get("rating") is not None:
+        try:
+            details["rating"] = float(details["rating"])
+        except TypeError, ValueError:
+            details["rating"] = None
+    return details
+
+
 def _format_journal_entry(raw: dict[str, Any]) -> dict[str, Any]:
     """Format a single reading_journals row into a clean response dict.
 
@@ -130,7 +169,7 @@ def _format_journal_entry(raw: dict[str, Any]) -> dict[str, Any]:
     -------
     dict[str, Any]
         Flattened dict with ``id``, ``event``, ``entry``, ``action_at``,
-        ``book_id``, ``edition_id``, ``metadata``, ``privacy``, and ``book`` (with
+        ``book_id``, ``edition_id``, ``details``, ``privacy``, and ``book`` (with
         ``title``, ``slug``, ``authors``).
     """
     book_raw = raw.get("book") or {}
@@ -143,7 +182,7 @@ def _format_journal_entry(raw: dict[str, Any]) -> dict[str, Any]:
         "action_at": raw.get("action_at"),
         "book_id": raw.get("book_id"),
         "edition_id": raw.get("edition_id"),
-        "metadata": raw.get("metadata"),
+        "details": _details(raw.get("event"), raw.get("metadata")),
         "privacy": privacy_label(raw.get("privacy_setting_id")),
         "book": {
             "title": book_raw.get("title"),
@@ -173,7 +212,7 @@ async def handle_get_reading_journal(arguments: dict[str, Any]) -> list[TextCont
     -------
     list[TextContent]
         JSON ``{returned, offset, entries}``. Each entry contains ``id``, ``event``,
-        ``entry``, ``action_at``, ``book_id``, ``edition_id``, ``metadata``, ``privacy``,
+        ``entry``, ``action_at``, ``book_id``, ``edition_id``, ``details``, ``privacy``,
         and ``book`` (``title``, ``slug``, ``authors``).
 
     Raises
@@ -229,7 +268,7 @@ def _format_written_entry(raw: dict[str, Any]) -> dict[str, Any]:
         "event": raw.get("event"),
         "entry": raw.get("entry"),
         "action_at": raw.get("action_at"),
-        "metadata": raw.get("metadata"),
+        "details": _details(raw.get("event"), raw.get("metadata")),
         "privacy": privacy_label(raw.get("privacy_setting_id")),
     }
 
