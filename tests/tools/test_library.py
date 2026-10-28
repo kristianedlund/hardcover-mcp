@@ -424,7 +424,8 @@ class TestFormatUserReview:
         assert result["title"] == "Test Book"
         assert result["slug"] == "test-book"
         assert result["authors"] == ["Author One"]
-        assert result["rating"] == 4.0
+        assert result["user_rating"] == 4.0
+        assert "rating" not in result
         assert result["review_raw"] == "A great read."
         assert result["review_has_spoilers"] is False
         assert result["reviewed_at"] == "2025-03-10"
@@ -445,7 +446,7 @@ class TestFormatUserReview:
 
     def test_none_rating(self):
         result = _format_user_review(self._make_ub(rating=None))
-        assert result["rating"] is None
+        assert result["user_rating"] is None
 
     def test_spoiler_flag_true(self):
         result = _format_user_review(self._make_ub(review_has_spoilers=True))
@@ -1752,3 +1753,35 @@ async def test_rejected_owned_toggle_is_an_error():
         pytest.raises(ToolError, match="didn't confirm the change"),
     ):
         await _set_edition_owned(55, True)
+
+
+class TestUserRating:
+    def test_library_row_and_detail_name_your_rating_user_rating(self):
+        ub = {"id": 1, "book_id": 42, "status_id": 3, "rating": 4.5, "book": {"title": "T"}}
+
+        assert _format_user_book(ub)["user_rating"] == 4.5
+        detail = _format_user_book_detail(ub)
+        assert detail["user_rating"] == 4.5
+        assert "rating" not in detail
+
+    async def test_set_user_book_returns_user_rating(self):
+        saved = {"id": 9, "book_id": 42, "status_id": 3, "rating": 4.0, "privacy_setting_id": 1}
+        mock_exec = AsyncMock(
+            side_effect=[
+                {"data": {"user_books": []}},
+                {"data": {"insert_user_book": {"error": None, "user_book": saved}}},
+            ]
+        )
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch("hardcover_mcp.tools.library.execute", new=mock_exec),
+        ):
+            result = await handle_set_user_book({"book_id": 42, "rating": 4.0})
+
+        data = json.loads(result[0].text)
+        assert data["user_rating"] == 4.0
+        assert "rating" not in data
+        assert mock_exec.call_args_list[1][0][1]["object"]["rating"] == 4.0  # input unchanged

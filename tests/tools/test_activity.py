@@ -69,3 +69,11 @@ class TestHandleGetActivityFeed:
 
         assert json.loads(result[0].text) == {"returned": 0, "offset": 0, "activities": []}
         mock.assert_awaited_once()  # no feed query when there's nobody to show
+
+    async def test_unknown_username_is_an_empty_page(self):
+        mock = AsyncMock(return_value={"data": {"users": []}})
+        with patch("hardcover_mcp.tools.activity.execute", new=mock):
+            result = await handle_get_activity_feed({"username": "ghost"})
+
+        assert json.loads(result[0].text) == {"returned": 0, "offset": 0, "activities": []}
+        mock.assert_awaited_once()  # only the user lookup

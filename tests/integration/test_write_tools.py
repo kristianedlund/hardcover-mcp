@@ -211,11 +211,11 @@ class TestUserBookLifecycle:
                 }
             )
             updated = json.loads(result[0].text)
-            assert updated["rating"] == 4.0
+            assert updated["user_rating"] == 4.0
             assert updated["status"] == "Read"
 
             # 3. Verify via get
-            detail = await _library_entry(book_id, lambda d: d["rating"] == 4.0)
+            detail = await _library_entry(book_id, lambda d: d["user_rating"] == 4.0)
             assert detail is not None
             assert detail["book_id"] == book_id
 

@@ -188,6 +188,14 @@ An unknown toolset name stops the server at startup with a message listing the v
 Grouped by toolset (see [Configuration](#configuration)). Tools marked ✏️ can change your
 account and are hidden in read-only mode.
 
+A few rules hold for every tool:
+
+- Write tools change only the fields you pass; leaving a field out or passing `null` keeps
+  its current value. Clearing a field (e.g. removing a rating) isn't supported yet.
+- `rating` is the community rating; `user_rating` is yours (or, in `get_user`, that user's).
+- A write tool whose target doesn't exist, or isn't yours, returns an error. A read tool
+  that finds nothing returns an empty list, or "No … found." when looking up one thing.
+
 ### core (always loaded)
 
 | What you can do | Tool |
