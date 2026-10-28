@@ -175,3 +175,46 @@ class TestWhoIsAsked:
     async def test_non_string_username_is_a_clear_error(self):
         with pytest.raises(ToolError, match="'username' must be a string"):
             await handle_get_user({"username": ["adam"]})
+
+
+class TestCurrentUserCache:
+    @pytest.fixture(autouse=True)
+    def _empty_cache(self, monkeypatch):
+        from hardcover_mcp.tools import user
+
+        monkeypatch.setattr(user, "_cached_user", None)
+        monkeypatch.setattr(user, "_cached_at", 0.0)
+
+    async def test_second_call_uses_the_cache(self):
+        from hardcover_mcp.tools.user import get_current_user
+
+        mock = AsyncMock(return_value={"data": {"me": [{"id": 7}]}})
+        with patch("hardcover_mcp.tools.user.execute", new=mock):
+            assert (await get_current_user())["id"] == 7
+            assert (await get_current_user())["id"] == 7
+        mock.assert_awaited_once()
+
+    async def test_expired_cache_asks_again(self, monkeypatch):
+        from hardcover_mcp.tools import user
+
+        mock = AsyncMock(
+            side_effect=[{"data": {"me": [{"id": 7}]}}, {"data": {"me": [{"id": 8}]}}]
+        )
+        now = [1000.0]
+        monkeypatch.setattr(user.time, "monotonic", lambda: now[0])
+        with patch("hardcover_mcp.tools.user.execute", new=mock):
+            assert (await user.get_current_user())["id"] == 7
+            now[0] += user._CACHE_TTL + 1  # an hour later
+            assert (await user.get_current_user())["id"] == 8
+        assert mock.await_count == 2
+
+    async def test_no_user_for_the_token_is_a_clear_error(self):
+        from hardcover_mcp.client import HardcoverAPIError
+        from hardcover_mcp.tools.user import get_current_user
+
+        mock = AsyncMock(return_value={"data": {"me": []}})
+        with (
+            patch("hardcover_mcp.tools.user.execute", new=mock),
+            pytest.raises(HardcoverAPIError, match="no user for this API token"),
+        ):
+            await get_current_user()

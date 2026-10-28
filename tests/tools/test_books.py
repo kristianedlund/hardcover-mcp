@@ -607,3 +607,39 @@ class TestSearchIds:
     async def test_non_string_query_is_a_clear_error(self):
         with pytest.raises(ToolError, match="'query' must be a string"):
             await handle_search_books({"query": 9780593135204})
+
+
+class TestFetchBooksByIds:
+    async def test_keeps_the_order_asked_for_and_drops_missing_ids(self):
+        from hardcover_mcp.tools.books import fetch_books_by_ids
+
+        rows = [{"id": 3, "title": "C"}, {"id": 1, "title": "A"}]  # any order, 2 is missing
+        with patch(
+            "hardcover_mcp.tools.books.execute",
+            new=AsyncMock(return_value={"data": {"books": rows}}),
+        ):
+            books = await fetch_books_by_ids([1, 2, 3])
+
+        assert [b["book_id"] for b in books] == [1, 3]
+
+    async def test_no_ids_sends_nothing(self):
+        from hardcover_mcp.tools.books import fetch_books_by_ids
+
+        mock = AsyncMock()
+        with patch("hardcover_mcp.tools.books.execute", new=mock):
+            assert await fetch_books_by_ids([]) == []
+        mock.assert_not_awaited()
+
+
+def test_slug_queries_look_up_by_slug():
+    """The slug queries are built by .replace() on the id queries; check it still matched."""
+    from graphql import parse
+
+    from hardcover_mcp.tools.books import GET_BOOK_BY_SLUG_QUERY
+    from hardcover_mcp.tools.series import GET_SERIES_BY_SLUG_QUERY
+
+    for query in (GET_BOOK_BY_SLUG_QUERY, GET_SERIES_BY_SLUG_QUERY):
+        parse(query)
+        assert "$slug: String!" in query
+        assert "{slug: {_eq: $slug}}" in query
+        assert "$id" not in query

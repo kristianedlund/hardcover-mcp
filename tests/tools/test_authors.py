@@ -1,5 +1,8 @@
 """Unit tests for tools.authors."""
 
+import json
+from unittest.mock import AsyncMock, patch
+
 from hardcover_mcp.tools.authors import _format_author
 
 
@@ -146,3 +149,37 @@ class TestAuthorBooks:
 
         assert '{contribution: {_eq: "Author"}}' in GET_AUTHOR_BY_ID_QUERY
         assert "{contribution: {_is_null: true}}" in GET_AUTHOR_BY_ID_QUERY
+
+
+_AUTHOR = {"id": 5, "slug": "a", "name": "A", "contributions": []}
+
+
+class TestHandleGetAuthor:
+    async def _run(self, arguments: dict, found: list, resolved=None):
+        from hardcover_mcp.tools.authors import handle_get_author
+
+        mock = AsyncMock(return_value={"data": {"authors": found}})
+        with (
+            patch("hardcover_mcp.tools.authors.execute", new=mock),
+            patch(
+                "hardcover_mcp.tools.authors.resolve_id_by_name",
+                new=AsyncMock(return_value=resolved),
+            ),
+        ):
+            result = await handle_get_author(arguments)
+        return result[0].text, mock
+
+    async def test_name_resolves_to_an_id_lookup(self):
+        text, mock = await self._run({"name": "A"}, [_AUTHOR], resolved=5)
+        assert json.loads(text)["id"] == 5
+        assert mock.call_args[0][1] == {"books_limit": 20, "id": 5}
+
+    async def test_slug_uses_the_slug_query(self):
+        _, mock = await self._run({"slug": "a", "books_limit": 500}, [_AUTHOR])
+        assert "slug: {_eq: $slug}" in mock.call_args[0][0]
+        assert mock.call_args[0][1]["books_limit"] == 100  # capped
+
+    async def test_unknown_name_is_not_found(self):
+        text, mock = await self._run({"name": "nobody"}, [], resolved=None)
+        assert text == "No author found."
+        mock.assert_not_awaited()

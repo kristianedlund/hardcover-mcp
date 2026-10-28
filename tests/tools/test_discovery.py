@@ -29,7 +29,10 @@ class TestTrendingValidation:
         assert "invalid duration" in str(exc.value)
 
     async def test_duration_set_matches_schema_enum(self):
-        assert {"all", "week", "month", "three_month", "one_year"} == _TRENDING_DURATIONS
+        from hardcover_mcp.tools.discovery import TOOLS
+
+        tool = next(spec.tool for spec in TOOLS if spec.tool.name == "get_trending_books")
+        assert set(tool.input_schema["properties"]["duration"]["enum"]) == _TRENDING_DURATIONS
 
     async def test_rejects_non_int_limit(self):
         with pytest.raises(ToolError):
