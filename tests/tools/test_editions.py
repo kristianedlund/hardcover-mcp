@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from hardcover_mcp.tools._validation import ToolError
-from hardcover_mcp.tools.editions import _format_edition, handle_get_edition
+from hardcover_mcp.tools.editions import _format_edition, fetch_edition
 
 
 class TestFormatEdition:
@@ -104,114 +104,34 @@ class TestFormatEdition:
         assert result["book"] is None
 
 
-class TestHandleGetEdition:
-    async def test_returns_error_when_no_args(self):
-        with pytest.raises(ToolError) as exc:
-            await handle_get_edition({})
+class TestFetchEdition:
+    @pytest.mark.parametrize(
+        ("key", "value", "where"),
+        [
+            ("isbn_13", "9780547928227", {"isbn_13": {"_eq": "9780547928227"}}),
+            ("asin", "B007978NPG", {"asin": {"_eq": "B007978NPG"}}),
+            ("edition_id", "99", {"id": {"_eq": 99}}),
+        ],
+    )
+    async def test_looks_up_by_the_key_given(self, key, value, where):
+        found = {"data": {"editions": [{"id": 99, "title": "A Book", "book": None}]}}
+        mock = AsyncMock(return_value=found)
+        with patch("hardcover_mcp.tools.editions.execute", new=mock):
+            result = await fetch_edition(key, value)
 
-        assert "exactly one" in str(exc.value)
+        assert json.loads(result[0].text)["id"] == 99
+        assert mock.call_args[0][1] == {"where": where}
 
-    async def test_returns_error_when_multiple_args(self):
-        with pytest.raises(ToolError) as exc:
-            await handle_get_edition({"isbn_13": "9780547928227", "asin": "B007978NPG"})
+    async def test_non_numeric_edition_id_is_an_error(self):
+        with pytest.raises(ToolError, match="'edition_id' must be an integer"):
+            await fetch_edition("edition_id", "not-a-number")
 
-        assert "exactly one" in str(exc.value)
+    async def test_nothing_found(self):
+        mock = AsyncMock(return_value={"data": {"editions": []}})
+        with patch("hardcover_mcp.tools.editions.execute", new=mock):
+            result = await fetch_edition("isbn_13", "9780000000000")
 
-    async def test_returns_error_on_non_numeric_id(self):
-        with pytest.raises(ToolError) as exc:
-            await handle_get_edition({"id": "not-a-number"})
-
-        assert "must be an integer" in str(exc.value)
-
-    @patch("hardcover_mcp.tools.editions.execute", new_callable=AsyncMock)
-    async def test_lookup_by_isbn13(self, mock_execute):
-        mock_execute.return_value = {
-            "data": {
-                "editions": [
-                    {
-                        "id": 1,
-                        "title": "The Hobbit",
-                        "subtitle": None,
-                        "isbn_13": "9780547928227",
-                        "isbn_10": None,
-                        "asin": None,
-                        "pages": 310,
-                        "audio_seconds": None,
-                        "release_date": "2012-09-18",
-                        "edition_format": None,
-                        "physical_format": None,
-                        "publisher": None,
-                        "language": None,
-                        "reading_format": None,
-                        "book": {
-                            "id": 42,
-                            "slug": "the-hobbit",
-                            "title": "The Hobbit",
-                            "rating": 4.6,
-                        },
-                    }
-                ]
-            }
-        }
-
-        result = await handle_get_edition({"isbn_13": "9780547928227"})
-
-        data = json.loads(result[0].text)
-        assert data["isbn_13"] == "9780547928227"
-        assert data["title"] == "The Hobbit"
-        call_vars = mock_execute.call_args[0][1]
-        assert call_vars["isbn_13"] == "9780547928227"
-
-    @patch("hardcover_mcp.tools.editions.execute", new_callable=AsyncMock)
-    async def test_lookup_by_asin(self, mock_execute):
-        mock_execute.return_value = {"data": {"editions": []}}
-
-        result = await handle_get_edition({"asin": "B007978NPG"})
-
-        assert "No edition found" in result[0].text
-        call_vars = mock_execute.call_args[0][1]
-        assert call_vars["asin"] == "B007978NPG"
-
-    @patch("hardcover_mcp.tools.editions.execute", new_callable=AsyncMock)
-    async def test_lookup_by_id(self, mock_execute):
-        mock_execute.return_value = {
-            "data": {
-                "editions": [
-                    {
-                        "id": 99,
-                        "title": "A Book",
-                        "subtitle": None,
-                        "isbn_13": None,
-                        "isbn_10": None,
-                        "asin": None,
-                        "pages": 100,
-                        "audio_seconds": None,
-                        "release_date": None,
-                        "edition_format": None,
-                        "physical_format": None,
-                        "publisher": None,
-                        "language": None,
-                        "reading_format": None,
-                        "book": None,
-                    }
-                ]
-            }
-        }
-
-        result = await handle_get_edition({"id": 99})
-
-        data = json.loads(result[0].text)
-        assert data["id"] == 99
-        call_vars = mock_execute.call_args[0][1]
-        assert call_vars["id"] == 99
-
-    @patch("hardcover_mcp.tools.editions.execute", new_callable=AsyncMock)
-    async def test_returns_no_edition_found_when_empty(self, mock_execute):
-        mock_execute.return_value = {"data": {"editions": []}}
-
-        result = await handle_get_edition({"isbn_13": "9780000000000"})
-
-        assert "No edition found" in result[0].text
+        assert result[0].text == "No edition found."
 
 
 _RAW_EDITION = {

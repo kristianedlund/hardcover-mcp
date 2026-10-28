@@ -145,10 +145,10 @@ class TestAuthorBooks:
         assert [b["book_id"] for b in _format_author(raw)["books"]] == [9]
 
     def test_query_keeps_author_role_contributions_only(self):
-        from hardcover_mcp.tools.authors import GET_AUTHOR_BY_ID_QUERY
+        from hardcover_mcp.tools.authors import GET_AUTHOR_QUERY
 
-        assert '{contribution: {_eq: "Author"}}' in GET_AUTHOR_BY_ID_QUERY
-        assert "{contribution: {_is_null: true}}" in GET_AUTHOR_BY_ID_QUERY
+        assert '{contribution: {_eq: "Author"}}' in GET_AUTHOR_QUERY
+        assert "{contribution: {_is_null: true}}" in GET_AUTHOR_QUERY
 
 
 _AUTHOR = {"id": 5, "slug": "a", "name": "A", "contributions": []}
@@ -162,7 +162,7 @@ class TestHandleGetAuthor:
         with (
             patch("hardcover_mcp.tools.authors.execute", new=mock),
             patch(
-                "hardcover_mcp.tools.authors.resolve_id_by_name",
+                "hardcover_mcp.tools.books.resolve_id_by_name",
                 new=AsyncMock(return_value=resolved),
             ),
         ):
@@ -172,12 +172,11 @@ class TestHandleGetAuthor:
     async def test_name_resolves_to_an_id_lookup(self):
         text, mock = await self._run({"name": "A"}, [_AUTHOR], resolved=5)
         assert json.loads(text)["id"] == 5
-        assert mock.call_args[0][1] == {"books_limit": 20, "id": 5}
+        assert mock.call_args[0][1] == {"where": {"id": {"_eq": 5}}, "books_limit": 20}
 
     async def test_slug_uses_the_slug_query(self):
         _, mock = await self._run({"slug": "a", "books_limit": 500}, [_AUTHOR])
-        assert "slug: {_eq: $slug}" in mock.call_args[0][0]
-        assert mock.call_args[0][1]["books_limit"] == 100  # capped
+        assert mock.call_args[0][1] == {"where": {"slug": {"_eq": "a"}}, "books_limit": 100}
 
     async def test_unknown_name_is_not_found(self):
         text, mock = await self._run({"name": "nobody"}, [], resolved=None)

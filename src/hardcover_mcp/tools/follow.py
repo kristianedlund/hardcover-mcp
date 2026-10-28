@@ -9,7 +9,7 @@ from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import UPDATE, ToolSpec
 from hardcover_mcp.tools._results import mutation_payload
 from hardcover_mcp.tools._validation import ToolError, _require_int
-from hardcover_mcp.tools.activity import FOLLOWED_IDS_QUERY, GET_USER_ID_BY_USERNAME_QUERY
+from hardcover_mcp.tools.activity import FOLLOWED_IDS_QUERY, user_id_for_username
 
 FOLLOW_USER_MUTATION = """
 mutation FollowUser($id: Int!) {
@@ -42,11 +42,9 @@ async def _resolve_user_id(arguments: dict[str, Any]) -> int:
         raise ToolError("provide either user_id or username.")
 
     if username and not user_id:
-        found = await execute(GET_USER_ID_BY_USERNAME_QUERY, {"username": username})
-        users = found["data"]["users"]
-        if not users:
+        user_id = await user_id_for_username(username)
+        if user_id is None:
             raise ToolError(f"no user found for username '{username}'.")
-        user_id = users[0]["id"]
 
     return _require_int(user_id, "user_id")
 

@@ -32,7 +32,7 @@ class TestTrendingValidation:
         from hardcover_mcp.tools.discovery import TOOLS
 
         tool = next(spec.tool for spec in TOOLS if spec.tool.name == "get_trending_books")
-        assert set(tool.input_schema["properties"]["duration"]["enum"]) == _TRENDING_DURATIONS
+        assert tool.input_schema["properties"]["duration"]["enum"] == list(_TRENDING_DURATIONS)
 
     async def test_rejects_non_int_limit(self):
         with pytest.raises(ToolError):

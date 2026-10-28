@@ -286,7 +286,7 @@ class TestUserBookReviewLifecycle:
 
 async def _find_edition_for_book_not_in_library() -> tuple[int, int]:
     """Return (book_id, edition_id) for a well-known book not in the test user's library."""
-    from hardcover_mcp.tools.editions import handle_get_edition
+    from hardcover_mcp.tools.books import handle_get_book
     from hardcover_mcp.tools.library import handle_get_user_book
 
     # Candidate ISBNs for common books — use the first whose book is not in library
@@ -296,7 +296,7 @@ async def _find_edition_for_book_not_in_library() -> tuple[int, int]:
         "9780385333481",  # A Short History of Nearly Everything (Anchor paperback)
     ]
     for isbn_13 in candidate_isbns:
-        edition_result = await handle_get_edition({"isbn_13": isbn_13})
+        edition_result = await handle_get_book({"isbn_13": isbn_13})
         edition_data = json.loads(edition_result[0].text)
         if "id" not in edition_data or not edition_data.get("book"):
             continue

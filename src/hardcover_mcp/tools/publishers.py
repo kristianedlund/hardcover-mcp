@@ -7,8 +7,8 @@ from mcp.types import TextContent, Tool
 
 from hardcover_mcp.client import execute
 from hardcover_mcp.tools._registry import READ, ToolSpec
-from hardcover_mcp.tools._validation import ToolError, _require_count, _require_int
-from hardcover_mcp.tools.books import resolve_id_by_name
+from hardcover_mcp.tools._validation import ToolError, _require_count
+from hardcover_mcp.tools.books import lookup_where
 from hardcover_mcp.tools.editions import EDITION_FIELDS, format_edition
 
 _DEFAULT_EDITIONS_LIMIT = 20
@@ -44,20 +44,12 @@ _PUBLISHER_FIELDS = (
 """
 )
 
-GET_PUBLISHER_BY_ID_QUERY = (
+GET_PUBLISHER_QUERY = (
     """
-query GetPublisherById($id: bigint!, $editions_limit: Int!, $editions_offset: Int!) {
-    publishers(where: {id: {_eq: $id}}, limit: 1) {"""
-    + _PUBLISHER_FIELDS
-    + """    }
-}
-"""
-)
-
-GET_PUBLISHER_BY_SLUG_QUERY = (
-    """
-query GetPublisherBySlug($slug: String!, $editions_limit: Int!, $editions_offset: Int!) {
-    publishers(where: {slug: {_eq: $slug}}, limit: 1) {"""
+query GetPublisher(
+    $where: publishers_bool_exp!, $editions_limit: Int!, $editions_offset: Int!
+) {
+    publishers(where: $where, limit: 1) {"""
     + _PUBLISHER_FIELDS
     + """    }
 }
@@ -121,23 +113,15 @@ async def handle_get_publisher(arguments: dict[str, Any]) -> list[TextContent]:
         arguments.get("editions_offset"), "editions_offset", default=0
     )
 
-    variables: dict[str, Any] = {
+    where = await lookup_where(arguments, "Publisher")
+    if where is None:
+        return [TextContent(type="text", text="No publisher found.")]
+    variables = {
+        "where": where,
         "editions_limit": editions_limit,
         "editions_offset": editions_offset,
     }
-
-    if publisher_id:
-        variables["id"] = _require_int(publisher_id, "id")
-        result = await execute(GET_PUBLISHER_BY_ID_QUERY, variables)
-    elif slug:
-        variables["slug"] = slug
-        result = await execute(GET_PUBLISHER_BY_SLUG_QUERY, variables)
-    else:
-        found_id = await resolve_id_by_name(name, "Publisher")
-        if not found_id:
-            return [TextContent(type="text", text="No publisher found.")]
-        variables["id"] = found_id
-        result = await execute(GET_PUBLISHER_BY_ID_QUERY, variables)
+    result = await execute(GET_PUBLISHER_QUERY, variables)
 
     publishers = result["data"]["publishers"]
     if not publishers:

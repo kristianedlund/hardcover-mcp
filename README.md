@@ -168,7 +168,7 @@ Optional environment variables, set in the same `env` block as your token:
 |---------|----------------|
 | `core` | Always loaded: `search_books`, `get_user` |
 | `catalog` | Books (with characters and editions), editions, authors, series, publishers, trending, vibes |
-| `library` | Your library, reading dates and progress, ownership, reviews, stats, goals |
+| `library` | Your library, reading dates and progress, ownership, reviews, goals |
 | `lists` | Viewing and managing your lists |
 | `journal` | Reading journal notes and quotes |
 | `social` | Activity feed, following users, community prompts |

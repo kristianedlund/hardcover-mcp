@@ -137,7 +137,7 @@ class TestHandleGetSeries:
         with (
             patch("hardcover_mcp.tools.series.execute", new=mock),
             patch(
-                "hardcover_mcp.tools.series.resolve_id_by_name",
+                "hardcover_mcp.tools.books.resolve_id_by_name",
                 new=AsyncMock(return_value=resolved),
             ),
         ):
@@ -147,12 +147,11 @@ class TestHandleGetSeries:
     async def test_name_resolves_to_an_id_lookup(self):
         text, mock = await self._run({"name": "S"}, [_SERIES], resolved=4)
         assert json.loads(text)["id"] == 4
-        assert mock.call_args[0][1] == {"id": 4}
+        assert mock.call_args[0][1] == {"where": {"id": {"_eq": 4}}}
 
     async def test_slug_uses_the_slug_query(self):
         _, mock = await self._run({"slug": "s"}, [_SERIES])
-        assert mock.call_args[0][1] == {"slug": "s"}
-        assert "{slug: {_eq: $slug}}" in mock.call_args[0][0]
+        assert mock.call_args[0][1] == {"where": {"slug": {"_eq": "s"}}}
 
     async def test_unknown_series_is_not_found(self):
         text, _ = await self._run({"slug": "nope"}, [])

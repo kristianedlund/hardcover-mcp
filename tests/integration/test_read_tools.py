@@ -312,9 +312,9 @@ class TestGetSeries:
 
 class TestGetEdition:
     async def test_get_edition_by_isbn13(self):
-        from hardcover_mcp.tools.editions import handle_get_edition
+        from hardcover_mcp.tools.books import handle_get_book
 
-        result = await handle_get_edition({"isbn_13": "9780547928227"})
+        result = await handle_get_book({"isbn_13": "9780547928227"})
 
         data = json.loads(result[0].text)
         assert "id" in data
@@ -325,23 +325,11 @@ class TestGetEdition:
         assert "title" in data["book"]
 
     async def test_get_edition_returns_not_found_for_unknown_isbn(self):
-        from hardcover_mcp.tools.editions import handle_get_edition
+        from hardcover_mcp.tools.books import handle_get_book
 
-        result = await handle_get_edition({"isbn_13": "9799999999999"})
+        result = await handle_get_book({"isbn_13": "9799999999999"})
 
         assert "No edition found" in result[0].text
-
-    async def test_get_edition_error_on_no_args(self):
-        from hardcover_mcp.tools.editions import handle_get_edition
-
-        with pytest.raises(ToolError):
-            await handle_get_edition({})
-
-    async def test_get_edition_error_on_multiple_args(self):
-        from hardcover_mcp.tools.editions import handle_get_edition
-
-        with pytest.raises(ToolError):
-            await handle_get_edition({"isbn_13": "9780547928227", "asin": "B007978NPG"})
 
 
 class TestSearchEntities:
@@ -455,7 +443,7 @@ class TestGetUserIncludeStats:
 
         data = json.loads(result[0].text)["stats"]
         by_status = data["by_status"]
-        from hardcover_mcp.tools.library import STATUS_NAMES
+        from hardcover_mcp.tools._validation import STATUS_NAMES
 
         assert list(by_status) == STATUS_NAMES
 

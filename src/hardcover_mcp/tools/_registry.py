@@ -21,7 +21,7 @@ class ToolSpec:
     handler: Handler
     toolset: str
     # Hardcover API scopes the tool's queries/mutations require (see the docs' Actions page).
-    scopes: tuple[str, ...] = ()
+    scopes: tuple[str, ...]
 
 
 def scopes_for(specs: list[ToolSpec]) -> list[str]:
@@ -32,15 +32,9 @@ def scopes_for(specs: list[ToolSpec]) -> list[str]:
 # Behavior hints shared across tools. Every tool calls the external Hardcover API.
 # Read-only lookups with no side effects.
 READ = ToolAnnotations(read_only_hint=True, open_world_hint=True)
-# Creates new records; repeating the call creates more.
-CREATE = ToolAnnotations(
-    read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=True
-)
 # Overwrites or removes existing state; repeating with the same args changes nothing further.
 UPDATE = ToolAnnotations(
     read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=True
 )
-# Permanently deletes a record.
-DELETE = ToolAnnotations(
-    read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=True
-)
+# Permanently deletes a record: the same hints as UPDATE (destructive, safe to repeat).
+DELETE = UPDATE

@@ -6,7 +6,7 @@ from typing import Any
 from mcp.types import TextContent
 
 from hardcover_mcp.client import execute
-from hardcover_mcp.tools._validation import ToolError, _require_int
+from hardcover_mcp.tools._validation import _require_int
 
 # ── The edition shape every tool returns ──
 
@@ -76,30 +76,11 @@ _EDITION_FIELDS = (
 """
 )
 
-EDITION_BY_ID_QUERY = (
+# One query for every edition key: get_book passes ``{id|isbn_13|asin: {_eq: value}}``.
+EDITION_LOOKUP_QUERY = (
     """
-query GetEditionById($id: Int!) {
-    editions(where: {id: {_eq: $id}}, limit: 1) {"""
-    + _EDITION_FIELDS
-    + """    }
-}
-"""
-)
-
-EDITION_BY_ISBN13_QUERY = (
-    """
-query GetEditionByIsbn13($isbn_13: String!) {
-    editions(where: {isbn_13: {_eq: $isbn_13}}, limit: 1) {"""
-    + _EDITION_FIELDS
-    + """    }
-}
-"""
-)
-
-EDITION_BY_ASIN_QUERY = (
-    """
-query GetEditionByAsin($asin: String!) {
-    editions(where: {asin: {_eq: $asin}}, limit: 1) {"""
+query GetEdition($where: editions_bool_exp!) {
+    editions(where: $where, limit: 1) {"""
     + _EDITION_FIELDS
     + """    }
 }
@@ -142,46 +123,22 @@ def _format_edition(e: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def handle_get_edition(arguments: dict[str, Any]) -> list[TextContent]:
-    """Fetch a specific edition by Hardcover ID, ISBN-13, or ASIN.
+async def fetch_edition(key: str, value: Any) -> list[TextContent]:
+    """The edition whose ``key`` (``edition_id``, ``isbn_13``, or ``asin``) is ``value``.
 
-    Parameters
-    ----------
-    arguments : dict[str, Any]
-        Provide exactly one of: ``id`` (int), ``isbn_13`` (str), or ``asin`` (str).
+    ``get_book`` checks that exactly one edition key was given before calling this.
 
     Returns
     -------
     list[TextContent]
-        JSON with edition metadata including publisher, language, reading format,
-        and the associated book.
-
-    Raises
-    ------
-    ValueError
-        If ``id`` is provided but cannot be coerced to an integer.
+        JSON with edition metadata including publisher, language, reading format, and the
+        associated book; or "No edition found." when nothing matches.
     """
-    edition_id = arguments.get("id")
-    isbn_13 = arguments.get("isbn_13")
-    asin = arguments.get("asin")
-
-    # Exactly one selector must be supplied
-    provided = [x for x in (edition_id, isbn_13, asin) if x is not None]
-    if len(provided) == 0:
-        raise ToolError("provide exactly one of 'id', 'isbn_13', or 'asin'.")
-    if len(provided) > 1:
-        raise ToolError("provide exactly one of 'id', 'isbn_13', or 'asin' — not multiple.")
-
-    if edition_id is not None:
-        result = await execute(EDITION_BY_ID_QUERY, {"id": _require_int(edition_id, "id")})
-    elif isbn_13 is not None:
-        result = await execute(EDITION_BY_ISBN13_QUERY, {"isbn_13": str(isbn_13)})
+    if key == "edition_id":
+        where = {"id": {"_eq": _require_int(value, "edition_id")}}
     else:
-        result = await execute(EDITION_BY_ASIN_QUERY, {"asin": str(asin)})
-
-    editions = result["data"]["editions"]
+        where = {key: {"_eq": str(value)}}
+    editions = (await execute(EDITION_LOOKUP_QUERY, {"where": where}))["data"]["editions"]
     if not editions:
         return [TextContent(type="text", text="No edition found.")]
-
-    output = _format_edition(editions[0])
-    return [TextContent(type="text", text=json.dumps(output, indent=2))]
+    return [TextContent(type="text", text=json.dumps(_format_edition(editions[0]), indent=2))]

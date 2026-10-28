@@ -324,8 +324,6 @@ async def _create_journal_entry(arguments: dict[str, Any]) -> list[TextContent]:
     # The API wants a tags list; the tool doesn't offer tags, so it's always empty.
     obj["tags"] = []
 
-    # Auth gate — the API scopes the mutation to the authenticated user via token.
-    await get_current_user()
     result = await execute(INSERT_READING_JOURNAL_MUTATION, {"object": obj})
     created = mutation_payload(result, "insert_reading_journal")["reading_journal"]
     if created is None:

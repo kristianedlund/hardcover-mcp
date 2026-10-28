@@ -10,6 +10,7 @@ from hardcover_mcp.tools._registry import DELETE, READ, UPDATE, ToolSpec
 from hardcover_mcp.tools._results import list_result, mutation_payload, returned_object
 from hardcover_mcp.tools._validation import (
     PRIVACY_DESCRIPTION,
+    STATUS_NAMES,
     ToolError,
     _require_bool,
     _require_count,
@@ -18,25 +19,14 @@ from hardcover_mcp.tools._validation import (
     _require_iso_date,
     _require_privacy,
     _require_str,
+    _resolve_status_id,
     privacy_label,
+    status_label,
 )
 from hardcover_mcp.tools.books import author_names
 from hardcover_mcp.tools.editions import EDITION_FIELDS, format_edition
 from hardcover_mcp.tools.lists import delete_list_book
 from hardcover_mcp.tools.user import get_current_user
-
-STATUS_MAP: dict[int, str] = {
-    1: "Want to Read",
-    2: "Currently Reading",
-    3: "Read",
-    4: "Paused",
-    5: "Did Not Finish",
-    6: "Ignored",
-}
-
-STATUS_NAME_TO_ID: dict[str, int] = {v.lower(): k for k, v in STATUS_MAP.items()}
-# The status names, for the ``enum`` of every status argument's schema.
-STATUS_NAMES: list[str] = list(STATUS_MAP.values())
 
 # ── Shared field fragments ──
 
@@ -534,34 +524,6 @@ mutation UpdateUserBook($id: Int!, $object: UserBookUpdateInput!) {
 """
 
 
-def _resolve_status_id(status: Any, name: str = "status") -> int | None:
-    """A status name (any case) or id 1-6 as its id, or None if not given.
-
-    Raises
-    ------
-    ToolError
-        For anything else, listing the valid names.
-    """
-    if status is None:
-        return None
-    if isinstance(status, int) and not isinstance(status, bool) and status in STATUS_MAP:
-        return status
-    if isinstance(status, str):
-        key = status.strip().lower()
-        if key.isdigit() and int(key) in STATUS_MAP:
-            return int(key)
-        if key in STATUS_NAME_TO_ID:
-            return STATUS_NAME_TO_ID[key]
-    raise ToolError(f"unknown {name} {status!r}. Valid: {', '.join(STATUS_NAMES)} (or 1-6).")
-
-
-def status_label(status_id: int | None) -> str | None:
-    """The output label for a status id, e.g. 'Read'; ``unknown (<id>)`` if unrecognised."""
-    if status_id is None:
-        return None
-    return STATUS_MAP.get(status_id, f"unknown ({status_id})")
-
-
 def _text_to_slate(text: str) -> list[dict[str, Any]]:
     """Convert plain text to Slate JSON paragraph nodes.
 
@@ -860,6 +822,14 @@ async def _resolve_user_book_id(arguments: dict[str, Any]) -> int:
     return ubs[0]["id"]
 
 
+def _saved_read(mutation_result: dict[str, Any]) -> list[TextContent]:
+    """The read a set_user_book_read call saved, or a ``ToolError`` if Hardcover refused."""
+    if mutation_result.get("error"):
+        raise ToolError(str(mutation_result["error"]))
+    read = returned_object(mutation_result, "user_book_read", "read")
+    return [TextContent(type="text", text=json.dumps(read, indent=2))]
+
+
 async def _add_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
     """Add or update a reading date entry for a book.
 
@@ -911,15 +881,7 @@ async def _add_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
         )
         mutation_result = mutation_payload(result, "insert_user_book_read")
 
-    if mutation_result.get("error"):
-        raise ToolError(str(mutation_result["error"]))
-
-    return [
-        TextContent(
-            type="text",
-            text=json.dumps(returned_object(mutation_result, "user_book_read", "read"), indent=2),
-        )
-    ]
+    return _saved_read(mutation_result)
 
 
 async def _update_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:
@@ -962,15 +924,7 @@ async def _update_user_book_read(arguments: dict[str, Any]) -> list[TextContent]
     )
     mutation_result = mutation_payload(result, "update_user_book_read")
 
-    if mutation_result.get("error"):
-        raise ToolError(str(mutation_result["error"]))
-
-    return [
-        TextContent(
-            type="text",
-            text=json.dumps(returned_object(mutation_result, "user_book_read", "read"), indent=2),
-        )
-    ]
+    return _saved_read(mutation_result)
 
 
 async def handle_set_user_book_read(arguments: dict[str, Any]) -> list[TextContent]:

@@ -55,20 +55,12 @@ query ActivityFeed($ids: [Int!], $limit: Int!, $offset: Int!) {
 """
 )
 
-USER_ACTIVITY_QUERY = (
-    """
-query UserActivity($user_id: Int!, $limit: Int!, $offset: Int!) {
-    activities(
-        where: {user_id: {_eq: $user_id}},
-        order_by: [{created_at: desc}, {id: desc}],
-        limit: $limit,
-        offset: $offset
-    ) {"""
-    + _ACTIVITY_FIELDS
-    + """    }
-}
-"""
-)
+
+async def user_id_for_username(username: str) -> int | None:
+    """The id of the user with ``username``, or None if there's no such user."""
+    found = await execute(GET_USER_ID_BY_USERNAME_QUERY, {"username": username})
+    users = found["data"]["users"]
+    return users[0]["id"] if users else None
 
 
 def _format_activity(a: dict[str, Any]) -> dict[str, Any]:
@@ -121,24 +113,19 @@ async def handle_get_activity_feed(arguments: dict[str, Any]) -> list[TextConten
     username = arguments.get("username")
 
     if username and not user_id:
-        found = await execute(GET_USER_ID_BY_USERNAME_QUERY, {"username": username})
-        users = found["data"]["users"]
-        if not users:
+        user_id = await user_id_for_username(username)
+        if user_id is None:
             return list_result("activities", [], offset=offset)  # nobody by that name
-        user_id = users[0]["id"]
 
     if user_id:
-        uid = _require_int(user_id, "user_id")
-        result = await execute(
-            USER_ACTIVITY_QUERY, {"user_id": uid, "limit": limit, "offset": offset}
-        )
+        ids = [_require_int(user_id, "user_id")]
     else:
         followed = await execute(FOLLOWED_IDS_QUERY)
         me = followed["data"]["me"]
         ids = [f["followed_user_id"] for f in (me[0]["followed_users"] if me else [])]
         if not ids:
             return list_result("activities", [], offset=offset)
-        result = await execute(FEED_QUERY, {"ids": ids, "limit": limit, "offset": offset})
+    result = await execute(FEED_QUERY, {"ids": ids, "limit": limit, "offset": offset})
 
     activities = [_format_activity(a) for a in result["data"]["activities"]]
     return list_result("activities", activities, offset=offset)
