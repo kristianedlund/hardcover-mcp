@@ -8,235 +8,117 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 1.0.0 settles the tool interface: from here on, tool names, arguments, and result shapes only
-change incompatibly in a major release. If you're upgrading from 0.9, the changes most likely
-to affect you:
+change incompatibly in a major release. Most of this release makes the tools consistent with
+each other. If you're upgrading from 0.9, read the two Breaking sections; the changes most
+likely to affect you:
 
-- List results are objects with the items under a named key (e.g. `entries`, `books`) plus
-  `returned` and `offset`; `search_books` reports `total` instead of `found`.
-- Privacy values are lowercase (`public` / `followers` / `private`) everywhere, and
-  `set_journal_entry` / `set_reading_goal` take `privacy` instead of `privacy_setting_id`.
-- `get_list` pages books with `books_limit` / `books_offset`; editions, ratings, and series
-  authors have one name and shape in every tool. Your rating is `user_rating` (`rating` is
-  the community rating). Search book hits use `book_id`, and journal entries have `details`
-  instead of Hardcover's raw `metadata`.
+- List results are objects (`{returned, offset, <items>}`), and `search_books` reports `total`
+  instead of `found`.
+- Privacy is `public` / `followers` / `private` everywhere, and every write tool takes `privacy`.
+- Your rating is `user_rating`; `rating` always means the community rating.
 - `status` must be one of the status names (or 1–6).
-- The server no longer reads a `.env` file; set variables in your MCP client's config.
+- The server no longer reads a `.env` file.
 
-### Breaking: one privacy vocabulary
+### Breaking: result shapes
 
-| Tool | Before | Now |
-|------|--------|-----|
-| `set_user_book`, `get_user_book`, `get_user` | `Public` / `Followers` / `Private` | `public` / `followers` / `private` |
-| `get_list`, `set_list` | `public` / `followers_only` / `private` | `public` / `followers` / `private` |
-
-Journal entries and goals now return `privacy` instead of `privacy_setting_id`. An
-unrecognised privacy id is reported as `unknown (<id>)`. Update anything that matches on the
-old values.
-
-Every tool that sets privacy (`set_user_book`, `set_list`, `set_journal_entry`,
-`set_reading_goal`) takes a `privacy` argument with the same values: `public`, `followers`
-(or `followers_only`), or `private`, in any case, or `1`/`2`/`3`. Inputs that worked before
-still work; only code matching on returned values needs updating.
-
-`set_journal_entry` and `set_reading_goal` take `privacy` instead of `privacy_setting_id`.
-Passing `privacy_setting_id` is now an error rather than being ignored, so an old call can't
-quietly create a public entry it meant to keep private.
-
-### Breaking: one shape for list results
-
-Tools that return several items now return an object with the items under a named key, plus
-`returned` (items in this page) and `offset`. `total` (all matches) is included where
-Hardcover can count them: `get_user_library`, `get_list` without `id`, and `search_books`.
+Tools that return several items return `{returned, offset, <items>}`, plus `total` where
+Hardcover can count all matches (`get_user_library`, `get_list` without `id`, `search_books`).
 
 | Tool | Before | Now |
 |------|--------|-----|
-| `get_reading_journal` | array | `{returned, offset, entries}` |
-| `get_activity_feed` | array, or a message if you follow nobody | `{returned, offset, activities}` (empty if you follow nobody) |
-| `get_trending_books` | array | `{returned, offset, books}` |
-| `get_vibes` | array | `{returned, offset, vibes}` |
-| `get_prompts` | array | `{returned, offset, prompts}` |
-| `get_list` without `id` | array | `{total, returned, offset, lists}` |
-| `get_reading_goal` | `{goals, returned}` | `{returned, offset, goals}` |
+| `get_reading_journal` | array | `entries` |
+| `get_activity_feed` | array, or a message if you follow nobody or the username is unknown | `activities` (empty in those cases) |
+| `get_trending_books` | array | `books` |
+| `get_vibes` | array | `vibes` |
+| `get_prompts` | array | `prompts` |
+| `get_list` without `id` | array | `lists`, with `total` |
+| `get_reading_goal` | `{goals, returned}` | `goals`, with `offset` |
 | `search_books` | `{found, page, <type>}` | `{total, returned, page, <type>}` |
 
-`get_list` with an `id` pages its books with `books_limit` / `books_offset` (were
-`book_limit` / `book_offset`), matching `get_author`'s `books_limit`.
+The same data now has one name and shape in every tool:
 
-### Breaking: one name and shape for the same data
-
-Editions come back with the same keys from every tool: `id`, `title`, `edition_format`,
-`physical_format`, `reading_format`, `pages`, `audio_seconds`, `release_date`, `isbn_13`,
-`asin`, `language` (a string), and `publisher` (`{id, name, slug}`). Tools add their own
-extras: `get_book`'s edition lookup adds `subtitle`, `isbn_10`, and `book`; `get_book`'s
-`editions` add `users_count`; `get_publisher`'s editions add `book`.
-
-| Tool | Before | Now |
-|------|--------|-----|
-| `get_book(include_editions=true)` | `publisher` was a name string | `publisher` is `{id, name, slug}` |
-| `get_publisher` editions | `edition_id`, `format`, `book_id`, `book_title`, `book_slug`, `rating`, `release_year` | edition fields above, plus `book: {id, title, slug, rating, release_year}` |
-| `get_user_book` | `edition.language` was `{"language": "English"}`; fewer fields | the edition fields above |
-| `get_user(include_library=true)` | `your_rating` (the profiled user's rating) | `user_rating` |
-| `get_user_library`, `get_user_book`, `set_user_book` results | `rating` (your rating) | `user_rating`; `rating` now always means the community rating (`set_user_book`'s input is still `rating`) |
-| `get_series` | `author` (name) and `author_slug` | `authors` (list of names), like other tools |
-| `search_books` book hits | `id`; `series` was Hardcover's raw object | `book_id`, like other lists of books; `series` is `{id, name, slug, position}` |
-| `search_books` author hits | `image` was Hardcover's raw image object | `image_url` |
-| `search_books` list hits | `user` (the owner's username) | `username` |
-| `get_reading_journal`, `set_journal_entry` | `metadata`, Hardcover's raw blob | `details`: named fields per event (e.g. `rating`, `progress_pages`, `list_name`) |
+| Where | Before | Now |
+|-------|--------|-----|
+| privacy in library tools and `get_user` | `Public` / `Followers` / `Private` | `public` / `followers` / `private` |
+| privacy in list tools | `followers_only` | `followers` |
+| journal entries, goals | `privacy_setting_id` | `privacy` |
+| your rating in `get_user_library`, `get_user_book`, `set_user_book` | `rating` | `user_rating` (`rating` is the community rating) |
+| `get_user` library rows | `your_rating` | `user_rating` |
+| editions, in every tool | three shapes; `publisher` sometimes a name, `language` sometimes nested | one shape: `language` is a string, `publisher` is `{id, name, slug}` |
+| `get_publisher` editions | `edition_id`, `format`, `book_title`, `book_slug` | the edition fields, plus `book: {id, title, slug, rating, release_year}` |
+| `get_series` | `author`, `author_slug` | `authors` (list of names) |
+| `search_books` book hits | `id`; `series` was Hardcover's raw object | `book_id`; `series: {id, name, slug, position}` |
+| `search_books` author / list hits | `image` (raw object) / `user` | `image_url` / `username` |
+| journal entries | `metadata`, Hardcover's raw blob | `details`: named fields per event (e.g. `rating`, `progress_pages`, `list_name`) |
 | `get_user` follow rows | `since` | `created_at` |
-| `get_user(include_stats=true)` `by_status` | snake_case keys (`want_to_read`) | status names (`Want to Read`) |
+| `get_user(include_stats=true)` `by_status` | `want_to_read`, … | `Want to Read`, … |
+| unknown status or privacy ids | `Unknown (<id>)` or the bare id | `unknown (<id>)` |
 
-### Breaking: stricter inputs and errors
+### Breaking: arguments and errors
 
-- `status` (`set_user_book`, `get_user_library`) and `library_status` (`get_user`) accept
-  only the six status names (any case) or `1`–`6`. Other values, such as `99` or `true`,
-  are an error listing the valid names; before, any number was sent to Hardcover. The
-  schemas now list the names, and the "1-5" in `set_user_book`'s description was wrong (6 is
-  "Ignored").
-- An unrecognised status id in results reads `unknown (<id>)`, like privacy (was
-  `Unknown (<id>)`, or just the id in `set_user_book`).
-- `set_following` with an unknown username is an error (with `isError` set) instead of a
-  normal "No user found" result, and `get_activity_feed` with an unknown username returns
-  an empty page instead of that text. The rule now: a write tool whose target doesn't exist
-  fails; a read tool that finds nothing returns an empty page, or a short "No … found"
-  answer for a single lookup. Leaving a field out of a write tool, or passing `null`, keeps
-  its current value (the README lists these rules).
-- `set_user_book` and `set_list` reject privacy values other than the ones above; before,
-  any number was sent to Hardcover.
-- `set_journal_entry` no longer passes an undocumented `tags` argument through to
-  Hardcover.
-
-### Breaking: no automatic `.env`
-
-- The server no longer loads a `.env` file. It used to search upward from its install
-  directory, so a stray `.env` (for example in your home directory) could change its settings
-  or point it at another server. If you relied on a `.env`, set the variables in your MCP
-  client's `env` block, or name the file explicitly:
-  `uvx --env-file /path/to/hardcover.env hardcover-mcp`.
-- `HARDCOVER_API_URL` (now documented) must be an `https://` URL, since every request carries
-  your token.
+- `get_list` with `id` pages its books with `books_limit` / `books_offset` (were `book_limit` /
+  `book_offset`).
+- `set_journal_entry` and `set_reading_goal` take `privacy`; passing the old
+  `privacy_setting_id` is an error. Every write tool accepts `public`, `followers` (or
+  `followers_only`), `private` in any case, or `1`–`3`, and rejects anything else.
+- `status` and `library_status` accept only the six status names (any case) or `1`–`6`.
+- `get_user_library` with `start_date` / `end_date` is always newest finish first, so `sort` and
+  `order` are an error there.
+- A write tool whose target doesn't exist, or isn't yours, fails (`set_following` with an
+  unknown username used to return a normal "No user found" answer). Deletes and edits by id only
+  act on your own records. A read tool that finds nothing returns an empty list, or "No … found."
+  for one item.
+- `set_user_book(owned=false)` now really removes ownership, which needs the `write:lists`
+  scope (the README key links include it).
+- The server no longer reads a `.env` file: set the variables in your MCP client's config, or
+  pass a file explicitly with `uvx --env-file /path/to/hardcover.env hardcover-mcp`.
+  `HARDCOVER_API_URL` must be an `https://` URL.
 
 ### Fixed
 
-- Looking up an author, series, publisher, or user by name works with the newer scoped API
-  keys. Search returns ids as text, which those keys reject where a number is expected;
-  ids from search (including `search_books` results) are now numbers.
-- `get_author` lists the books the author wrote, each once. It used to include books they
-  only narrated, translated, or illustrated, and list a book twice when they had two roles
-  on it.
-- `get_series` keeps every book without a series position (e.g. unnumbered novellas); it
-  used to keep only one of them.
+**Writes**
+
+- `set_user_book` sends only the fields you pass, so two quick changes can't undo each other.
+- `set_user_book(owned=false)` removes ownership; it used to do nothing.
+- `set_user_book_read` without `id` no longer overwrites your current read when you log a past
+  read or a re-read.
+- `set_reading_goal` on an existing goal keeps its description unless you pass a new one.
+- `set_list_book(on_list=false)` removes every entry of the book on the list. With `list_ids`, a
+  list that fails gets an `error` and the others still change.
+- Deletes report an error when nothing was deleted, and the internal Owned list can't be
+  renamed, deleted, or edited as a custom list.
+
+**Lookups and results**
+
+- `authors` lists only the authors, not narrators, translators, or foreword writers (they're in
+  `get_book`'s new `contributors`). `get_author` lists each book the author wrote, once.
+- Looking up an author, series, publisher, or user by name works with the newer scoped API keys.
+- `get_series` keeps books without a series position (e.g. unnumbered novellas).
+- Paging no longer repeats or skips items that share a sort value, and unrated books sort last.
+- `get_user_library` with a date range applies `status`.
 - `get_user(id=0)` or an empty `username` no longer returns your own profile.
-- Dates are checked and normalised to `YYYY-MM-DD` everywhere: read dates and `reviewed_at`
-  are now validated, and a compact date like `20260101` no longer slips past "end date
-  after start date" checks. Infinite or NaN numbers, a huge id, a non-text `query`, and
-  unusual responses from Hardcover give a clear error instead of a traceback.
-- The error for a non-https `HARDCOVER_API_URL` no longer repeats the configured value, so
-  a token pasted there by mistake isn't shown.
-- `set_user_book(owned=false)` now removes ownership. It used to call Hardcover's
-  `edition_owned`, which only ever marks an edition owned, so un-owning silently did
-  nothing; it now deletes the edition's row from your Owned list. This needs the
-  `write:lists` scope, now listed for the `library` toolset.
-- `set_user_book` sends only the fields you pass. It used to re-send your current rating,
-  notes, privacy, edition, and status, read a moment earlier; because Hardcover's reads lag
-  its writes, two changes in quick succession could undo the first.
-- `set_list_book(on_list=false)` removes every entry of the book on that list (e.g. two
-  editions), not just the first.
-- Deletes check Hardcover's answer where it says whether anything was deleted: removing a
-  list entry or library entry that's already gone, or a list Hardcover didn't delete, is an
-  error instead of `deleted: true`.
-- The internal Owned list is no longer treated as one of your lists by `set_list`,
-  `delete_list`, or `set_list_book`, so it can't be renamed, deleted, or filled by mistake.
-- An API token with a space, line break, or other unusual character inside it (e.g. a
-  wrapped value in a config file) is refused with a clear message. Before, the request
-  failed with an error that quoted the whole authorization header, token included, into the
-  tool result.
-- `set_list_book` with a single `list_id` checks the list is yours, like `list_ids` already
-  did, instead of trying to change another user's list.
-- `set_list_book` with `list_ids`: if Hardcover doesn't confirm one list's change, that list
-  gets an `error` and the others still report their results; before, the whole call failed.
-- `set_user_book_read` without `id`, given only a finish date earlier than your unfinished
-  read's start (e.g. logging a past read), creates a new read instead of finishing the
-  current one before it started.
-- `get_book` reads `include_characters` / `include_editions` like other flags: `"false"`
-  is false, and other values are an error.
-- A goal whose description is still the generated "<goal> <metric>s" gets a new one when
-  its target changes. A rejected ownership change in `set_user_book` is reported instead of
-  `owned_changed: true`. Withdrawing a prompt answer reports timeouts, limits, and missing
-  scopes as themselves instead of "may already have been withdrawn".
-- Deletes and edits by id only act on your own records. `delete_journal_entry`,
-  `delete_user_book_read`, `delete_list`, `set_list` with `id`, `set_user_book_read` with
-  `id`, and any tool given a `user_book_id` now look the record up as yours first and fail
-  with "no … of yours with that id" otherwise. Before, the deletes reported
-  `{"deleted": true}` for any id, including ones that didn't exist. These tools now also
-  declare the read scope for that lookup (`read:journal`, `read:library`, or `read:lists`,
-  plus `read:me`); every toolset already needed those, so keys made from the README links
-  are unaffected.
-- A tool call no longer waits more than a minute for Hardcover's rate limit. If
-  `Retry-After` or the `RateLimit` header asks for longer, the call stops with a message
-  saying how long to wait (a `Retry-After: 86400` used to block the call for a day).
-  Retries also wait for the `RateLimit` reset instead of only the 3/6/12 s backoff, and count
-  toward the per-minute limit, so they no longer fire early and fail again.
-- Bad `limit`, `offset`, `page`, and similar values (a string like `"x"`, a negative number,
-  `true`) get a clear error in every tool instead of a traceback; numeric strings like
-  `"10"` work. Values above a tool's maximum are capped as before. Flags such as `featured`,
-  `owned`, and `include_stats` accept `true`/`false` (also as strings) and reject anything
-  else; `featured="false"` used to count as true. `sort`, `order`, and `filter_by` must be
-  strings.
-- A timeout, a connection failure, or an HTTP error from Hardcover (including 429/503 that
-  persists after retries) is a short error instead of a traceback. A timed-out request isn't
-  retried, since a change may have been saved anyway; the message says to check.
-- When Hardcover answers a write without the expected result (a null payload), the tool says
-  so instead of failing with a traceback.
-- `get_user_library` with `start_date`/`end_date` applies `status` (e.g. books you finished
-  in May that are marked Read); it used to ignore it, and an invalid status wasn't rejected.
-  A date range is always sorted by finish date, newest first, so passing `sort` or `order`
-  with it is now an error instead of being silently ignored.
-- `set_reading_goal` without `id`, for a goal with the same metric and dates as an
-  existing one, no longer resets that goal's description to "<goal> <metric>s". It's
-  updated like an edit by `id`: only the fields you pass change.
-- `set_user_book_read` without `id` no longer rewrites your current read when you log a
-  different read. It continues the unfinished read only for progress, a finish date, or the
-  same start date; a different start date (e.g. a past read while you're reading the book
-  again) creates a new read.
-- Tool errors (bad input, or an action Hardcover rejected) now set MCP's `isError` flag,
-  so clients and models can tell a failed call from a successful one. The message text is
-  unchanged (`Error: …`). Answers like `No book found.` or `Book not in your library.` are
-  still normal results. Invalid input that used to come back as a traceback (e.g. a
-  non-numeric `book_id` on `get_reading_journal`) now gets the same short error as other
-  tools.
-- `authors` lists only the book's authors. It used to include every contributor (narrators,
-  translators, illustrators, foreword writers…). This applies everywhere `authors` appears:
-  search results, `get_book`, library rows, `get_user_book`, list books, journal entries,
-  and trending/vibe books. A book whose contributors have no author role shows its first
-  contributor.
-- Paging no longer repeats or skips items when several share the sort value (e.g. the same
-  rating): `get_user_library` (including date ranges), `get_reading_journal`,
-  `get_activity_feed`, `get_list` (lists and their books), `get_vibes`, and `get_prompts`
-  break ties by id. In `get_user_library`, books with no value for the sort field (e.g.
-  unrated books under `sort="rating"`) now come last in both directions, instead of first
-  under `desc`.
+
+**Errors and limits**
+
+- Tool errors set MCP's `isError` flag. Bad input, network failures, HTTP errors, and unexpected
+  answers from Hardcover give a short message instead of a traceback.
+- A tool call waits at most a minute for Hardcover's rate limit, and retries wait for the reset
+  Hardcover asks for.
+- A token with spaces or line breaks inside is refused without being quoted, and the
+  `HARDCOVER_API_URL` error doesn't repeat the configured value.
+- Dates are validated and normalised to `YYYY-MM-DD`.
 
 ### Added
 
-- `get_reading_goal` takes `offset` to page through goals.
-- `set_list_book` takes `list_ids` to put a book on (or take it off) up to 20 lists in one
-  call, with one result per list. A list that isn't yours, or whose change fails, gets an
-  `error` in its result while the others still change. Calls with a single `list_id` work
-  and return the same as before.
-- `get_user_book` returns `lists`: your lists the book is on, as `{id, name, position}`
-  (the Owned list is left out, since ownership shows separately). Needs the `read:lists`
-  scope, which the `library` toolset already requested.
-- `get_book` returns `contributors`: everyone credited on the book as `{name, role}`
-  (e.g. `{"name": "Julia Whelan", "role": "Narrator"}`), so narrators, translators, and
-  illustrators are still available now that `authors` leaves them out.
+- `set_list_book` takes `list_ids` to change up to 20 lists in one call.
+- `get_user_book` returns `lists`: your lists the book is on.
+- `get_book` returns `contributors`: everyone credited on the book, as `{name, role}`.
+- `get_reading_goal` takes `offset`.
 
 ### Changed
 
-- The README covers Claude Code setup (user scope, `--env-file`) and the current tool
-  capabilities, and a test checks that every setting the server reads is documented
-  (#95, thanks @tongwentao).
-- Dependency versions are capped below the next major releases (`mcp<3`, `httpx<1`), so a
-  future breaking release of either can't break existing installs.
+- The README covers Claude Code setup and the current tools (#95, thanks @tongwentao).
+- Dependencies are capped below their next major versions (`mcp<3`, `httpx<1`).
 - Requests reuse one HTTP connection, so tools that make several API calls are faster.
 
 ## [0.9.0] - 2026-10-20
