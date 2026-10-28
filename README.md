@@ -85,7 +85,8 @@ in every project; leave it out to add it to the current project only (see the
 from [Configuration](#configuration) are extra `--env KEY=value` flags after the server name,
 e.g. `--env HARDCOVER_READ_ONLY=true`.
 
-To keep the token off the command line, put the variables in a file and let uvx read it:
+To keep the token off the command line, put the variables in a file (start from
+[`.env.example`](https://github.com/kristianedlund/hardcover-mcp/blob/main/.env.example)) and let uvx read it:
 
 ```bash
 claude mcp add --scope user hardcover -- uvx --env-file /path/to/hardcover.env hardcover-mcp
@@ -114,8 +115,9 @@ Add to `claude_desktop_config.json`:
 `HARDCOVER_TOOLSETS` and `HARDCOVER_READ_ONLY` are optional and shown with their defaults;
 [Configuration](#configuration) lists every setting, including `HARDCOVER_API_URL`.
 
-To keep the token out of the client config, put the variables in a `.env` file and point uvx at
-it. The server only reads the file you name:
+To keep the token out of the client config, copy [`.env.example`](https://github.com/kristianedlund/hardcover-mcp/blob/main/.env.example) to a file outside any
+repository (for example `~/hardcover.env`), put in your token, and point uvx at it. The server
+never reads a `.env` file by itself; it only gets the variables from the file you name:
 
 ```json
 "command": "uvx",
@@ -279,11 +281,11 @@ uv run pytest tests/ -v
 Integration tests hit the live Hardcover API and require a valid token. They are **skipped
 automatically** in CI and when the token is absent.
 
-To run them locally, create a `.env` file in the repository with your token (the tests load
-it; the server itself reads only real environment variables):
+To run them locally, copy `.env.example` to `.env` in the repository root and put in your
+token. The tests load `.env` (it's git-ignored); the server itself never does:
 
-```
-HARDCOVER_API_TOKEN=your_token_here
+```bash
+cp .env.example .env
 ```
 
 Then run:
