@@ -1,5 +1,8 @@
 """Unit tests for tools.series."""
 
+import json
+from unittest.mock import AsyncMock, patch
+
 from hardcover_mcp.tools.series import _format_series
 
 
@@ -121,3 +124,36 @@ class TestSeriesPositions:
         }
 
         assert [b["book_id"] for b in _format_series(raw)["books"]] == [10, 12, 13, 14]
+
+
+_SERIES = {"id": 4, "name": "S", "slug": "s", "books_count": 0, "book_series": []}
+
+
+class TestHandleGetSeries:
+    async def _run(self, arguments: dict, found: list, resolved=None):
+        from hardcover_mcp.tools.series import handle_get_series
+
+        mock = AsyncMock(return_value={"data": {"series": found}})
+        with (
+            patch("hardcover_mcp.tools.series.execute", new=mock),
+            patch(
+                "hardcover_mcp.tools.series.resolve_id_by_name",
+                new=AsyncMock(return_value=resolved),
+            ),
+        ):
+            result = await handle_get_series(arguments)
+        return result[0].text, mock
+
+    async def test_name_resolves_to_an_id_lookup(self):
+        text, mock = await self._run({"name": "S"}, [_SERIES], resolved=4)
+        assert json.loads(text)["id"] == 4
+        assert mock.call_args[0][1] == {"id": 4}
+
+    async def test_slug_uses_the_slug_query(self):
+        _, mock = await self._run({"slug": "s"}, [_SERIES])
+        assert mock.call_args[0][1] == {"slug": "s"}
+        assert "{slug: {_eq: $slug}}" in mock.call_args[0][0]
+
+    async def test_unknown_series_is_not_found(self):
+        text, _ = await self._run({"slug": "nope"}, [])
+        assert text == "No series found."
