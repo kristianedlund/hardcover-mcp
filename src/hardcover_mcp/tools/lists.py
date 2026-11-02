@@ -379,14 +379,17 @@ mutation DeleteListBook($id: Int!) {
 """
 
 
-async def delete_list_book(list_book_id: int) -> None:
-    """Delete one list entry; ``ToolError`` if Hardcover reports nothing was deleted.
+async def delete_list_book(list_book_id: int, *, missing_ok: bool = False) -> bool:
+    """Delete one list entry and return whether it was removed.
 
-    Hardcover answers a delete of an entry that's already gone with ``list_id: null``.
+    Hardcover answers a delete of an entry that's already gone with ``list_id: null``; that's
+    a ``ToolError`` unless ``missing_ok``.
     """
     result = await execute(DELETE_LIST_BOOK_MUTATION, {"id": list_book_id})
-    if mutation_payload(result, "delete_list_book").get("list_id") is None:
+    removed = mutation_payload(result, "delete_list_book").get("list_id") is not None
+    if not removed and not missing_ok:
         raise ToolError("Hardcover didn't remove that list entry; it may already be gone.")
+    return removed
 
 
 # For list_ids: which of the lists are yours, and the book's entries on them, in one request.

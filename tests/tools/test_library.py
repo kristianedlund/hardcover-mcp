@@ -1095,6 +1095,12 @@ class TestSetEditionOwnedHelper:
                 True, self._check(False), {"data": {"edition_owned": {"id": 1, "list_book": None}}}
             )
 
+    async def test_un_owning_a_row_already_gone_is_no_change(self):
+        # A parallel un-own removed the row between our check and our delete.
+        gone = {"data": {"delete_list_book": {"id": 10, "list_id": None}}}
+        changed, _ = await self._run(False, self._check(True), gone)
+        assert changed is False
+
     async def test_no_toggle_when_already_not_owned(self):
         changed, mock_exec = await self._run(False, self._check(False))
         assert changed is False
@@ -1171,6 +1177,15 @@ class TestHandleSetUserBookOwned:
             await self._run({"book_id": 42, "owned": True}, {"data": {"user_books": []}})
         assert "'owned' needs an edition" in str(exc.value)
         assert self.mock_exec.call_count == 1
+
+    @pytest.mark.parametrize(
+        ("argument", "value"),
+        [("review_has_spoilers", "maybe"), ("review_raw", 5), ("private_notes", ["x"])],
+    )
+    async def test_bad_review_fields_are_rejected_before_any_request(self, argument, value):
+        with pytest.raises(ToolError, match=f"'{argument}' must be"):
+            await self._run({"book_id": 42, argument: value})
+        self.mock_exec.assert_not_awaited()
 
     async def test_non_bool_owned_is_rejected(self):
         with pytest.raises(ToolError) as exc:
@@ -1400,6 +1415,35 @@ class TestGetUserLibraryDateRange:
             await handle_get_user_library(
                 {"start_date": "2025-05-01", "end_date": "2025-05-31", "status": "Nope"}
             )
+
+    @pytest.mark.parametrize(
+        ("start", "end", "message"),
+        [
+            ("2025-13-01", "2025-12-31", "'start_date' must be an ISO 8601 date"),
+            ("2025-01-01", "last week", "'end_date' must be an ISO 8601 date"),
+            ("2025-12-31", "2025-01-01", "'end_date' must be on or after 'start_date'"),
+        ],
+    )
+    async def test_date_range_rejects_bad_dates(self, start, end, message):
+        with pytest.raises(ToolError, match=message):
+            await handle_get_user_library({"start_date": start, "end_date": end})
+
+    async def test_date_range_is_normalised(self):
+        mock_exec = AsyncMock(
+            return_value={
+                "data": {"user_books": [], "user_books_aggregate": {"aggregate": {"count": 0}}}
+            }
+        )
+        with (
+            patch(
+                "hardcover_mcp.tools.library.get_current_user",
+                new=AsyncMock(return_value={"id": 1}),
+            ),
+            patch("hardcover_mcp.tools.library.execute", new=mock_exec),
+        ):
+            await handle_get_user_library({"start_date": "20250501", "end_date": " 2025-05-31"})
+        variables = mock_exec.call_args[0][1]
+        assert (variables["start_date"], variables["end_date"]) == ("2025-05-01", "2025-05-31")
 
     async def test_start_date_without_end_date_returns_error(self):
         with pytest.raises(ToolError) as exc:

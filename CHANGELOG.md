@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for it.
 - An unexpected error gives a short message; the traceback goes to the server log (stderr)
   instead of into the tool result.
+- Whole-number arguments such as ids reject `true`/`false` and numbers with a fraction
+  (`3.9`) instead of quietly reading them as `1`/`0` and `3`.
+- `get_user_library` checks that `start_date` and `end_date` are real dates, in order, and
+  accepts the same date forms as the other tools.
+- `set_user_book` checks `review_has_spoilers` (true or false), `review_raw`, and
+  `private_notes` (text) before sending anything.
+- Two parallel `set_user_book(owned=false)` calls for the same edition no longer make the
+  second one fail; it reports no change.
 
 ### Added
 
