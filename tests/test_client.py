@@ -439,3 +439,37 @@ async def test_graphql_errors_that_arent_objects_are_reported():
 
     with pytest.raises(client.HardcoverAPIError, match="GraphQL error: boom"):
         await client.execute("query { me { id } }")
+
+
+async def test_parallel_calls_at_a_full_window_take_turns(monkeypatch):
+    # Both calls find the window full and sleep; the one that wakes second must check again
+    # instead of sending at once.
+    import asyncio.tasks
+
+    clock = [1000.0]
+    monkeypatch.setattr(client.time, "monotonic", lambda: clock[0])
+
+    async def sleep(seconds):
+        wake = clock[0] + seconds
+        await asyncio.tasks.sleep(0)  # let the other call run, as a real sleep would
+        clock[0] = max(clock[0], wake)
+
+    monkeypatch.setattr(client.asyncio, "sleep", sleep)
+    monkeypatch.setattr(client, "_RATE_LIMIT", 1)
+    client._request_timestamps.append(1000.0)
+
+    await asyncio.tasks.gather(client._wait_for_rate_limit(), client._wait_for_rate_limit())
+
+    # The first call sent at 1060; the second waited a whole window more (1060 has expired).
+    # Without the recheck both would have sent at 1060.
+    assert client._request_timestamps == [1120.0]
+
+
+async def test_missing_token_fails_before_waiting_for_the_rate_limit(monkeypatch, sleeps):
+    monkeypatch.delenv("HARDCOVER_API_TOKEN")
+    monkeypatch.setattr(client, "_blocked_until", client.time.monotonic() + 30)
+
+    with pytest.raises(client.HardcoverAPIError, match="HARDCOVER_API_TOKEN is not set"):
+        await client.execute("query { me { id } }")
+
+    assert sleeps == []

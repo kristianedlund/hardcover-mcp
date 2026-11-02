@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Parallel tool calls no longer go over the per-minute request limit together: a call that
+  waited for room checks again before sending.
+- A call without `HARDCOVER_API_TOKEN` fails at once instead of first waiting for the rate
+  limit.
+- Parallel calls right after startup share one lookup of your profile instead of each asking
+  for it.
+- An unexpected error gives a short message; the traceback goes to the server log (stderr)
+  instead of into the tool result.
+
+### Added
+
+- A warning on stderr at startup when `HARDCOVER_API_TOKEN` isn't set.
+
 ## [1.0.0] - 2026-10-28
 
 1.0.0 settles the tool interface: from here on, tool names, arguments, and result shapes only
