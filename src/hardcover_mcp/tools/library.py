@@ -313,8 +313,10 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
     limit = _require_count(arguments.get("limit"), "limit", default=25, minimum=1, maximum=100)
     offset = _require_count(arguments.get("offset"), "offset", default=0)
     status = arguments.get("status")
-    start_date = _require_str(arguments.get("start_date"), "start_date")
-    end_date = _require_str(arguments.get("end_date"), "end_date")
+    start_date, end_date = (
+        None if arguments.get(key) is None else _require_iso_date(arguments[key], key)
+        for key in ("start_date", "end_date")
+    )
     has_review = _require_bool(arguments.get("has_review"), "has_review")
     owned = _require_bool(arguments.get("owned"), "owned")
     sort = _require_str(arguments.get("sort"), "sort") or ("reviewed" if has_review else "updated")
@@ -329,6 +331,8 @@ async def handle_get_user_library(arguments: dict[str, Any]) -> list[TextContent
         raise ToolError("has_review can't be combined with start_date/end_date.")
     if (start_date is None) != (end_date is None):
         raise ToolError("start_date and end_date must both be provided.")
+    if start_date is not None and end_date < start_date:
+        raise ToolError("'end_date' must be on or after 'start_date'")
     if start_date is not None and (
         arguments.get("sort") is not None or arguments.get("order") is not None
     ):
@@ -465,9 +469,11 @@ async def _set_edition_owned(edition_id: int, owned: bool) -> bool:
         result = await execute(EDITION_OWNED_MUTATION, {"id": edition_id})
         returned_object(mutation_payload(result, "edition_owned"), "list_book", "owned edition")
         return True
+    changed = False
     for row in rows:
-        await delete_list_book(row["id"])
-    return bool(rows)
+        # A row already gone (a parallel call removed it) is the outcome we want.
+        changed |= await delete_list_book(row["id"], missing_ok=True)
+    return changed
 
 
 # ── Write: set_user_book ──
@@ -572,14 +578,18 @@ async def handle_set_user_book(arguments: dict[str, Any]) -> list[TextContent]:
     privacy_setting_id = None if privacy is None else _require_privacy(privacy)
 
     rating = arguments.get("rating")
-    review_raw = arguments.get("review_raw")
-    review_has_spoilers = arguments.get("review_has_spoilers")
+    review_raw = _require_str(arguments.get("review_raw"), "review_raw")
+    review_has_spoilers = (
+        None
+        if arguments.get("review_has_spoilers") is None
+        else _require_bool(arguments["review_has_spoilers"], "review_has_spoilers")
+    )
     reviewed_at = (
         _require_iso_date(arguments["reviewed_at"], "reviewed_at")
         if arguments.get("reviewed_at")
         else None
     )
-    private_notes = arguments.get("private_notes")
+    private_notes = _require_str(arguments.get("private_notes"), "private_notes")
     edition_id = arguments.get("edition_id")
     owned = arguments.get("owned")
     if owned is not None and not isinstance(owned, bool):

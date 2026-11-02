@@ -31,6 +31,15 @@ class TestRequireInt:
         with pytest.raises(ToolError, match="must be an integer"):
             _require_int(None, "id")
 
+    def test_accepts_a_whole_float(self):
+        assert _require_int(3.0, "x") == 3
+
+    @pytest.mark.parametrize("value", [True, False, 3.9, float("inf"), float("nan")])
+    def test_rejects_bools_and_fractions(self, value):
+        # int() would turn these into 1, 0, and 3 (and raise OverflowError for inf).
+        with pytest.raises(ToolError, match="'x' must be an integer"):
+            _require_int(value, "x")
+
     def test_raises_on_float_string(self):
         with pytest.raises(ToolError, match="must be an integer"):
             _require_int("3.5", "id")

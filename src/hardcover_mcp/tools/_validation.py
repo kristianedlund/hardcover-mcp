@@ -20,10 +20,16 @@ class ToolError(ValueError):
 
 
 def _require_int(value: Any, name: str) -> int:
-    """Convert a value to int or raise ToolError with a user-friendly message."""
+    """Convert a value to int or raise ToolError with a user-friendly message.
+
+    Accepts ints, whole floats like ``3.0``, and digit strings (search returns ids as text).
+    Rejects bools and floats with a fraction, which ``int()`` would quietly turn into numbers.
+    """
+    if isinstance(value, bool) or (isinstance(value, float) and not value.is_integer()):
+        raise ToolError(f"'{name}' must be an integer, got: {value!r}")
     try:
         return int(value)
-    except (ValueError, TypeError, OverflowError):  # fmt: skip
+    except (ValueError, TypeError):  # fmt: skip
         raise ToolError(f"'{name}' must be an integer, got: {value!r}") from None
 
 
@@ -32,13 +38,10 @@ def _require_count(
 ) -> int:
     """A whole-number argument such as a limit, offset, or page.
 
-    ``default`` when not given, an error below ``minimum`` (or for a bool), capped at
-    ``maximum``.
+    ``default`` when not given, an error below ``minimum``, capped at ``maximum``.
     """
     if value is None:
         return default
-    if isinstance(value, bool):
-        raise ToolError(f"'{name}' must be an integer, got: {value!r}")
     number = _require_int(value, name)
     if number < minimum:
         raise ToolError(f"'{name}' must be at least {minimum}, got: {value!r}")
