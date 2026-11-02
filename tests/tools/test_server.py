@@ -144,7 +144,7 @@ async def test_call_tool_not_found_is_a_normal_result():
     assert result.content[0].text == "No book found."
 
 
-async def test_call_tool_unexpected_error_keeps_traceback(monkeypatch):
+async def test_call_tool_unexpected_error_logs_the_traceback(monkeypatch, capsys):
     async def failing(arguments):
         raise KeyError("boom")
 
@@ -152,7 +152,21 @@ async def test_call_tool_unexpected_error_keeps_traceback(monkeypatch):
     result = await server.call_tool(None, SimpleNamespace(name="get_book", arguments={}))
 
     assert result.is_error
-    assert "Traceback" in result.content[0].text
+    text = result.content[0].text
+    assert text.startswith("Error in get_book: unexpected KeyError: 'boom'.")
+    assert "Traceback" not in text
+    assert "Traceback" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(("token", "warned"), [("", True), ("  ", True), ("set", False)])
+def test_main_warns_when_the_token_is_missing(monkeypatch, capsys, token, warned):
+    monkeypatch.setenv("HARDCOVER_API_TOKEN", token)
+    monkeypatch.setattr(server, "configure", lambda env: None)
+    monkeypatch.setattr(server.asyncio, "run", lambda coro: coro.close())
+
+    server.main()
+
+    assert ("HARDCOVER_API_TOKEN is not set" in capsys.readouterr().err) is warned
 
 
 def test_collect_tools_rejects_missing_scopes(monkeypatch):

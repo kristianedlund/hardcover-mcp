@@ -66,17 +66,20 @@ async def _wait_for_rate_limit() -> None:
                 "UTC; your current usage is shown at " + API_KEYS_URL + "."
             )
         _daily_reset_at = None
-    if now < _blocked_until:
-        _check_wait(_blocked_until - now)
-        await asyncio.sleep(_blocked_until - now)
+    # Check again after every sleep: parallel calls wait too, and whoever wakes first takes
+    # the free slot. No await between the check and the append, so no other call slips in.
+    while True:
         now = time.monotonic()
-    # Prune timestamps older than the window
-    while _request_timestamps and _request_timestamps[0] < now - _RATE_WINDOW:
-        _request_timestamps.pop(0)
-    if len(_request_timestamps) >= _RATE_LIMIT:
-        sleep_until = _request_timestamps[0] + _RATE_WINDOW
-        await asyncio.sleep(sleep_until - now)
-    _request_timestamps.append(time.monotonic())
+        if now < _blocked_until:
+            _check_wait(_blocked_until - now)
+            await asyncio.sleep(_blocked_until - now)
+            continue
+        while _request_timestamps and _request_timestamps[0] <= now - _RATE_WINDOW:
+            _request_timestamps.pop(0)
+        if len(_request_timestamps) < _RATE_LIMIT:
+            _request_timestamps.append(now)
+            return
+        await asyncio.sleep(_request_timestamps[0] + _RATE_WINDOW - now)
 
 
 def _check_wait(seconds: float) -> None:
@@ -253,10 +256,9 @@ async def execute(
         Also for a timeout, a connection failure, or another non-success HTTP status
         (including 429/503 that persists after retries).
     """
-    await _wait_for_rate_limit()
-
     url = _api_url()
     token = _get_token()
+    await _wait_for_rate_limit()  # after the config checks, so a missing token fails at once
     if not token.startswith("Bearer "):
         token = f"Bearer {token}"
     headers = {

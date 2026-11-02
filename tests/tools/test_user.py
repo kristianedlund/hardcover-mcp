@@ -194,6 +194,31 @@ class TestCurrentUserCache:
             assert (await get_current_user())["id"] == 7
         mock.assert_awaited_once()
 
+    async def test_parallel_calls_on_a_cold_cache_share_one_lookup(self):
+        import asyncio
+
+        from hardcover_mcp.tools.user import get_current_user
+
+        async def slow_me(query):
+            await asyncio.sleep(0)  # give the other call a chance to start its own lookup
+            return {"data": {"me": [{"id": 7}]}}
+
+        mock = AsyncMock(side_effect=slow_me)
+        with patch("hardcover_mcp.tools.user.execute", new=mock):
+            users = await asyncio.gather(get_current_user(), get_current_user())
+        assert [u["id"] for u in users] == [7, 7]
+        mock.assert_awaited_once()
+
+    async def test_failed_lookup_is_tried_again_next_time(self):
+        from hardcover_mcp.client import HardcoverAPIError
+        from hardcover_mcp.tools.user import get_current_user
+
+        mock = AsyncMock(side_effect=[HardcoverAPIError("down"), {"data": {"me": [{"id": 7}]}}])
+        with patch("hardcover_mcp.tools.user.execute", new=mock):
+            with pytest.raises(HardcoverAPIError):
+                await get_current_user()
+            assert (await get_current_user())["id"] == 7
+
     async def test_expired_cache_asks_again(self, monkeypatch):
         from hardcover_mcp.tools import user
 

@@ -160,11 +160,14 @@ async def call_tool(ctx: Any, params: Any) -> CallToolResult:
             is_error=True,
         )
     except Exception as exc:
+        # A bug: the traceback goes to stderr (the client's server log), not into the chat.
+        traceback.print_exc(file=sys.stderr)
         return CallToolResult(
             content=[
                 TextContent(
                     type="text",
-                    text=f"Error in {params.name}: {exc}\n{traceback.format_exc()}",
+                    text=f"Error in {params.name}: unexpected {type(exc).__name__}: {exc}. "
+                    "This is a bug in hardcover-mcp; the details are in the server log.",
                 )
             ],
             is_error=True,
@@ -189,6 +192,13 @@ def main() -> None:
         configure(os.environ)
     except ValueError as exc:
         sys.exit(f"hardcover-mcp: {exc}")
+    if not os.environ.get("HARDCOVER_API_TOKEN", "").strip():
+        # Not fatal: the client can still list tools, and every call explains the fix.
+        print(
+            "hardcover-mcp: warning: HARDCOVER_API_TOKEN is not set; every tool call will fail "
+            f"until it is. Create a key at {client.NEW_API_KEY_URL}",
+            file=sys.stderr,
+        )
     asyncio.run(_run())
 
 

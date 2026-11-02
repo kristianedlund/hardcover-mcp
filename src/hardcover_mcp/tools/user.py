@@ -1,5 +1,6 @@
 """Tool: get_user (your profile or another user's), plus the cached current-user lookup."""
 
+import asyncio
 import json
 import time
 from typing import Any
@@ -27,6 +28,8 @@ from hardcover_mcp.tools.stats import fetch_reading_stats
 _cached_user: dict[str, Any] | None = None
 _cached_at: float = 0.0
 _CACHE_TTL = 3600.0  # 1 hour
+# The lookup in flight, so parallel calls on a cold cache share one request.
+_fetching: asyncio.Task[dict[str, Any]] | None = None
 
 ME_QUERY = """
 query {
@@ -55,17 +58,31 @@ async def get_current_user() -> dict[str, Any]:
     HardcoverAPIError
         If the API returns no user (invalid or expired token).
     """
+    global _fetching
+    if _cached_user is not None and (time.monotonic() - _cached_at) <= _CACHE_TTL:
+        return _cached_user
+    if (
+        _fetching is None
+        or _fetching.done()
+        or _fetching.get_loop() is not asyncio.get_running_loop()
+    ):
+        _fetching = asyncio.ensure_future(_fetch_current_user())
+    # Shielded: one caller being cancelled mustn't cancel the lookup the others wait on.
+    return await asyncio.shield(_fetching)
+
+
+async def _fetch_current_user() -> dict[str, Any]:
+    """Ask the API for the authenticated user and cache it."""
     global _cached_user, _cached_at
-    if _cached_user is None or (time.monotonic() - _cached_at) > _CACHE_TTL:
-        result = await execute(ME_QUERY)
-        users = result["data"]["me"]
-        if not users:
-            raise HardcoverAPIError(
-                "Hardcover returned no user for this API token; it may be invalid or "
-                f"expired. Create a new key at {NEW_API_KEY_URL}"
-            )
-        _cached_user = users[0]
-        _cached_at = time.monotonic()
+    result = await execute(ME_QUERY)
+    users = result["data"]["me"]
+    if not users:
+        raise HardcoverAPIError(
+            "Hardcover returned no user for this API token; it may be invalid or "
+            f"expired. Create a new key at {NEW_API_KEY_URL}"
+        )
+    _cached_user = users[0]
+    _cached_at = time.monotonic()
     return _cached_user
 
 
