@@ -11,10 +11,13 @@ requires-python = ">=3.14"
 keywords = ["mcp", "hardcover", "graphql", "books", "reading"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
     "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries",
+    "Typing :: Typed",
 ]
 dependencies = [
     "mcp>=2.0.0,<3",
@@ -25,6 +28,7 @@ dependencies = [
 Homepage = "https://github.com/kristianedlund/hardcover-mcp"
 Repository = "https://github.com/kristianedlund/hardcover-mcp"
 Issues = "https://github.com/kristianedlund/hardcover-mcp/issues"
+Changelog = "https://github.com/kristianedlund/hardcover-mcp/blob/main/CHANGELOG.md"
 
 [project.scripts]
 hardcover-mcp = "hardcover_mcp.server:main"

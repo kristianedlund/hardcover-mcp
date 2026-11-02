@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - A warning on stderr at startup when `HARDCOVER_API_TOKEN` isn't set.
+- Package metadata: a Changelog link and the `Typing :: Typed`, `Operating System :: OS
+  Independent`, and `Environment :: Console` classifiers.
+
+### Changed
+
+- The release workflows pin GitHub Actions to commit SHAs, kept current by Dependabot.
 
 ## [1.0.0] - 2026-10-28
 
